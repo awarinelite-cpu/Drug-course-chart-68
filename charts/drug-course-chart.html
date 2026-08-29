@@ -41,6 +41,18 @@
   table.chart th.col-remark, table.chart td.col-remark { width:14%; }
   table.chart td input[readonly] { background:#f8f8f8; color:#333; }
   .table-wrap { overflow-x:auto; }
+  #verbalOrderBtn { padding:6px 12px; font-size:12px; }
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:1000; padding:16px; }
+  .modal-box { background:#fff; border-radius:10px; width:100%; max-width:480px; max-height:82vh; display:flex; flex-direction:column; overflow:hidden; }
+  .modal-header { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid #e5e7eb; }
+  .modal-header h3 { margin:0; font-size:16px; }
+  .modal-close { background:none; border:none; font-size:22px; line-height:1; cursor:pointer; color:#555; }
+  .modal-body { padding:14px 16px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:10px; }
+  .verbal-bubble { background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:8px 10px; }
+  .verbal-meta { font-size:11px; color:#555; font-weight:bold; margin-bottom:3px; }
+  .verbal-text { font-size:13px; white-space:pre-wrap; }
+  .modal-footer { display:flex; gap:8px; padding:12px 16px; border-top:1px solid #e5e7eb; align-items:flex-end; }
+  .modal-footer textarea { flex:1; resize:none; }
   @media print {
     .no-print { display:none !important; }
     .sheet { box-shadow:none; margin:0; }
@@ -91,6 +103,7 @@
     <button class="btn btn-purple no-print" id="editDrugsBtn" style="padding:6px 12px; font-size:12px;" onclick="enterDrugsEditMode()">Edit</button>
     <button class="btn btn-success no-print" id="saveDrugsBtn" style="padding:6px 12px; font-size:12px; display:none;" onclick="exitDrugsEditMode()">Save</button>
     <button class="btn btn-success no-print" id="addDrugBtn" style="padding:6px 12px; font-size:12px; display:none;" onclick="addDrug()">+ Add Drug</button>
+    <button class="btn btn-secondary no-print" id="verbalOrderBtn" onclick="openVerbalOrderModal()">+ Verbal Order</button>
   </div>
 
   <div class="table-wrap">
@@ -116,6 +129,20 @@
   </div>
 </div>
 
+<div class="modal-overlay no-print" id="verbalModalOverlay" onclick="if(event.target===this) closeVerbalOrderModal();">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Verbal / Emergency Orders</h3>
+      <button class="modal-close" onclick="closeVerbalOrderModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="verbalOrderList"></div>
+    <div class="modal-footer">
+      <textarea id="verbalOrderInput" rows="2" placeholder="e.g. Dr. Adeyemi verbally ordered IV Furosemide 40mg STAT — not yet on the drug list"></textarea>
+      <button class="btn btn-primary" onclick="submitVerbalOrder()">Save</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
   import { requireAuth } from "../js/auth-guard.js";
   import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
@@ -137,6 +164,7 @@
   let chartRows = []; // { date, sno, time, dose, route, nurse, remark }
   let chartEditMode = false;
   let currentNurseName = '';
+  let verbalOrders = []; // { text, nurse, at }
 
   function makeSelect(options, value) {
     const sel = document.createElement('select');
@@ -267,6 +295,67 @@
     if (!row.nurse && currentNurseName) row.nurse = currentNurseName;
   }
 
+  function defaultRow() {
+    return { date: '', sno: '', time: '', dose: 'AP', route: '', nurse: '', remark: '' };
+  }
+
+  // --- Verbal / emergency orders (conversation box) ---
+  function renderVerbalOrderBtn() {
+    const btn = document.getElementById('verbalOrderBtn');
+    if (verbalOrders.length > 0) {
+      btn.textContent = '💬 ' + verbalOrders.length;
+      btn.className = 'btn btn-purple no-print';
+    } else {
+      btn.textContent = '+ Verbal Order';
+      btn.className = 'btn btn-secondary no-print';
+    }
+  }
+
+  function renderVerbalOrderList() {
+    const box = document.getElementById('verbalOrderList');
+    box.innerHTML = '';
+    if (!verbalOrders.length) {
+      box.innerHTML = '<p style="color:#777; font-size:13px; margin:0;">No verbal orders recorded yet.</p>';
+      return;
+    }
+    verbalOrders.forEach(o => {
+      const bubble = document.createElement('div');
+      bubble.className = 'verbal-bubble';
+      const meta = document.createElement('div');
+      meta.className = 'verbal-meta';
+      meta.textContent = (o.nurse || 'Unknown') + ' · ' + (o.at ? new Date(o.at).toLocaleString() : '');
+      const text = document.createElement('div');
+      text.className = 'verbal-text';
+      text.textContent = o.text;
+      bubble.appendChild(meta);
+      bubble.appendChild(text);
+      box.appendChild(bubble);
+    });
+    box.scrollTop = box.scrollHeight;
+  }
+
+  window.openVerbalOrderModal = function () {
+    renderVerbalOrderList();
+    document.getElementById('verbalModalOverlay').style.display = 'flex';
+    document.getElementById('verbalOrderInput').focus();
+  };
+
+  window.closeVerbalOrderModal = function () {
+    document.getElementById('verbalModalOverlay').style.display = 'none';
+  };
+
+  window.submitVerbalOrder = async function () {
+    const input = document.getElementById('verbalOrderInput');
+    const text = input.value.trim();
+    if (!text) return;
+    verbalOrders.push({ text, nurse: currentNurseName, at: new Date().toISOString() });
+    input.value = '';
+    renderVerbalOrderList();
+    renderVerbalOrderBtn();
+    // Emergency/verbal orders are important enough to save right away, not on the debounce.
+    await saveChart();
+  };
+
   function renderChartTable() {
     if (chartEditMode) renderChartEdit(); else renderChartView();
     document.getElementById('editChartBtn').style.display = chartEditMode ? 'none' : 'inline-block';
@@ -284,7 +373,7 @@
         ['col-date', row.date || ''],
         ['col-sno', row.sno || ''],
         ['col-time', row.time || ''],
-        ['col-dose', row.dose || ''],
+        ['col-dose', row.dose || 'AP'],
         ['col-route', row.route || ''],
         ['col-nurse', row.nurse || ''],
         ['col-remark', row.remark || '']
@@ -343,7 +432,7 @@
       tdDose.className = 'col-dose';
       const doseInput = document.createElement('input');
       doseInput.type = 'text';
-      doseInput.value = row.dose || '';
+      doseInput.value = row.dose || 'AP';
       doseInput.addEventListener('input', () => { row.dose = doseInput.value; touchRowNurse(row); scheduleSave(); nurseCell.value = row.nurse || ''; });
       tdDose.appendChild(doseInput);
       tr.appendChild(tdDose);
@@ -394,7 +483,7 @@
   };
 
   window.addRow = function (count) {
-    for (let i = 0; i < count; i++) chartRows.push({ date: '', sno: '', time: '', dose: '', route: '', nurse: '', remark: '' });
+    for (let i = 0; i < count; i++) chartRows.push(defaultRow());
     renderChartTable();
     scheduleSave();
   };
@@ -413,6 +502,7 @@
     fieldIds.forEach(id => data[id] = document.getElementById(id).value);
     data.rows = chartRows;
     data.drugs = drugs;
+    data.verbalOrders = verbalOrders;
     data.updatedAt = serverTimestamp();
     try {
       await setDoc(chartRef, data, { merge: true });
@@ -433,6 +523,7 @@
 
   requireAuth(async (user, profile) => {
     currentNurseName = (profile && profile.name) || user.email || 'Unknown';
+    renderVerbalOrderBtn();
 
     const patient = await loadPatientHeader(patientId, { name: 'pb_name', meta: 'pb_meta', allergy: 'pb_allergy' });
     if (!patient) return;
@@ -453,14 +544,17 @@
       renderDrugsTable();
       chartRows = (data.rows && data.rows.length)
         ? data.rows.map(r => Array.isArray(r)
-            ? { date: r[0] || '', sno: r[1] || '', time: r[2] || '', dose: r[3] || '', route: r[4] || '', nurse: r[5] || '', remark: r[6] || '' } // migrate old array-row format
-            : r)
-        : Array(18).fill(null).map(() => ({ date: '', sno: '', time: '', dose: '', route: '', nurse: '', remark: '' }));
+            ? { date: r[0] || '', sno: r[1] || '', time: r[2] || '', dose: r[3] || 'AP', route: r[4] || '', nurse: r[5] || '', remark: r[6] || '' } // migrate old array-row format
+            : { ...r, dose: r.dose || 'AP' })
+        : Array(18).fill(null).map(() => defaultRow());
+      verbalOrders = data.verbalOrders || [];
     } else {
       drugs = Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '' }));
       renderDrugsTable();
-      chartRows = Array(18).fill(null).map(() => ({ date: '', sno: '', time: '', dose: '', route: '', nurse: '', remark: '' }));
+      chartRows = Array(18).fill(null).map(() => defaultRow());
+      verbalOrders = [];
     }
+    renderVerbalOrderBtn();
     renderChartTable();
     fieldIds.forEach(id => document.getElementById(id).addEventListener('input', scheduleSave));
     document.getElementById('saveStatus').textContent = 'Changes save automatically';
