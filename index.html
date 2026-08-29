@@ -48,6 +48,7 @@
         <div class="pname" id="pb_name"></div>
         <div class="pmeta" id="pb_meta" style="display:inline;"></div>
         <button class="btn btn-secondary edit-patient-btn" id="editPatientBtn" title="Edit patient information" onclick="openEditPatient()">✎</button>
+        <button class="btn btn-purple" id="overviewBtn" style="padding:4px 10px; font-size:12px; margin-left:6px;" onclick="openOverview()">Overview</button>
       </div>
       <button class="btn btn-secondary" style="padding:6px 12px;" onclick="clearPatient()">Change Patient</button>
     </div>
@@ -238,6 +239,11 @@
   window.openChart = function (chartName) {
     if (!selectedPatient) return;
     window.location.href = 'charts/' + chartName + '.html?patient=' + selectedPatient.id;
+  };
+
+  window.openOverview = function () {
+    if (!selectedPatient) return;
+    window.location.href = 'charts/overview.html?patient=' + selectedPatient.id;
   };
 
   function escapeHtml(s) {

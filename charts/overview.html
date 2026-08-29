@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drug Course Chart · Overview</title>
+<link rel="stylesheet" href="../js/styles.css">
+<style>
+  .overview-item {
+    background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:14px 16px; margin-bottom:10px;
+    cursor:pointer; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;
+  }
+  .overview-item:hover { border-color:#2563eb; }
+  .oi-left { flex:1 1 auto; }
+  .oi-diagnosis { font-weight:bold; font-size:15px; }
+  .oi-meta { font-size:12px; color:#555; margin-top:2px; }
+  .oi-badge { display:inline-block; padding:3px 10px; border-radius:10px; color:#fff; font-size:11px; font-weight:bold; white-space:nowrap; }
+  .badge-active { background:#2563eb; }
+  .badge-referred { background:#7c3aed; }
+  .badge-transferred { background:#d97706; }
+  .badge-discharged { background:#16a34a; }
+  .empty-msg { color:#777; font-size:14px; padding:20px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">Drug Course Chart · Overview</div>
+  <div class="right">
+    <a href="../index.html" class="btn btn-secondary" style="padding:6px 12px;">Back</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="patient-banner">
+    <div><div class="pname" id="pb_name">Loading…</div><div class="pmeta" id="pb_meta"></div></div>
+  </div>
+  <div id="pb_allergy"></div>
+
+  <div class="card-box" style="margin-top:16px;">
+    <h3 style="margin-top:0;">All Drug Course Charts</h3>
+    <p style="font-size:13px; color:#555; margin-top:-6px;">Every chart this patient has had, current and past. Tap one to view it.</p>
+    <div id="listBox"></div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from "../js/auth-guard.js";
+  import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
+  import { db } from "../js/firebase.js";
+  import { doc, getDoc, collection, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+  const patientId = getPatientIdFromUrl();
+  if (!patientId) window.location.href = '../index.html';
+
+  const STATUS_LABELS = { referred: 'Referred to another hospital', transferred: 'Transferred to another ward', discharged: 'Discharged' };
+  const BADGE_CLASS = { referred: 'badge-referred', transferred: 'badge-transferred', discharged: 'badge-discharged' };
+
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+
+  function formatTimestamp(ts) {
+    if (!ts) return '';
+    try { return ts.toDate().toLocaleString(); } catch (e) { return ''; }
+  }
+
+  requireAuth(async () => {
+    const patient = await loadPatientHeader(patientId, { name: 'pb_name', meta: 'pb_meta', allergy: 'pb_allergy' });
+    if (!patient) return;
+
+    const listBox = document.getElementById('listBox');
+    listBox.innerHTML = 'Loading…';
+
+    const items = [];
+
+    // Active chart (patients/{id}/drugCourseChart/main)
+    const mainSnap = await getDoc(doc(db, 'patients', patientId, 'drugCourseChart', 'main'));
+    if (mainSnap.exists()) {
+      const data = mainSnap.data();
+      const hasContent = (data.f_diagnosis || '') || (data.drugs || []).some(d => d && d.name) || (data.rows || []).some(r => r && (r.date || r.sno));
+      if (hasContent) {
+        items.push({
+          kind: 'active',
+          diagnosis: data.f_diagnosis || 'No diagnosis entered yet',
+          dateLabel: 'Currently active',
+          href: 'drug-course-chart.html?patient=' + patientId
+        });
+      }
+    }
+
+    // Archived charts (patients/{id}/drugCourseCharts, most recent first)
+    try {
+      const q = query(collection(db, 'patients', patientId, 'drugCourseCharts'), orderBy('archivedAt', 'desc'));
+      const snap = await getDocs(q);
+      snap.forEach(d => {
+        const data = d.data();
+        items.push({
+          kind: data.archiveReason || 'closed',
+          diagnosis: data.f_diagnosis || 'No diagnosis recorded',
+          dateLabel: (data.archiveReasonLabel || STATUS_LABELS[data.archiveReason] || 'Closed') + ' — ' + (formatTimestamp(data.archivedAt) || data.archivedAtDisplay || ''),
+          href: 'drug-course-chart.html?patient=' + patientId + '&archive=' + d.id
+        });
+      });
+    } catch (e) {
+      // Firestore may need a moment to build the composite index the first time;
+      // fall back to unordered fetch so the list still shows something useful.
+      const snap = await getDocs(collection(db, 'patients', patientId, 'drugCourseCharts'));
+      const archived = [];
+      snap.forEach(d => archived.push({ id: d.id, ...d.data() }));
+      archived.sort((a, b) => (b.archivedAtDisplay || '').localeCompare(a.archivedAtDisplay || ''));
+      archived.forEach(data => {
+        items.push({
+          kind: data.archiveReason || 'closed',
+          diagnosis: data.f_diagnosis || 'No diagnosis recorded',
+          dateLabel: (data.archiveReasonLabel || STATUS_LABELS[data.archiveReason] || 'Closed') + ' — ' + (data.archivedAtDisplay || ''),
+          href: 'drug-course-chart.html?patient=' + patientId + '&archive=' + data.id
+        });
+      });
+    }
+
+    if (items.length === 0) {
+      listBox.innerHTML = '<div class="empty-msg">No drug course charts yet for this patient.</div>';
+      return;
+    }
+
+    listBox.innerHTML = '';
+    items.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'overview-item';
+      const badgeClass = item.kind === 'active' ? 'badge-active' : (BADGE_CLASS[item.kind] || 'badge-discharged');
+      const badgeText = item.kind === 'active' ? 'Active' : (STATUS_LABELS[item.kind] || 'Closed');
+      div.innerHTML =
+        '<div class="oi-left">' +
+          '<div class="oi-diagnosis">' + escapeHtml(item.diagnosis) + '</div>' +
+          '<div class="oi-meta">' + escapeHtml(item.dateLabel) + '</div>' +
+        '</div>' +
+        '<span class="oi-badge ' + badgeClass + '">' + escapeHtml(badgeText) + '</span>';
+      div.onclick = () => { window.location.href = item.href; };
+      listBox.appendChild(div);
+    });
+  });
+</script>
+</body>
+</html>

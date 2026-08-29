@@ -74,6 +74,7 @@
     <div><div class="pname" id="pb_name">Loading…</div><div class="pmeta" id="pb_meta"></div></div>
   </div>
   <div id="pb_allergy"></div>
+  <div id="archiveBanner" style="display:none; background:#fef3c7; border:1px solid #f59e0b; color:#78350f; font-weight:bold; padding:8px 12px; border-radius:6px; margin-top:10px; font-size:13px;"></div>
   <div id="saveStatus" style="font-size:12px; color:#555; margin-top:8px; text-align:right;">—</div>
 </div>
 
@@ -88,7 +89,7 @@
     <div class="info-row"><label>Hospital No:</label><span class="val" id="print_hospno"></span></div>
     <div class="info-row"><label>AGE:</label><span class="val" id="print_age"></span></div>
     <div class="info-row"><label>Date of Admission:</label><span class="val" id="print_admission"></span></div>
-    <div class="info-row"><label>Diagnosis:</label><span class="val" id="print_diagnosis"></span></div>
+    <div class="info-row"><label>Diagnosis:</label><input type="text" id="f_diagnosis" placeholder="Enter diagnosis for this chart"></div>
     <div class="info-row"><label>Discharge Date:</label><input type="date" id="f_discharge"></div>
   </div>
 
@@ -127,6 +128,20 @@
     <button class="btn btn-success" id="addRowBtn" style="display:none;" onclick="addRow(1)">+ Add Row</button>
     <button class="btn btn-secondary" id="removeRowBtn" style="display:none;" onclick="removeRow()">− Remove Row</button>
   </div>
+
+  <div class="no-print" id="statusActionBox" style="margin-top:18px; padding-top:16px; border-top:1px solid #e5e7eb;">
+    <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:6px;">Patient Status</label>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      <select id="statusAction" style="width:auto; min-width:220px;">
+        <option value="">Select action…</option>
+        <option value="referred">Referred to another hospital</option>
+        <option value="transferred">Transferred to another ward</option>
+        <option value="discharged">Discharged</option>
+      </select>
+      <button class="btn btn-primary" style="padding:8px 14px; font-size:13px;" onclick="applyStatusAction()">Apply</button>
+    </div>
+    <div id="statusMsg" style="font-size:12px; margin-top:8px;"></div>
+  </div>
 </div>
 
 <div class="modal-overlay no-print" id="verbalModalOverlay" onclick="if(event.target===this) closeVerbalOrderModal();">
@@ -148,16 +163,22 @@
   import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
   import { lockBackTo } from "../js/back-guard.js";
   import { db } from "../js/firebase.js";
-  import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
   const patientId = getPatientIdFromUrl();
   if (!patientId) window.location.href = '../index.html';
   lockBackTo('../index.html');
 
+  // If ?archive=<id> is present we're viewing a closed-out (referred/transferred/
+  // discharged) chart from the Overview page — read-only, no edit controls.
+  const archiveId = new URLSearchParams(window.location.search).get('archive');
+  const isArchived = !!archiveId;
+
   const ROUTE_OPTIONS = ['', 'Oral', 'IV', 'IM', 'SC', 'Sublingual', 'Topical', 'Rectal', 'Inhalation', 'NG Tube', 'Other'];
   const FREQ_OPTIONS = ['', 'OD', 'BD', 'TDS', 'QDS', 'STAT', 'PRN', 'Q4H', 'Q6H', 'Q8H', 'Q12H', 'Weekly', 'Other'];
   const ACTION_OPTIONS = ['', 'Ongoing', 'Completed', 'Discontinued', 'Withheld', 'Other'];
-  const fieldIds = ['f_discharge']; // only fields not sourced from the patient record
+  const STATUS_LABELS = { referred: 'Referred to another hospital', transferred: 'Transferred to another ward', discharged: 'Discharged' };
+  const fieldIds = ['f_discharge', 'f_diagnosis']; // only fields not sourced from the patient record
 
   let chartRef;
   let saveTimer;
@@ -689,6 +710,7 @@
   }
 
   async function saveChart() {
+    if (isArchived) return; // archived charts are read-only, never written to
     const data = {};
     fieldIds.forEach(id => data[id] = document.getElementById(id).value);
     data.rows = chartRows;
@@ -702,6 +724,60 @@
       document.getElementById('saveStatus').textContent = 'Save failed: ' + (e.code || e.message);
     }
   }
+
+  // --- Patient status change: referred / transferred / discharged ---
+  // Archives the current chart (with whatever diagnosis was entered on it) into
+  // patients/{id}/drugCourseCharts, then resets the active "main" chart back to
+  // a blank slate — empty diagnosis, empty drug list, empty rows — ready for the
+  // next admission or the next stage of care.
+  window.applyStatusAction = async function () {
+    if (isArchived) return;
+    const sel = document.getElementById('statusAction');
+    const reason = sel.value;
+    const msg = document.getElementById('statusMsg');
+    if (!reason) {
+      msg.innerHTML = '<span style="color:#dc2626;">Please select an action first.</span>';
+      return;
+    }
+    const label = STATUS_LABELS[reason];
+    if (!confirm('Confirm: ' + label + '?\n\nThe current drug course chart will be saved to Overview, and a fresh chart will open for this patient.')) return;
+
+    msg.innerHTML = 'Saving…';
+    await saveChart(); // flush latest edits first
+
+    const archiveData = {};
+    fieldIds.forEach(id => archiveData[id] = document.getElementById(id).value);
+    archiveData.rows = chartRows;
+    archiveData.drugs = drugs;
+    archiveData.verbalOrders = verbalOrders;
+    archiveData.archiveReason = reason;
+    archiveData.archiveReasonLabel = label;
+    archiveData.archivedAt = serverTimestamp();
+    archiveData.archivedAtDisplay = new Date().toLocaleString();
+
+    try {
+      await addDoc(collection(db, 'patients', patientId, 'drugCourseCharts'), archiveData);
+    } catch (e) {
+      msg.innerHTML = '<span style="color:#dc2626;">Could not save to Overview: ' + (e.code || e.message) + '</span>';
+      return;
+    }
+
+    const blank = {};
+    fieldIds.forEach(id => blank[id] = '');
+    blank.rows = Array(18).fill(null).map(() => defaultRow());
+    blank.drugs = Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '', duration: '' }));
+    blank.verbalOrders = [];
+    blank.updatedAt = serverTimestamp();
+    try {
+      await setDoc(chartRef, blank); // full overwrite (no merge) so old data doesn't linger
+    } catch (e) {
+      msg.innerHTML = '<span style="color:#dc2626;">Archived, but could not start the new chart: ' + (e.code || e.message) + '</span>';
+      return;
+    }
+
+    msg.innerHTML = '<span style="color:#16a34a;">Saved to Overview. Starting a new chart…</span>';
+    setTimeout(() => window.location.reload(), 900);
+  };
 
   // Safety net: if a nurse forgets to press Save (or leaves the page open) while
   // editing, flush any pending changes to Firestore every 15s and whenever the
@@ -720,13 +796,14 @@
     if (!patient) return;
     document.getElementById('print_name').textContent = patient.name || '';
     document.getElementById('print_emr').textContent = patient.emr || '';
-    document.getElementById('print_diagnosis').textContent = patient.diagnosis || '';
     document.getElementById('print_ward').textContent = patient.ward || '';
     document.getElementById('print_hospno').textContent = patient.hospNo || '';
     document.getElementById('print_age').textContent = patient.age || '';
     document.getElementById('print_admission').textContent = patient.admission || '';
 
-    chartRef = doc(db, 'patients', patientId, 'drugCourseChart', 'main');
+    chartRef = isArchived
+      ? doc(db, 'patients', patientId, 'drugCourseCharts', archiveId)
+      : doc(db, 'patients', patientId, 'drugCourseChart', 'main');
     const snap = await getDoc(chartRef);
     if (snap.exists()) {
       const data = snap.data();
@@ -740,6 +817,12 @@
         : Array(18).fill(null).map(() => defaultRow());
       chartRows.forEach(row => { if (row.sno && !row.route) row.route = computeRouteFromSno(row.sno); });
       verbalOrders = data.verbalOrders || [];
+      if (isArchived) {
+        const when = data.archivedAtDisplay || '';
+        const banner = document.getElementById('archiveBanner');
+        banner.textContent = 'Archived chart — ' + (data.archiveReasonLabel || STATUS_LABELS[data.archiveReason] || 'Closed') + (when ? ' on ' + when : '');
+        banner.style.display = 'block';
+      }
     } else {
       drugs = Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '', duration: '' }));
       renderDrugsTable();
@@ -750,7 +833,18 @@
     renderChartTable();
     checkDrugCompletion();
     fieldIds.forEach(id => document.getElementById(id).addEventListener('input', scheduleSave));
-    document.getElementById('saveStatus').textContent = 'Changes save automatically';
+
+    if (isArchived) {
+      // Lock the page down to a read-only view: no editing, no status changes.
+      document.getElementById('saveStatus').textContent = 'Viewing archived chart (read-only)';
+      fieldIds.forEach(id => { const el = document.getElementById(id); if (el) el.readOnly = true; });
+      ['editDrugsBtn', 'verbalOrderBtn', 'editChartBtn', 'statusActionBox'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+    } else {
+      document.getElementById('saveStatus').textContent = 'Changes save automatically';
+    }
   });
 
   // Re-check periodically so a drug flips to "Completed" on its own even if
