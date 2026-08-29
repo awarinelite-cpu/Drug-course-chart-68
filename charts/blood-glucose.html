@@ -3,8 +3,26 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Blood Glucose</title>
+<title>Blood Glucose Chart</title>
 <link rel="stylesheet" href="../js/styles.css">
+<style>
+  .sheet { background:#fff; max-width:950px; margin:20px auto; padding:30px; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .sheet-title { text-align:center; font-size:18px; font-weight:bold; margin-bottom:16px; }
+  .toggle-row { display:flex; gap:8px; margin-bottom:16px; justify-content:center; }
+  .toggle-btn { padding:9px 20px; border:2px solid #2563eb; background:#fff; color:#2563eb; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px; }
+  .toggle-btn.active { background:#2563eb; color:#fff; }
+  table.chart { width:100%; border-collapse:collapse; }
+  table.chart th, table.chart td { border:1px solid #000; padding:6px 4px; font-size:12px; text-align:center; }
+  table.chart th { background:#f2f2f2; text-transform:uppercase; }
+  table.chart td input { width:100%; border:none; background:transparent; text-align:center; font-size:12px; font-family:inherit; }
+  .table-wrap { overflow-x:auto; }
+  .unit-note { text-align:center; font-size:11px; color:#666; margin-bottom:10px; }
+  @media print {
+    .no-print { display:none !important; }
+    .sheet { box-shadow:none; margin:0; }
+    body { background:#fff; }
+  }
+</style>
 </head>
 <body>
 <div class="topbar no-print">
@@ -14,37 +32,168 @@
     <button class="btn btn-primary" style="padding:6px 12px;" onclick="window.print()">Print</button>
   </div>
 </div>
-<div class="container">
+
+<div class="container no-print">
   <div class="patient-banner">
     <div><div class="pname" id="pb_name">Loading…</div><div class="pmeta" id="pb_meta"></div></div>
   </div>
   <div id="pb_allergy"></div>
+  <div id="saveStatus" style="font-size:12px; color:#555; margin-top:8px; text-align:right;">—</div>
+</div>
 
-  <div class="card-box no-print">
-    <h3 style="margin-top:0;">New Reading</h3>
-    <div id="entryForm" style="display:flex; flex-wrap:wrap; gap:10px;"></div>
-    <button class="btn btn-primary" id="addEntryBtn">Add Reading</button>
+<div class="sheet" id="sheet">
+  <div class="sheet-title" id="chartTitle">6 Points Glycemic Chart</div>
+  <div class="unit-note">All glucose readings in mg/dL</div>
+
+  <div class="toggle-row no-print">
+    <button class="toggle-btn" id="btn6" onclick="switchType('6point')">6-Point</button>
+    <button class="toggle-btn" id="btn3" onclick="switchType('3point')">3-Point</button>
   </div>
 
-  <div class="card-box">
-    <h3 style="margin-top:0;">Readings</h3>
-    <table class="entries">
-      <thead id="entryHead"></thead>
-      <tbody id="entryBody"></tbody>
-    </table>
+  <div class="table-wrap">
+  <table class="chart" id="chartTable">
+    <thead id="chartHead"></thead>
+    <tbody id="chartBody"></tbody>
+  </table>
+  </div>
+  <div class="no-print" style="margin-top:10px;">
+    <button class="btn btn-success" onclick="addRow(1)">+ Add Row</button>
+    <button class="btn btn-secondary" onclick="removeRow()">− Remove Row</button>
   </div>
 </div>
 
 <script type="module">
-  import { initEntryChart } from "../js/entry-chart.js";
-  initEntryChart({
-    collectionName: 'bloodGlucose',
-    columns: [
-      { key: 'time', label: 'Time', type: 'datetime-local' },
-      { key: 'reading', label: 'Reading (mg/dL)', type: 'text' },
-      { key: 'insulinGiven', label: 'Insulin Given', type: 'text' },
-      { key: 'notes', label: 'Notes', type: 'text' }
-    ]
+  import { requireAuth } from "../js/auth-guard.js";
+  import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
+  import { db } from "../js/firebase.js";
+  import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+  const patientId = getPatientIdFromUrl();
+  if (!patientId) window.location.href = '../index.html';
+
+  const CHART_DEFS = {
+    '6point': {
+      title: '6 Points Glycemic Chart',
+      columns: [
+        { label: 'Date', type: 'date' },
+        { label: 'FBS', type: 'text' },
+        { label: '2hrs Post Prandial', type: 'text' },
+        { label: 'Pre-Lunch', type: 'text' },
+        { label: '2hrs Post Lunch', type: 'text' },
+        { label: 'Pre-Dinner', type: 'text' },
+        { label: '2hrs Post Dinner', type: 'text' },
+        { label: 'Remark', type: 'text' }
+      ]
+    },
+    '3point': {
+      title: '3 Points Glycemic Chart',
+      columns: [
+        { label: 'Date', type: 'date' },
+        { label: 'FBS', type: 'text' },
+        { label: 'RBS', type: 'text' },
+        { label: 'RBS', type: 'text' },
+        { label: 'Remark', type: 'text' }
+      ]
+    }
+  };
+
+  let chartRef;
+  let saveTimer;
+  let currentType = '6point';
+
+  window.switchType = function (type, skipConfirm) {
+    if (type === currentType) return;
+    if (!skipConfirm && document.getElementById('chartBody').rows.length > 0) {
+      if (!confirm('Switching chart type clears the current table (columns are different). Continue?')) return;
+    }
+    currentType = type;
+    document.getElementById('btn6').classList.toggle('active', type === '6point');
+    document.getElementById('btn3').classList.toggle('active', type === '3point');
+    document.getElementById('chartTitle').textContent = CHART_DEFS[type].title;
+    buildHead();
+    document.getElementById('chartBody').innerHTML = '';
+    addRow(10);
+    scheduleSave();
+  };
+
+  function buildHead() {
+    const thead = document.getElementById('chartHead');
+    thead.innerHTML = '';
+    const tr = document.createElement('tr');
+    CHART_DEFS[currentType].columns.forEach(col => {
+      const th = document.createElement('th');
+      th.textContent = col.label;
+      tr.appendChild(th);
+    });
+    thead.appendChild(tr);
+  }
+
+  window.addRow = function (count, dataRow) {
+    const tbody = document.getElementById('chartBody');
+    const cols = CHART_DEFS[currentType].columns;
+    for (let i = 0; i < count; i++) {
+      const tr = document.createElement('tr');
+      cols.forEach((col, c) => {
+        const td = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = col.type;
+        if (dataRow && dataRow[c] !== undefined) input.value = dataRow[c];
+        input.addEventListener('input', scheduleSave);
+        td.appendChild(input);
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    }
+  };
+  window.removeRow = function () {
+    const tbody = document.getElementById('chartBody');
+    if (tbody.rows.length > 0) { tbody.deleteRow(tbody.rows.length - 1); scheduleSave(); }
+  };
+
+  function scheduleSave() {
+    document.getElementById('saveStatus').textContent = 'Saving…';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveChart, 600);
+  }
+
+  async function saveChart() {
+    const rows = [];
+    document.querySelectorAll('#chartBody tr').forEach(tr => {
+      const cells = [];
+      tr.querySelectorAll('input').forEach(inp => cells.push(inp.value));
+      rows.push(cells);
+    });
+    try {
+      await setDoc(chartRef, { chartType: currentType, rows, updatedAt: serverTimestamp() }, { merge: true });
+      document.getElementById('saveStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
+    } catch (e) {
+      document.getElementById('saveStatus').textContent = 'Save failed: ' + (e.code || e.message);
+    }
+  }
+
+  requireAuth(async (user, profile) => {
+    const patient = await loadPatientHeader(patientId, { name: 'pb_name', meta: 'pb_meta', allergy: 'pb_allergy' });
+    if (!patient) return;
+
+    chartRef = doc(db, 'patients', patientId, 'bloodGlucose', 'main');
+    const snap = await getDoc(chartRef);
+
+    if (snap.exists()) {
+      const data = snap.data();
+      currentType = data.chartType === '3point' ? '3point' : '6point';
+      document.getElementById('btn6').classList.toggle('active', currentType === '6point');
+      document.getElementById('btn3').classList.toggle('active', currentType === '3point');
+      document.getElementById('chartTitle').textContent = CHART_DEFS[currentType].title;
+      buildHead();
+      const rows = (data.rows && data.rows.length) ? data.rows : [];
+      if (rows.length) rows.forEach(r => addRow(1, r));
+      else addRow(10);
+    } else {
+      document.getElementById('btn6').classList.add('active');
+      buildHead();
+      addRow(10);
+    }
+    document.getElementById('saveStatus').textContent = 'Changes save automatically';
   });
 </script>
 </body>

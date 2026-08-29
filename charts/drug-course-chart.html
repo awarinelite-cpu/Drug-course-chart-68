@@ -58,9 +58,9 @@
     <div class="info-row"><label>WARD:</label><input type="text" id="f_ward"></div>
     <div class="info-row"><label>Hospital No:</label><input type="text" id="f_hospno"></div>
     <div class="info-row"><label>AGE:</label><input type="text" id="f_age"></div>
-    <div class="info-row"><label>Date of Admission:</label><input type="text" id="f_admission"></div>
+    <div class="info-row"><label>Date of Admission:</label><input type="date" id="f_admission"></div>
     <div class="info-row"><label>Diagnosis:</label><span class="val" id="print_diagnosis"></span></div>
-    <div class="info-row"><label>Discharge Date:</label><input type="text" id="f_discharge"></div>
+    <div class="info-row"><label>Discharge Date:</label><input type="date" id="f_discharge"></div>
   </div>
 
   <div class="drug-num-list">
@@ -104,12 +104,13 @@
 
   window.addRow = function (count, dataRow) {
     const tbody = document.getElementById('chartBody');
+    const colTypes = ['date', 'text', 'time', 'text', 'text', 'text', 'text'];
     for (let i = 0; i < count; i++) {
       const tr = document.createElement('tr');
       for (let c = 0; c < 7; c++) {
         const td = document.createElement('td');
         const input = document.createElement('input');
-        input.type = 'text';
+        input.type = colTypes[c];
         if (dataRow && dataRow[c] !== undefined) input.value = dataRow[c];
         input.addEventListener('input', scheduleSave);
         td.appendChild(input);
