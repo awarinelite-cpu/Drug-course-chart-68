@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="js/styles.css">
 </head>
 <body>
+<script type="module" src="js/nav.js"></script>
 <div class="topbar">
   <div class="brand">68 NARHY Ward Charts</div>
   <div class="right">
@@ -91,6 +92,10 @@
   requireAuth((user, profile) => {
     document.getElementById('whoami').textContent = profile.name + ' (' + profile.role + ')';
     if (profile.role === 'admin') document.getElementById('adminLink').style.display = 'inline-block';
+    if (window.location.hash === '#search') {
+      const input = document.getElementById('searchInput');
+      if (input) { input.scrollIntoView({ behavior: 'smooth', block: 'center' }); input.focus(); }
+    }
   });
 
   async function loadAllPatients(force) {
