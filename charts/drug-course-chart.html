@@ -323,6 +323,8 @@
     }
   }
 
+  let editingVerbalIndex = -1;
+
   function renderVerbalOrderList() {
     const box = document.getElementById('verbalOrderList');
     box.innerHTML = '';
@@ -330,20 +332,69 @@
       box.innerHTML = '<p style="color:#777; font-size:13px; margin:0;">No verbal orders recorded yet.</p>';
       return;
     }
-    verbalOrders.forEach(o => {
+    verbalOrders.forEach((o, i) => {
       const bubble = document.createElement('div');
       bubble.className = 'verbal-bubble';
-      const meta = document.createElement('div');
-      meta.className = 'verbal-meta';
-      meta.textContent = (o.nurse || 'Unknown') + ' · ' + (o.at ? new Date(o.at).toLocaleString() : '');
-      const text = document.createElement('div');
-      text.className = 'verbal-text';
-      text.textContent = o.text;
-      bubble.appendChild(meta);
-      bubble.appendChild(text);
+
+      if (editingVerbalIndex === i) {
+        const editArea = document.createElement('textarea');
+        editArea.rows = 2;
+        editArea.value = o.text;
+        editArea.style.marginBottom = '6px';
+        bubble.appendChild(editArea);
+
+        const btnRow = document.createElement('div');
+        btnRow.style.display = 'flex';
+        btnRow.style.gap = '6px';
+
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'btn btn-success';
+        saveBtn.style.padding = '5px 10px';
+        saveBtn.style.fontSize = '12px';
+        saveBtn.textContent = 'Save';
+        saveBtn.onclick = () => saveVerbalOrderEdit(i, editArea.value);
+        btnRow.appendChild(saveBtn);
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-secondary';
+        cancelBtn.style.padding = '5px 10px';
+        cancelBtn.style.fontSize = '12px';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.onclick = () => { editingVerbalIndex = -1; renderVerbalOrderList(); };
+        btnRow.appendChild(cancelBtn);
+
+        bubble.appendChild(btnRow);
+      } else {
+        const meta = document.createElement('div');
+        meta.className = 'verbal-meta';
+        meta.textContent = (o.nurse || 'Unknown') + ' · ' + (o.at ? new Date(o.at).toLocaleString() : '') + (o.editedAt ? ' (edited)' : '');
+        const text = document.createElement('div');
+        text.className = 'verbal-text';
+        text.textContent = o.text;
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-secondary';
+        editBtn.style.padding = '3px 9px';
+        editBtn.style.fontSize = '11px';
+        editBtn.style.marginTop = '6px';
+        editBtn.textContent = 'Edit';
+        editBtn.onclick = () => { editingVerbalIndex = i; renderVerbalOrderList(); };
+        bubble.appendChild(meta);
+        bubble.appendChild(text);
+        bubble.appendChild(editBtn);
+      }
       box.appendChild(bubble);
     });
     box.scrollTop = box.scrollHeight;
+  }
+
+  async function saveVerbalOrderEdit(i, newText) {
+    const trimmed = newText.trim();
+    if (!trimmed) return;
+    verbalOrders[i].text = trimmed;
+    verbalOrders[i].editedAt = new Date().toISOString();
+    editingVerbalIndex = -1;
+    renderVerbalOrderList();
+    await saveChart();
   }
 
   window.openVerbalOrderModal = function () {
@@ -353,6 +404,7 @@
   };
 
   window.closeVerbalOrderModal = function () {
+    editingVerbalIndex = -1;
     document.getElementById('verbalModalOverlay').style.display = 'none';
   };
 
