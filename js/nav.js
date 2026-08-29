@@ -84,6 +84,7 @@ function buildMenu() {
       <button class="gnav-link" data-action="home"><span class="gnav-icon">&#127968;</span>Home</button>
       <button class="gnav-link" data-action="search"><span class="gnav-icon">&#128269;</span>Search</button>
       <button class="gnav-link${overviewHref ? '' : ' gnav-disabled'}" data-action="overview"><span class="gnav-icon">&#128203;</span>Overview</button>
+      <button class="gnav-link" data-action="profile"><span class="gnav-icon">&#128100;</span>My Profile</button>
       <button class="gnav-link" data-action="admin" style="display:none;"><span class="gnav-icon">&#9881;&#65039;</span>Admin</button>
     </div>
     <div class="gnav-drawer-foot">
@@ -130,6 +131,11 @@ function buildMenu() {
     if (!overviewHref) return;
     close();
     window.location.href = overviewHref;
+  });
+
+  drawer.querySelector('[data-action="profile"]').addEventListener('click', () => {
+    close();
+    window.location.href = basePath + 'profile.html';
   });
 
   drawer.querySelector('[data-action="admin"]').addEventListener('click', () => {

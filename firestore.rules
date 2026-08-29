@@ -23,7 +23,15 @@ service cloud.firestore {
           && request.auth.token.email == 'awarinelite@gmail.com'
           && !exists(/databases/$(database)/documents/users/$(uid)))
       );
-      allow update, delete: if isAdmin();
+      // Admins can update anything. A signed-in user may also edit their own
+      // profile (name, phone, department, etc.) but may not change their own
+      // role or email through this path.
+      allow update: if isAdmin() || (
+        isSignedIn() && request.auth.uid == uid &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.email == resource.data.email
+      );
+      allow delete: if isAdmin();
     }
 
     // Patients and every chart subcollection under them

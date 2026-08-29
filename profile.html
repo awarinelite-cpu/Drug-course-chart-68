@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Profile · Ward Charts</title>
+<link rel="stylesheet" href="js/styles.css">
+<style>
+  .profile-header { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+  .avatar {
+    width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: bold;
+    flex-shrink: 0;
+  }
+  .role-badge {
+    display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px;
+    font-weight: bold; text-transform: uppercase; background: #eff6ff; color: #1d4ed8; margin-top: 4px;
+  }
+  .readonly-field { padding: 10px; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; font-size: 14px; color: #374151; }
+  hr.section-sep { border: none; border-top: 1px solid #e5e7eb; margin: 20px 0; }
+</style>
+</head>
+<body>
+<script type="module" src="js/nav.js"></script>
+<div class="topbar">
+  <div class="brand">My Profile</div>
+  <div class="right">
+    <a href="index.html" class="btn btn-secondary" style="padding:6px 12px;">Back</a>
+    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="logout()">Log Out</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="card-box">
+    <div class="profile-header">
+      <div class="avatar" id="pf_avatar">?</div>
+      <div>
+        <div style="font-size:18px; font-weight:bold;" id="pf_headerName">Loading…</div>
+        <span class="role-badge" id="pf_headerRole"></span>
+      </div>
+    </div>
+
+    <hr class="section-sep">
+
+    <div class="field"><label>Full Name</label><input type="text" id="pf_name"></div>
+    <div class="field"><label>Phone Number</label><input type="text" id="pf_phone" placeholder="e.g. 080XXXXXXXX"></div>
+    <div class="field"><label>Department / Ward</label><input type="text" id="pf_department" placeholder="e.g. Officers Ward"></div>
+
+    <div class="field">
+      <label>Email</label>
+      <div class="readonly-field" id="pf_email"></div>
+    </div>
+    <div class="field">
+      <label>Role</label>
+      <div class="readonly-field" id="pf_role"></div>
+    </div>
+
+    <button class="btn btn-primary" onclick="saveProfile()">Save Changes</button>
+    <div id="pfMsg" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="card-box">
+    <h3 style="margin-top:0;">Change Password</h3>
+    <div class="field"><label>Current Password</label><input type="password" id="pf_curpw"></div>
+    <div class="field"><label>New Password</label><input type="password" id="pf_newpw" placeholder="At least 6 characters"></div>
+    <div class="field"><label>Confirm New Password</label><input type="password" id="pf_newpw2"></div>
+    <button class="btn btn-purple" onclick="changePassword()">Update Password</button>
+    <div id="pwMsg" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth, logout } from "./js/auth-guard.js";
+  import { auth, db } from "./js/firebase.js";
+  import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+  window.logout = logout;
+  let currentUser = null;
+  let currentProfile = null;
+
+  requireAuth((user, profile) => {
+    currentUser = user;
+    currentProfile = profile;
+    renderProfile();
+  });
+
+  function renderProfile() {
+    const p = currentProfile;
+    document.getElementById('pf_headerName').textContent = p.name || 'Unnamed';
+    document.getElementById('pf_headerRole').textContent = p.role || '';
+    document.getElementById('pf_avatar').textContent = (p.name || '?').trim().charAt(0).toUpperCase() || '?';
+    document.getElementById('pf_name').value = p.name || '';
+    document.getElementById('pf_phone').value = p.phone || '';
+    document.getElementById('pf_department').value = p.department || '';
+    document.getElementById('pf_email').textContent = p.email || currentUser.email || '';
+    document.getElementById('pf_role').textContent = p.role || '';
+  }
+
+  window.saveProfile = async function () {
+    const msg = document.getElementById('pfMsg');
+    msg.innerHTML = '';
+    const name = document.getElementById('pf_name').value.trim();
+    if (!name) {
+      msg.innerHTML = '<div class="error-msg">Name cannot be empty.</div>';
+      return;
+    }
+    const updates = {
+      name,
+      phone: document.getElementById('pf_phone').value.trim(),
+      department: document.getElementById('pf_department').value.trim()
+    };
+    try {
+      await updateDoc(doc(db, 'users', currentUser.uid), updates);
+    } catch (e) {
+      msg.innerHTML = '<div class="error-msg">Save failed: ' + (e.code || e.message || 'unknown error') + '</div>';
+      return;
+    }
+    currentProfile = { ...currentProfile, ...updates };
+    renderProfile();
+    msg.innerHTML = '<div class="info-msg">Profile updated.</div>';
+  };
+
+  window.changePassword = async function () {
+    const msg = document.getElementById('pwMsg');
+    msg.innerHTML = '';
+    const curpw = document.getElementById('pf_curpw').value;
+    const newpw = document.getElementById('pf_newpw').value;
+    const newpw2 = document.getElementById('pf_newpw2').value;
+
+    if (!curpw || newpw.length < 6) {
+      msg.innerHTML = '<div class="error-msg">Enter your current password and a new one with at least 6 characters.</div>';
+      return;
+    }
+    if (newpw !== newpw2) {
+      msg.innerHTML = '<div class="error-msg">New passwords do not match.</div>';
+      return;
+    }
+    try {
+      const cred = EmailAuthProvider.credential(currentUser.email, curpw);
+      await reauthenticateWithCredential(currentUser, cred);
+      await updatePassword(currentUser, newpw);
+    } catch (e) {
+      msg.innerHTML = '<div class="error-msg">' + (e.code === 'auth/wrong-password' ? 'Current password is incorrect.' : (e.message || 'Failed to update password.')) + '</div>';
+      return;
+    }
+    document.getElementById('pf_curpw').value = '';
+    document.getElementById('pf_newpw').value = '';
+    document.getElementById('pf_newpw2').value = '';
+    msg.innerHTML = '<div class="info-msg">Password updated.</div>';
+  };
+</script>
+</body>
+</html>
