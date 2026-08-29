@@ -349,8 +349,8 @@
       <input type="text" id="f_hospno">
     </div>
     <div class="info-row">
-      <label>Doctor:</label>
-      <input type="text" id="f_doctor">
+      <label>Diagnosis:</label>
+      <input type="text" id="f_diagnosis">
     </div>
     <div class="info-row">
       <label>Discharge Date:</label>
@@ -405,7 +405,7 @@
 <script>
   const STORAGE_KEY = 'dcc_charts_v1';
   const DRAFT_KEY = 'dcc_draft_v1';
-  const fieldIds = ['f_name','f_admission','f_ward','f_emr','f_age','f_hospno','f_doctor','f_discharge','f_allergies','f_drugsHeader','d1','d2','d3','d4','d5','d6','d7','d8'];
+  const fieldIds = ['f_name','f_admission','f_ward','f_emr','f_age','f_hospno','f_diagnosis','f_discharge','f_allergies','f_drugsHeader','d1','d2','d3','d4','d5','d6','d7','d8'];
 
   function getStore() {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
