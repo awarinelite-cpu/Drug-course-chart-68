@@ -96,7 +96,7 @@
     <h3>Drugs</h3>
     <table class="drugs-table" id="drugsTable">
       <thead>
-        <tr><th style="width:34px;">No.</th><th>Drug Name</th><th>Route</th><th>Frequency</th><th>Action</th><th class="no-print" id="drugsRemoveHeadCol" style="width:34px;"></th></tr>
+        <tr><th style="width:34px;">No.</th><th>Drug Name</th><th>Route</th><th>Frequency</th><th>Action</th><th>Duration</th><th class="no-print" id="drugsRemoveHeadCol" style="width:34px;"></th></tr>
       </thead>
       <tbody id="drugsBody"></tbody>
     </table>
@@ -159,12 +159,24 @@
 
   let chartRef;
   let saveTimer;
-  let drugs = []; // { name, route, frequency, action }
+  let drugs = []; // { name, route, frequency, action, duration }
   let drugsEditMode = false;
   let chartRows = []; // { date, sno, time, dose, route, nurse, remark }
   let chartEditMode = false;
   let currentNurseName = '';
   let verbalOrders = []; // { text, nurse, at }
+
+  // Colors so a drug's action state (ongoing/completed/etc.) is easy to spot at a glance.
+  const ACTION_COLORS = {
+    'Ongoing': '#2563eb',
+    'Completed': '#16a34a',
+    'Discontinued': '#dc2626',
+    'Withheld': '#d97706',
+    'Other': '#6b7280'
+  };
+  function actionColor(action) {
+    return ACTION_COLORS[action] || '#9ca3af';
+  }
 
   function makeSelect(options, value) {
     const sel = document.createElement('select');
@@ -189,12 +201,27 @@
     document.getElementById('drugsRemoveHeadCol').style.display = 'none';
     drugs.forEach((d, i) => {
       const tr = document.createElement('tr');
-      const cells = [i + 1, d.name || '—', d.route || '—', d.frequency || '—', d.action || '—'];
-      cells.forEach(val => {
+      [i + 1, d.name || '—', d.route || '—', d.frequency || '—'].forEach(val => {
         const td = document.createElement('td');
         td.textContent = val;
         tr.appendChild(td);
       });
+
+      const tdAction = document.createElement('td');
+      if (d.action) {
+        const badge = document.createElement('span');
+        badge.textContent = d.action;
+        badge.style.cssText = 'display:inline-block; padding:2px 8px; border-radius:10px; color:#fff; font-size:11px; font-weight:bold; background:' + actionColor(d.action) + ';';
+        tdAction.appendChild(badge);
+      } else {
+        tdAction.textContent = '—';
+      }
+      tr.appendChild(tdAction);
+
+      const tdDuration = document.createElement('td');
+      tdDuration.textContent = d.duration || '—';
+      tr.appendChild(tdDuration);
+
       tbody.appendChild(tr);
     });
   }
@@ -232,9 +259,24 @@
 
       const tdAction = document.createElement('td');
       const actionSel = makeSelect(ACTION_OPTIONS, d.action || '');
-      actionSel.addEventListener('change', () => { drugs[i].action = actionSel.value; scheduleSave(); });
+      function applyActionColor() {
+        actionSel.style.background = d.action ? actionColor(d.action) : '';
+        actionSel.style.color = d.action ? '#fff' : '';
+        actionSel.style.fontWeight = d.action ? 'bold' : 'normal';
+      }
+      applyActionColor();
+      actionSel.addEventListener('change', () => { drugs[i].action = actionSel.value; applyActionColor(); scheduleSave(); });
       tdAction.appendChild(actionSel);
       tr.appendChild(tdAction);
+
+      const tdDuration = document.createElement('td');
+      const durationInput = document.createElement('input');
+      durationInput.type = 'text';
+      durationInput.placeholder = 'e.g. 3/7 or 5 days';
+      durationInput.value = d.duration || '';
+      durationInput.addEventListener('input', () => { drugs[i].duration = durationInput.value; scheduleSave(); });
+      tdDuration.appendChild(durationInput);
+      tr.appendChild(tdDuration);
 
       const tdRemove = document.createElement('td');
       tdRemove.className = 'no-print';
@@ -274,7 +316,7 @@
   };
 
   window.addDrug = function () {
-    drugs.push({ name: '', route: '', frequency: '', action: '' });
+    drugs.push({ name: '', route: '', frequency: '', action: '', duration: '' });
     renderDrugsTable();
     refreshDrugSnoList();
     scheduleSave();
@@ -611,7 +653,7 @@
     if (snap.exists()) {
       const data = snap.data();
       fieldIds.forEach(id => { if (document.getElementById(id)) document.getElementById(id).value = data[id] || ''; });
-      drugs = (data.drugs && data.drugs.length) ? data.drugs : Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '' }));
+      drugs = (data.drugs && data.drugs.length) ? data.drugs : Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '', duration: '' }));
       renderDrugsTable();
       chartRows = (data.rows && data.rows.length)
         ? data.rows.map(r => Array.isArray(r)
@@ -621,7 +663,7 @@
       chartRows.forEach(row => { if (row.sno && !row.route) row.route = computeRouteFromSno(row.sno); });
       verbalOrders = data.verbalOrders || [];
     } else {
-      drugs = Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '' }));
+      drugs = Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '', duration: '' }));
       renderDrugsTable();
       chartRows = Array(18).fill(null).map(() => defaultRow());
       verbalOrders = [];
