@@ -89,7 +89,7 @@
     <div class="info-row"><label>WARD:</label><span class="val" id="print_ward"></span></div>
     <div class="info-row"><label>Hospital No:</label><span class="val" id="print_hospno"></span></div>
     <div class="info-row"><label>AGE:</label><span class="val" id="print_age"></span></div>
-    <div class="info-row"><label>Date of Admission:</label><span class="val" id="print_admission"></span></div>
+    <div class="info-row"><label>Date of Admission:</label><input type="date" id="f_admission"></div>
     <div class="info-row"><label>Diagnosis:</label><input type="text" id="f_diagnosis" placeholder="Enter diagnosis for this chart"></div>
     <div class="info-row"><label>Discharge Date:</label><input type="date" id="f_discharge"></div>
   </div>
@@ -196,7 +196,7 @@
   const FREQ_OPTIONS = ['', 'OD', 'BD', 'TDS', 'QDS', 'STAT', 'PRN', 'Q4H', 'Q6H', 'Q8H', 'Q12H', 'Weekly', 'Other'];
   const ACTION_OPTIONS = ['', 'Ongoing', 'Completed', 'Discontinued', 'Withheld', 'Other'];
   const STATUS_LABELS = { referred: 'Referred to another hospital', transferred: 'Transferred to another ward', discharged: 'Discharged' };
-  const fieldIds = ['f_discharge', 'f_diagnosis']; // only fields not sourced from the patient record
+  const fieldIds = ['f_admission', 'f_discharge', 'f_diagnosis']; // only fields not sourced from the patient record
 
   let chartRef;
   let saveTimer;
@@ -891,7 +891,10 @@
     document.getElementById('print_ward').textContent = patient.ward || '';
     document.getElementById('print_hospno').textContent = patient.hospNo || '';
     document.getElementById('print_age').textContent = patient.age || '';
-    document.getElementById('print_admission').textContent = patient.admission || '';
+    // Date of Admission defaults to the date set when the patient was registered,
+    // but stays editable here (calendar picker) and whatever the nurse sets on
+    // this chart takes precedence once saved.
+    document.getElementById('f_admission').value = patient.admissionDate || '';
 
     chartRef = doc(db, 'patients', patientId, 'drugCourseChart', 'main');
     let data = null;
@@ -908,7 +911,9 @@
     }
 
     if (data) {
-      fieldIds.forEach(id => { if (document.getElementById(id)) document.getElementById(id).value = data[id] || ''; });
+      // f_admission keeps the patient-record default set above unless this
+      // chart has its own explicitly-saved value.
+      fieldIds.forEach(id => { if (document.getElementById(id) && data[id]) document.getElementById(id).value = data[id]; });
       drugs = (data.drugs && data.drugs.length) ? data.drugs : Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '', duration: '' }));
       renderDrugsTable();
       chartRows = (data.rows && data.rows.length)

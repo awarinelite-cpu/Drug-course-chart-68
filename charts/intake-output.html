@@ -38,6 +38,38 @@
 
 <script type="module">
   import { initEntryChart } from "../js/entry-chart.js";
+
+  function dayKeyOf(row) { return (row.time || '').slice(0, 10); }
+
+  // Running balance for each entry, resetting at the start of each calendar
+  // day (the standard 24-hour I&O period). Rows come in oldest→newest.
+  function deriveIOBalance(ascRows) {
+    let currentDay = null;
+    let running = 0;
+    return ascRows.map(row => {
+      const day = dayKeyOf(row);
+      if (day !== currentDay) { currentDay = day; running = 0; }
+      const intake = parseFloat(row.intakeAmount) || 0;
+      const output = parseFloat(row.outputAmount) || 0;
+      running += intake - output;
+      return { ...row, balance: running };
+    });
+  }
+
+  // Totals for the current 24-hour period (today), used by the summary card
+  // and the auto-saved 24-hour summary document.
+  function computeTodayTotals(rawRows) {
+    const today = new Date().toISOString().slice(0, 10);
+    let intake = 0, output = 0;
+    rawRows.forEach(row => {
+      if (dayKeyOf(row) === today) {
+        intake += parseFloat(row.intakeAmount) || 0;
+        output += parseFloat(row.outputAmount) || 0;
+      }
+    });
+    return { intake, output, balance: intake - output };
+  }
+
   initEntryChart({
     collectionName: 'intakeOutput',
     columns: [
@@ -46,8 +78,15 @@
       { key: 'intakeAmount', label: 'Intake (ml)', type: 'text' },
       { key: 'outputType', label: 'Output Type', type: 'text' },
       { key: 'outputAmount', label: 'Output (ml)', type: 'text' },
+      { key: 'balance', label: 'Balance (ml)', computed: true, abnormal: v => parseFloat(v) < 0, deficitShade: true },
       { key: 'notes', label: 'Notes', type: 'text' }
-    ]
+    ],
+    deriveRows: deriveIOBalance,
+    summary: {
+      label: '24-Hour Balance (Today)',
+      storeAt: ['intakeOutputSummary', 'current'],
+      compute: computeTodayTotals
+    }
   });
 </script>
 </body>

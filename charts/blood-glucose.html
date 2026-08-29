@@ -86,12 +86,12 @@
       title: '6 Points Glycemic Chart',
       columns: [
         { label: 'Date', type: 'date' },
-        { label: 'FBS', type: 'text' },
-        { label: '2hrs Post Prandial', type: 'text' },
-        { label: 'Pre-Lunch', type: 'text' },
-        { label: '2hrs Post Lunch', type: 'text' },
-        { label: 'Pre-Dinner', type: 'text' },
-        { label: '2hrs Post Dinner', type: 'text' },
+        { label: 'FBS', type: 'text', glucose: true },
+        { label: '2hrs Post Prandial', type: 'text', glucose: true },
+        { label: 'Pre-Lunch', type: 'text', glucose: true },
+        { label: '2hrs Post Lunch', type: 'text', glucose: true },
+        { label: 'Pre-Dinner', type: 'text', glucose: true },
+        { label: '2hrs Post Dinner', type: 'text', glucose: true },
         { label: 'Remark', type: 'text' }
       ]
     },
@@ -99,13 +99,19 @@
       title: '3 Points Glycemic Chart',
       columns: [
         { label: 'Date', type: 'date' },
-        { label: 'FBS', type: 'text' },
-        { label: 'RBS', type: 'text' },
-        { label: 'RBS', type: 'text' },
+        { label: 'FBS', type: 'text', glucose: true },
+        { label: 'RBS', type: 'text', glucose: true },
+        { label: 'RBS', type: 'text', glucose: true },
         { label: 'Remark', type: 'text' }
       ]
     }
   };
+
+  // Inpatient glycemic flags: hypoglycemia below 70 mg/dL, hyperglycemia above 180 mg/dL.
+  function isAbnormalGlucose(v) {
+    const n = parseFloat(v);
+    return !isNaN(n) && (n < 70 || n > 180);
+  }
 
   let chartRef;
   let saveTimer;
@@ -148,11 +154,13 @@
         const input = document.createElement('input');
         input.type = col.type;
         if (dataRow && dataRow[c] !== undefined) input.value = dataRow[c];
+        const refreshShading = () => td.classList.toggle('flag-abnormal', col.glucose && isAbnormalGlucose(input.value));
         if (isArchived) {
           input.readOnly = true;
         } else {
-          input.addEventListener('input', scheduleSave);
+          input.addEventListener('input', () => { scheduleSave(); refreshShading(); });
         }
+        refreshShading();
         td.appendChild(input);
         tr.appendChild(td);
       });
