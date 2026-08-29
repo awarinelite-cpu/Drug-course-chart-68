@@ -84,7 +84,9 @@
     deriveRows: deriveIOBalance,
     summary: {
       label: '24-Hour Balance (Today)',
+      archivedLabel: 'Balance at Close (Last 24-Hour Period)',
       storeAt: ['intakeOutputSummary', 'current'],
+      archivedKey: 'intakeOutputSummary',
       compute: computeTodayTotals
     }
   });

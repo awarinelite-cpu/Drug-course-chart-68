@@ -802,11 +802,19 @@
     } catch (e) { /* fine to archive with blank glycemic data if this fails */ }
 
     let vitalsArr = [], ioArr = [], seizureArr = [];
+    let ioSummary = { intake: 0, output: 0, balance: 0 };
     try {
       [vitalsArr, ioArr, seizureArr] = await Promise.all([
         fetchEntries('vitals'), fetchEntries('intakeOutput'), fetchEntries('seizure')
       ]);
     } catch (e) { /* fine to archive with whatever we could gather */ }
+    try {
+      const ioSumSnap = await getDoc(doc(db, 'patients', patientId, 'intakeOutputSummary', 'current'));
+      if (ioSumSnap.exists()) {
+        const d = ioSumSnap.data();
+        ioSummary = { intake: d.intake || 0, output: d.output || 0, balance: d.balance || 0 };
+      }
+    } catch (e) { /* fine to archive without the summary snapshot — it's derivable from intakeOutput entries */ }
 
     const drugChartData = {};
     fieldIds.forEach(id => drugChartData[id] = document.getElementById(id).value);
@@ -825,6 +833,7 @@
       bloodGlucose: bgData,
       vitals: vitalsArr,
       intakeOutput: ioArr,
+      intakeOutputSummary: ioSummary,
       seizure: seizureArr
     };
 
@@ -846,7 +855,10 @@
       }
     }
 
-    // Reset every live chart back to blank for the next admission.
+    // Reset every live chart back to blank for the next admission. This never touches
+    // the admissions document just written above — that's a permanent, standalone
+    // record; each future discharge/referral/transfer adds another one alongside it,
+    // and readmission always starts a fresh live chart rather than editing history.
     const blankDrugChart = {};
     fieldIds.forEach(id => blankDrugChart[id] = '');
     blankDrugChart.rows = Array(18).fill(null).map(() => defaultRow());
@@ -858,6 +870,7 @@
       await Promise.all([
         setDoc(chartRef, blankDrugChart), // full overwrite (no merge) so old data doesn't linger
         setDoc(doc(db, 'patients', patientId, 'bloodGlucose', 'main'), { chartType: '6point', rows: [], updatedAt: serverTimestamp() }),
+        setDoc(doc(db, 'patients', patientId, 'intakeOutputSummary', 'current'), { intake: 0, output: 0, balance: 0, periodDate: new Date().toISOString().slice(0, 10), updatedAt: serverTimestamp() }),
         clearEntries('vitals'),
         clearEntries('intakeOutput'),
         clearEntries('seizure')

@@ -14,8 +14,11 @@ import {
 // Optional top-level options:
 //   deriveRows(ascRows) — given entries sorted oldest→newest, return the same rows with any
 //                         computed fields (e.g. a running balance) attached.
-//   summary: { label, storeAt: [collName, docId], compute(rawRows) => {intake, output, balance} }
+//   summary: { label, storeAt: [collName, docId], archivedKey, compute(rawRows) => {intake, output, balance} }
 //          — renders a small auto-updating, auto-saved 24-hour totals card above the table.
+//            archivedKey names the field on a closed admission doc holding the totals that were
+//            preserved at archive time (compute() re-derives "today", which is meaningless for a
+//            historical record, so archived views prefer the preserved snapshot when present).
 
 export function initEntryChart({ collectionName, columns, deriveRows, summary }) {
   const patientId = getPatientIdFromUrl();
@@ -62,9 +65,10 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
     }
   }
 
-  function renderSummaryCard(rawRows) {
+  function renderSummaryCard(rawRows, presetTotals) {
     if (!summary) return;
-    const totals = summary.compute(rawRows);
+    const totals = presetTotals || summary.compute(rawRows);
+    const label = presetTotals && summary.archivedLabel ? summary.archivedLabel : summary.label;
     let box = document.getElementById('ioSummaryBox');
     if (!box) {
       box = document.createElement('div');
@@ -75,13 +79,13 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
     }
     const deficit = totals.balance < 0;
     box.innerHTML =
-      '<h3 style="margin-top:0;">' + summary.label + '</h3>' +
+      '<h3 style="margin-top:0;">' + label + '</h3>' +
       '<div style="display:flex; gap:18px; flex-wrap:wrap; font-size:14px;">' +
       '<div><b>Total Intake:</b> ' + totals.intake + ' ml</div>' +
       '<div><b>Total Output:</b> ' + totals.output + ' ml</div>' +
       '<div class="' + (deficit ? 'flag-deficit' : '') + '" style="padding:2px 8px; border-radius:4px;"><b>Balance:</b> ' + totals.balance + ' ml' + (deficit ? ' (deficit)' : '') + '</div>' +
       '</div>' +
-      '<div style="font-size:11px; color:#777; margin-top:6px;">Recalculates automatically as entries are added, and saves every 24 hours.</div>';
+      '<div style="font-size:11px; color:#777; margin-top:6px;">' + (presetTotals ? 'Saved at the time this admission was closed.' : 'Recalculates automatically as entries are added, and saves every 24 hours.') + '</div>';
   }
 
   async function saveSummary(rawRows) {
@@ -118,7 +122,12 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
       buildHeadRow();
       const tbody = document.getElementById('entryBody');
       const rawRows = (admData[collectionName] || []);
-      if (summary) renderSummaryCard(rawRows);
+      if (summary) {
+        // Prefer the totals preserved at archive time (compute() re-derives "today",
+        // which doesn't mean anything for a historical record).
+        const preserved = summary.archivedKey ? admData[summary.archivedKey] : null;
+        renderSummaryCard(rawRows, preserved || undefined);
+      }
       const entries = withDerivedRows(rawRows);
       if (!entries.length) {
         const tr = document.createElement('tr');
