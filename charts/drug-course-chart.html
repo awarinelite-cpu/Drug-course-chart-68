@@ -133,11 +133,27 @@
   <div class="no-print" id="statusActionBox" style="margin-top:18px; padding-top:16px; border-top:1px solid #e5e7eb;">
     <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:6px;">Patient Status</label>
     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-      <select id="statusAction" style="width:auto; min-width:220px;">
+      <select id="statusAction" style="width:auto; min-width:220px;" onchange="toggleTransferWard()">
         <option value="">Select action…</option>
         <option value="referred">Referred to another hospital</option>
         <option value="transferred">Transferred to another ward</option>
         <option value="discharged">Discharged</option>
+      </select>
+      <select id="transferWardSelect" style="display:none; width:auto; min-width:220px;">
+        <option value="">Select ward…</option>
+        <option value='"A" WARD'>"A" WARD</option>
+        <option value="ACCIDENT &amp; EMERGENCY">ACCIDENT &amp; EMERGENCY</option>
+        <option value="GYNAE WARD">GYNAE WARD</option>
+        <option value="MATERNITY WARD">MATERNITY WARD</option>
+        <option value="PEDIATRIC/NICU WARD">PEDIATRIC/NICU WARD</option>
+        <option value="THEATER">THEATER</option>
+        <option value="ICU">ICU</option>
+        <option value="FEMALE MEDICAL WARD">FEMALE MEDICAL WARD</option>
+        <option value="FEMALE SURGICAL WARD">FEMALE SURGICAL WARD</option>
+        <option value="MALE MEDICAL WARD">MALE MEDICAL WARD</option>
+        <option value="ORTHOPEDIC WARD">ORTHOPEDIC WARD</option>
+        <option value="EXTENSION WARD">EXTENSION WARD</option>
+        <option value="OFFICERS WARD">OFFICERS WARD</option>
       </select>
       <button class="btn btn-primary" style="padding:8px 14px; font-size:13px;" onclick="applyStatusAction()">Apply</button>
     </div>
@@ -728,6 +744,13 @@
   }
 
   // --- Patient status change: referred / transferred / discharged ---
+  window.toggleTransferWard = function () {
+    const reason = document.getElementById('statusAction').value;
+    const wardSelect = document.getElementById('transferWardSelect');
+    wardSelect.style.display = reason === 'transferred' ? 'inline-block' : 'none';
+    if (reason !== 'transferred') wardSelect.value = '';
+  };
+
   // Closes out the ENTIRE admission — Drug Course Chart, Vital Signs, Glycemic
   // Chart, Intake & Output, and Seizure Chart — bundling all five into one
   // admission folder under patients/{id}/admissions, then wipes all five live
@@ -741,7 +764,16 @@
       msg.innerHTML = '<span style="color:#dc2626;">Please select an action first.</span>';
       return;
     }
-    const label = STATUS_LABELS[reason];
+    let label = STATUS_LABELS[reason];
+    let transferWard = '';
+    if (reason === 'transferred') {
+      transferWard = document.getElementById('transferWardSelect').value;
+      if (!transferWard) {
+        msg.innerHTML = '<span style="color:#dc2626;">Please select which ward the patient is being transferred to.</span>';
+        return;
+      }
+      label = 'Transferred to ' + transferWard;
+    }
     if (!confirm('Confirm: ' + label + '?\n\nAll care records for this admission (drug chart, vitals, glycemic chart, intake & output, seizure chart) will be saved together to Overview, and fresh charts will open for this patient.')) return;
 
     msg.innerHTML = 'Saving all charts for this admission…';
@@ -786,6 +818,7 @@
       diagnosis: document.getElementById('f_diagnosis').value,
       archiveReason: reason,
       archiveReasonLabel: label,
+      transferWard: transferWard || null,
       archivedAt: serverTimestamp(),
       archivedAtDisplay: new Date().toLocaleString(),
       drugCourseChart: drugChartData,
