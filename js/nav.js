@@ -11,6 +11,13 @@ function getPatientIdFromUrl() {
   return new URLSearchParams(window.location.search).get('patient');
 }
 
+// Falls back to the currently selected patient (stored by index.html in
+// sessionStorage) so the Overview link still works from the home page, where
+// the selection lives in session storage rather than the URL.
+function getActivePatientId() {
+  return getPatientIdFromUrl() || sessionStorage.getItem('selectedPatientId');
+}
+
 function injectStyles() {
   if (document.getElementById('gnavStyles')) return;
   const style = document.createElement('style');
@@ -68,7 +75,7 @@ function injectStyles() {
 }
 
 function buildMenu() {
-  const patientId = getPatientIdFromUrl();
+  const patientId = getActivePatientId();
   const overviewHref = patientId ? basePath + 'charts/overview.html?patient=' + encodeURIComponent(patientId) : null;
 
   const wrap = document.createElement('div');
