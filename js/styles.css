@@ -77,5 +77,9 @@ table.entries th { background: #f3f4f6; text-transform: uppercase; font-size: 11
   .topbar { padding: 10px; }
   .container { padding: 14px 10px; }
   .search-row { flex-direction: column; }
+  /* In a column layout the row's "flex: 1 1 200px" turns into a HEIGHT basis
+     instead of a width one, which is what was stretching the search box tall.
+     Reset it to a normal single-line, full-width input on mobile. */
+  .search-row input { flex: none; width: 100%; }
   .patient-banner { flex-direction: column; align-items: flex-start; }
 }
