@@ -1,5 +1,6 @@
 import { requireAuth } from "./auth-guard.js";
 import { loadPatientHeader, getPatientIdFromUrl } from "./chart-common.js";
+import { lockBackTo } from "./back-guard.js";
 import { db } from "./firebase.js";
 import {
   collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp
@@ -8,6 +9,7 @@ import {
 export function initEntryChart({ collectionName, columns }) {
   const patientId = getPatientIdFromUrl();
   if (!patientId) { window.location.href = '../index.html'; return; }
+  lockBackTo('../index.html');
 
   requireAuth(async (user, profile) => {
     await loadPatientHeader(patientId, { name: 'pb_name', meta: 'pb_meta', allergy: 'pb_allergy' });

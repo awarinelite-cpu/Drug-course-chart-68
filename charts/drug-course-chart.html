@@ -146,11 +146,13 @@
 <script type="module">
   import { requireAuth } from "../js/auth-guard.js";
   import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
+  import { lockBackTo } from "../js/back-guard.js";
   import { db } from "../js/firebase.js";
   import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
   const patientId = getPatientIdFromUrl();
   if (!patientId) window.location.href = '../index.html';
+  lockBackTo('../index.html');
 
   const ROUTE_OPTIONS = ['', 'Oral', 'IV', 'IM', 'SC', 'Sublingual', 'Topical', 'Rectal', 'Inhalation', 'NG Tube', 'Other'];
   const FREQ_OPTIONS = ['', 'OD', 'BD', 'TDS', 'QDS', 'STAT', 'PRN', 'Q4H', 'Q6H', 'Q8H', 'Q12H', 'Weekly', 'Other'];
@@ -176,6 +178,75 @@
   };
   function actionColor(action) {
     return ACTION_COLORS[action] || '#9ca3af';
+  }
+
+  // --- Auto-complete a drug once its Duration has elapsed ---
+  // Accepts common shorthand: "3/7" (3 days), "2/52" (2 weeks), "1/12" (1 month),
+  // "5 days", "2 weeks", "1 month", or a bare number (treated as days).
+  function parseDurationDays(text) {
+    if (!text) return null;
+    const t = text.trim().toLowerCase();
+    let m = t.match(/^(\d+)\s*\/\s*7$/);
+    if (m) return parseInt(m[1], 10);
+    m = t.match(/^(\d+)\s*\/\s*52$/);
+    if (m) return parseInt(m[1], 10) * 7;
+    m = t.match(/^(\d+)\s*\/\s*12$/);
+    if (m) return parseInt(m[1], 10) * 30;
+    m = t.match(/^(\d+)\s*(day|days|d)$/);
+    if (m) return parseInt(m[1], 10);
+    m = t.match(/^(\d+)\s*(week|weeks|wk|wks)$/);
+    if (m) return parseInt(m[1], 10) * 7;
+    m = t.match(/^(\d+)\s*(month|months|mo)$/);
+    if (m) return parseInt(m[1], 10) * 30;
+    m = t.match(/^(\d+)$/);
+    if (m) return parseInt(m[1], 10);
+    return null;
+  }
+
+  // If a drug has no recorded start date yet, fall back to the earliest date
+  // it was actually administered on the chart below (matched by Drug S/N).
+  function inferStartDateForDrug(index) {
+    let earliest = null;
+    chartRows.forEach(row => {
+      if (!row.date) return;
+      const nums = (row.sno || '').match(/\d+/g) || [];
+      if (nums.some(n => parseInt(n, 10) === index + 1)) {
+        if (!earliest || row.date < earliest) earliest = row.date;
+      }
+    });
+    return earliest;
+  }
+
+  // Walks the drug list and flips Action to "Completed" for any drug whose
+  // duration has run out, as long as it hasn't already been manually set to
+  // a status the nurse controls directly (Discontinued/Withheld/Other).
+  function checkDrugCompletion() {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    let changed = false;
+    drugs.forEach((d, i) => {
+      const days = parseDurationDays(d.duration);
+      if (days == null) return;
+      if (d.action === 'Discontinued' || d.action === 'Withheld' || d.action === 'Other' || d.action === 'Completed') return;
+
+      let start = d.startDate;
+      if (!start) start = inferStartDateForDrug(i);
+      if (!start) return;
+      if (!d.startDate) { d.startDate = start; changed = true; }
+
+      const startDate = new Date(start + 'T00:00:00');
+      if (isNaN(startDate)) return;
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + days);
+
+      if (today >= endDate && d.action !== 'Completed') {
+        d.action = 'Completed';
+        changed = true;
+      }
+    });
+    if (changed) {
+      renderDrugsTable();
+      scheduleSave();
+    }
   }
 
   function makeSelect(options, value) {
@@ -274,7 +345,14 @@
       durationInput.type = 'text';
       durationInput.placeholder = 'e.g. 3/7 or 5 days';
       durationInput.value = d.duration || '';
-      durationInput.addEventListener('input', () => { drugs[i].duration = durationInput.value; scheduleSave(); });
+      durationInput.addEventListener('input', () => {
+        drugs[i].duration = durationInput.value;
+        if (durationInput.value && !drugs[i].startDate) {
+          drugs[i].startDate = new Date().toISOString().slice(0, 10);
+        }
+        scheduleSave();
+        checkDrugCompletion();
+      });
       tdDuration.appendChild(durationInput);
       tr.appendChild(tdDuration);
 
@@ -670,8 +748,17 @@
     }
     renderVerbalOrderBtn();
     renderChartTable();
+    checkDrugCompletion();
     fieldIds.forEach(id => document.getElementById(id).addEventListener('input', scheduleSave));
     document.getElementById('saveStatus').textContent = 'Changes save automatically';
+  });
+
+  // Re-check periodically so a drug flips to "Completed" on its own even if
+  // no one touches the page the moment its duration runs out, and whenever
+  // the tab is brought back into focus (e.g. next morning's shift).
+  setInterval(checkDrugCompletion, 60 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkDrugCompletion();
   });
 </script>
 </body>

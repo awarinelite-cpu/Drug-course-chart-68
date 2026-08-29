@@ -65,11 +65,13 @@
 <script type="module">
   import { requireAuth } from "../js/auth-guard.js";
   import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
+  import { lockBackTo } from "../js/back-guard.js";
   import { db } from "../js/firebase.js";
   import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
   const patientId = getPatientIdFromUrl();
   if (!patientId) window.location.href = '../index.html';
+  lockBackTo('../index.html');
 
   const CHART_DEFS = {
     '6point': {
