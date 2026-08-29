@@ -6,7 +6,7 @@
 <title>Drug Course Chart</title>
 <link rel="stylesheet" href="../js/styles.css">
 <style>
-  .sheet { background:#fff; max-width:900px; margin:20px auto; padding:30px; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .sheet { background:#fff; max-width:950px; margin:20px auto; padding:30px; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
   .header h1 { font-family: Impact, "Arial Black", sans-serif; font-size:26px; text-align:center; text-transform:uppercase; margin:0 0 4px; }
   .header-sub { text-align:center; margin-bottom:16px; }
   .header-sub h2 { font-size:19px; text-decoration:underline; margin:0; }
@@ -15,14 +15,21 @@
   .info-row label { font-weight:bold; margin-right:6px; white-space:nowrap; }
   .info-row input { flex:1; border:none; border-bottom:1px solid #000; padding:2px 4px; font-size:14px; background:transparent; }
   .info-row span.val { flex:1; border-bottom:1px solid #000; padding:2px 4px; font-size:14px; }
-  .drug-num-list { display:grid; grid-template-columns:1fr 1fr; gap:4px 30px; margin-bottom:14px; }
-  .drug-num-row { display:flex; align-items:baseline; font-size:14px; }
-  .drug-num-row span { width:20px; }
-  .drug-num-row input { flex:1; border:none; border-bottom:1px solid #000; padding:2px 4px; font-size:14px; background:transparent; }
+
+  .drugs-block { margin-bottom:18px; }
+  .drugs-block h3 { font-size:15px; margin:0 0 8px; text-transform:uppercase; }
+  table.drugs-table { width:100%; border-collapse:collapse; margin-bottom:8px; }
+  table.drugs-table th, table.drugs-table td { border:1px solid #000; padding:5px 4px; font-size:12px; text-align:center; }
+  table.drugs-table th { background:#f2f2f2; text-transform:uppercase; }
+  table.drugs-table td input, table.drugs-table td select { width:100%; border:none; background:transparent; text-align:center; font-size:12px; font-family:inherit; }
+  table.drugs-table td.no-col { width:34px; font-weight:bold; }
+  table.drugs-table td.remove-col { width:34px; }
+  .remove-drug-btn { background:#dc2626; color:#fff; border:none; border-radius:4px; padding:3px 7px; font-size:11px; cursor:pointer; }
+
   table.chart { width:100%; border-collapse:collapse; }
   table.chart th, table.chart td { border:1px solid #000; padding:5px 3px; font-size:12px; text-align:center; }
   table.chart th { background:#f2f2f2; text-transform:uppercase; }
-  table.chart td input { width:100%; border:none; background:transparent; text-align:center; font-size:12px; font-family:inherit; }
+  table.chart td input, table.chart td select { width:100%; border:none; background:transparent; text-align:center; font-size:12px; font-family:inherit; }
   .table-wrap { overflow-x:auto; }
   @media print {
     .no-print { display:none !important; }
@@ -63,18 +70,15 @@
     <div class="info-row"><label>Discharge Date:</label><input type="date" id="f_discharge"></div>
   </div>
 
-  <div class="drug-num-list">
-    <div style="font-weight:bold; grid-column:1/-1; display:flex; align-items:baseline;">
-      DRUGS:&nbsp;<input type="text" id="f_drugsHeader" style="flex:1; border:none; border-bottom:1px solid #000; max-width:400px;">
-    </div>
-    <div class="drug-num-row"><span>1</span><input type="text" id="d1"></div>
-    <div class="drug-num-row"><span>5</span><input type="text" id="d5"></div>
-    <div class="drug-num-row"><span>2</span><input type="text" id="d2"></div>
-    <div class="drug-num-row"><span>6</span><input type="text" id="d6"></div>
-    <div class="drug-num-row"><span>3</span><input type="text" id="d3"></div>
-    <div class="drug-num-row"><span>7</span><input type="text" id="d7"></div>
-    <div class="drug-num-row"><span>4</span><input type="text" id="d4"></div>
-    <div class="drug-num-row"><span>8</span><input type="text" id="d8"></div>
+  <div class="drugs-block">
+    <h3>Drugs</h3>
+    <table class="drugs-table" id="drugsTable">
+      <thead>
+        <tr><th style="width:34px;">No.</th><th>Drug Name</th><th>Route</th><th>Frequency</th><th>Action</th><th class="no-print" style="width:34px;"></th></tr>
+      </thead>
+      <tbody id="drugsBody"></tbody>
+    </table>
+    <button class="btn btn-success no-print" style="padding:6px 12px; font-size:12px;" onclick="addDrug()">+ Add Drug</button>
   </div>
 
   <div class="table-wrap">
@@ -98,24 +102,195 @@
   const patientId = getPatientIdFromUrl();
   if (!patientId) window.location.href = '../index.html';
 
-  const fieldIds = ['f_ward','f_hospno','f_age','f_admission','f_discharge','f_drugsHeader','d1','d2','d3','d4','d5','d6','d7','d8'];
+  const ROUTE_OPTIONS = ['', 'Oral', 'IV', 'IM', 'SC', 'Sublingual', 'Topical', 'Rectal', 'Inhalation', 'NG Tube', 'Other'];
+  const FREQ_OPTIONS = ['', 'OD', 'BD', 'TDS', 'QDS', 'STAT', 'PRN', 'Q4H', 'Q6H', 'Q8H', 'Q12H', 'Weekly', 'Other'];
+  const ACTION_OPTIONS = ['', 'Ongoing', 'Completed', 'Discontinued', 'Withheld', 'Other'];
+  const fieldIds = ['f_ward', 'f_hospno', 'f_age', 'f_admission', 'f_discharge'];
+
   let chartRef;
   let saveTimer;
+  let drugs = []; // { name, route, frequency, action }
+
+  function makeSelect(options, value) {
+    const sel = document.createElement('select');
+    options.forEach(opt => {
+      const o = document.createElement('option');
+      o.value = opt;
+      o.textContent = opt || '—';
+      if (opt === value) o.selected = true;
+      sel.appendChild(o);
+    });
+    return sel;
+  }
+
+  function renderDrugsTable() {
+    const tbody = document.getElementById('drugsBody');
+    tbody.innerHTML = '';
+    drugs.forEach((d, i) => {
+      const tr = document.createElement('tr');
+
+      const tdNo = document.createElement('td');
+      tdNo.textContent = i + 1;
+      tr.appendChild(tdNo);
+
+      const tdName = document.createElement('td');
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.value = d.name || '';
+      nameInput.addEventListener('input', () => { drugs[i].name = nameInput.value; refreshDrugDropdowns(); scheduleSave(); });
+      tdName.appendChild(nameInput);
+      tr.appendChild(tdName);
+
+      const tdRoute = document.createElement('td');
+      const routeSel = makeSelect(ROUTE_OPTIONS, d.route || '');
+      routeSel.addEventListener('change', () => { drugs[i].route = routeSel.value; refreshDrugDropdowns(); scheduleSave(); });
+      tdRoute.appendChild(routeSel);
+      tr.appendChild(tdRoute);
+
+      const tdFreq = document.createElement('td');
+      const freqSel = makeSelect(FREQ_OPTIONS, d.frequency || '');
+      freqSel.addEventListener('change', () => { drugs[i].frequency = freqSel.value; scheduleSave(); });
+      tdFreq.appendChild(freqSel);
+      tr.appendChild(tdFreq);
+
+      const tdAction = document.createElement('td');
+      const actionSel = makeSelect(ACTION_OPTIONS, d.action || '');
+      actionSel.addEventListener('change', () => { drugs[i].action = actionSel.value; scheduleSave(); });
+      tdAction.appendChild(actionSel);
+      tr.appendChild(tdAction);
+
+      const tdRemove = document.createElement('td');
+      tdRemove.className = 'no-print';
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-drug-btn';
+      removeBtn.textContent = 'x';
+      removeBtn.onclick = () => {
+        if (confirm('Remove this drug from the list?')) {
+          drugs.splice(i, 1);
+          renderDrugsTable();
+          refreshDrugDropdowns();
+          scheduleSave();
+        }
+      };
+      tdRemove.appendChild(removeBtn);
+      tr.appendChild(tdRemove);
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  window.addDrug = function () {
+    drugs.push({ name: '', route: '', frequency: '', action: '' });
+    renderDrugsTable();
+    refreshDrugDropdowns();
+    scheduleSave();
+  };
+
+  function drugSnoOptions() {
+    return [''].concat(drugs.map((d, i) => (i + 1) + (d.name ? ' - ' + d.name : '')));
+  }
+
+  function refreshDrugDropdowns() {
+    document.querySelectorAll('#chartBody select.drug-sno').forEach(sel => {
+      const current = sel.value;
+      sel.innerHTML = '';
+      drugSnoOptions().forEach(opt => {
+        const o = document.createElement('option');
+        o.value = opt;
+        o.textContent = opt || '—';
+        if (opt === current) o.selected = true;
+        sel.appendChild(o);
+      });
+      // if the previously selected drug no longer exists (renamed/removed), clear it
+      if (![...sel.options].some(o => o.value === current)) sel.value = '';
+    });
+  }
+
+  function onDrugSnoChange(sel, doseInput, routeInput) {
+    const val = sel.value;
+    const idx = parseInt(val, 10) - 1;
+    if (!isNaN(idx) && drugs[idx]) {
+      routeInput.value = drugs[idx].route || '';
+      doseInput.value = 'AP';
+    }
+    scheduleSave();
+  }
 
   window.addRow = function (count, dataRow) {
     const tbody = document.getElementById('chartBody');
-    const colTypes = ['date', 'text', 'time', 'text', 'text', 'text', 'text'];
     for (let i = 0; i < count; i++) {
       const tr = document.createElement('tr');
-      for (let c = 0; c < 7; c++) {
-        const td = document.createElement('td');
-        const input = document.createElement('input');
-        input.type = colTypes[c];
-        if (dataRow && dataRow[c] !== undefined) input.value = dataRow[c];
-        input.addEventListener('input', scheduleSave);
-        td.appendChild(input);
-        tr.appendChild(td);
-      }
+
+      // Date
+      const tdDate = document.createElement('td');
+      const dateInput = document.createElement('input');
+      dateInput.type = 'date';
+      if (dataRow && dataRow[0]) dateInput.value = dataRow[0];
+      dateInput.addEventListener('input', scheduleSave);
+      tdDate.appendChild(dateInput);
+      tr.appendChild(tdDate);
+
+      // Drug S/No (dropdown)
+      const tdSno = document.createElement('td');
+      const snoSelect = document.createElement('select');
+      snoSelect.className = 'drug-sno';
+      drugSnoOptions().forEach(opt => {
+        const o = document.createElement('option');
+        o.value = opt;
+        o.textContent = opt || '—';
+        if (dataRow && dataRow[1] === opt) o.selected = true;
+        snoSelect.appendChild(o);
+      });
+      tdSno.appendChild(snoSelect);
+      tr.appendChild(tdSno);
+
+      // Time
+      const tdTime = document.createElement('td');
+      const timeInput = document.createElement('input');
+      timeInput.type = 'time';
+      if (dataRow && dataRow[2]) timeInput.value = dataRow[2];
+      timeInput.addEventListener('input', scheduleSave);
+      tdTime.appendChild(timeInput);
+      tr.appendChild(tdTime);
+
+      // Dose
+      const tdDose = document.createElement('td');
+      const doseInput = document.createElement('input');
+      doseInput.type = 'text';
+      if (dataRow && dataRow[3] !== undefined) doseInput.value = dataRow[3];
+      doseInput.addEventListener('input', scheduleSave);
+      tdDose.appendChild(doseInput);
+      tr.appendChild(tdDose);
+
+      // Route
+      const tdRoute = document.createElement('td');
+      const routeInput = document.createElement('input');
+      routeInput.type = 'text';
+      if (dataRow && dataRow[4] !== undefined) routeInput.value = dataRow[4];
+      routeInput.addEventListener('input', scheduleSave);
+      tdRoute.appendChild(routeInput);
+      tr.appendChild(tdRoute);
+
+      snoSelect.addEventListener('change', () => onDrugSnoChange(snoSelect, doseInput, routeInput));
+
+      // Signature
+      const tdSig = document.createElement('td');
+      const sigInput = document.createElement('input');
+      sigInput.type = 'text';
+      if (dataRow && dataRow[5] !== undefined) sigInput.value = dataRow[5];
+      sigInput.addEventListener('input', scheduleSave);
+      tdSig.appendChild(sigInput);
+      tr.appendChild(tdSig);
+
+      // Remark
+      const tdRemark = document.createElement('td');
+      const remarkInput = document.createElement('input');
+      remarkInput.type = 'text';
+      if (dataRow && dataRow[6] !== undefined) remarkInput.value = dataRow[6];
+      remarkInput.addEventListener('input', scheduleSave);
+      tdRemark.appendChild(remarkInput);
+      tr.appendChild(tdRemark);
+
       tbody.appendChild(tr);
     }
   };
@@ -136,13 +311,18 @@
     const rows = [];
     document.querySelectorAll('#chartBody tr').forEach(tr => {
       const cells = [];
-      tr.querySelectorAll('input').forEach(inp => cells.push(inp.value));
+      tr.querySelectorAll('input, select').forEach(inp => cells.push(inp.value));
       rows.push(cells);
     });
     data.rows = rows;
+    data.drugs = drugs;
     data.updatedAt = serverTimestamp();
-    await setDoc(chartRef, data, { merge: true });
-    document.getElementById('saveStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
+    try {
+      await setDoc(chartRef, data, { merge: true });
+      document.getElementById('saveStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
+    } catch (e) {
+      document.getElementById('saveStatus').textContent = 'Save failed: ' + (e.code || e.message);
+    }
   }
 
   requireAuth(async (user, profile) => {
@@ -157,9 +337,13 @@
     if (snap.exists()) {
       const data = snap.data();
       fieldIds.forEach(id => { if (document.getElementById(id)) document.getElementById(id).value = data[id] || ''; });
+      drugs = (data.drugs && data.drugs.length) ? data.drugs : Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '' }));
+      renderDrugsTable();
       const rows = (data.rows && data.rows.length) ? data.rows : Array(18).fill(['', '', '', '', '', '', '']);
       rows.forEach(r => addRow(1, r));
     } else {
+      drugs = Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '' }));
+      renderDrugsTable();
       addRow(18);
     }
     fieldIds.forEach(id => document.getElementById(id).addEventListener('input', scheduleSave));
