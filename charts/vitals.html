@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vital Signs</title>
+<link rel="stylesheet" href="../js/styles.css">
+</head>
+<body>
+<div class="topbar no-print">
+  <div class="brand">Vital Signs Chart</div>
+  <div class="right">
+    <a href="../index.html" class="btn btn-secondary" style="padding:6px 12px;">Back</a>
+    <button class="btn btn-primary" style="padding:6px 12px;" onclick="window.print()">Print</button>
+  </div>
+</div>
+<div class="container">
+  <div class="patient-banner">
+    <div><div class="pname" id="pb_name">Loading…</div><div class="pmeta" id="pb_meta"></div></div>
+  </div>
+  <div id="pb_allergy"></div>
+
+  <div class="card-box no-print">
+    <h3 style="margin-top:0;">New Reading</h3>
+    <div id="entryForm" style="display:flex; flex-wrap:wrap; gap:10px;"></div>
+    <button class="btn btn-primary" id="addEntryBtn">Add Reading</button>
+  </div>
+
+  <div class="card-box">
+    <h3 style="margin-top:0;">Readings</h3>
+    <table class="entries">
+      <thead id="entryHead"></thead>
+      <tbody id="entryBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script type="module">
+  import { initEntryChart } from "../js/entry-chart.js";
+  initEntryChart({
+    collectionName: 'vitals',
+    columns: [
+      { key: 'time', label: 'Time', type: 'datetime-local' },
+      { key: 'temp', label: 'Temp (°C)', type: 'text' },
+      { key: 'pulse', label: 'Pulse', type: 'text' },
+      { key: 'resp', label: 'Resp Rate', type: 'text' },
+      { key: 'bp', label: 'BP', type: 'text' },
+      { key: 'spo2', label: 'SpO2 (%)', type: 'text' },
+      { key: 'notes', label: 'Notes', type: 'text' }
+    ]
+  });
+</script>
+</body>
+</html>

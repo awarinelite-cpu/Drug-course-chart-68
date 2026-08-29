@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drug Course Chart</title>
+<link rel="stylesheet" href="../js/styles.css">
+<style>
+  .sheet { background:#fff; max-width:900px; margin:20px auto; padding:30px; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .header h1 { font-family: Impact, "Arial Black", sans-serif; font-size:26px; text-align:center; text-transform:uppercase; margin:0 0 4px; }
+  .header-sub { text-align:center; margin-bottom:16px; }
+  .header-sub h2 { font-size:19px; text-decoration:underline; margin:0; }
+  .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 30px; margin-bottom:14px; }
+  .info-row { display:flex; align-items:baseline; font-size:14px; }
+  .info-row label { font-weight:bold; margin-right:6px; white-space:nowrap; }
+  .info-row input { flex:1; border:none; border-bottom:1px solid #000; padding:2px 4px; font-size:14px; background:transparent; }
+  .info-row span.val { flex:1; border-bottom:1px solid #000; padding:2px 4px; font-size:14px; }
+  .drug-num-list { display:grid; grid-template-columns:1fr 1fr; gap:4px 30px; margin-bottom:14px; }
+  .drug-num-row { display:flex; align-items:baseline; font-size:14px; }
+  .drug-num-row span { width:20px; }
+  .drug-num-row input { flex:1; border:none; border-bottom:1px solid #000; padding:2px 4px; font-size:14px; background:transparent; }
+  table.chart { width:100%; border-collapse:collapse; }
+  table.chart th, table.chart td { border:1px solid #000; padding:5px 3px; font-size:12px; text-align:center; }
+  table.chart th { background:#f2f2f2; text-transform:uppercase; }
+  table.chart td input { width:100%; border:none; background:transparent; text-align:center; font-size:12px; font-family:inherit; }
+  .table-wrap { overflow-x:auto; }
+  @media print {
+    .no-print { display:none !important; }
+    .sheet { box-shadow:none; margin:0; }
+    body { background:#fff; }
+  }
+</style>
+</head>
+<body>
+<div class="topbar no-print">
+  <div class="brand">Drug Course Chart</div>
+  <div class="right">
+    <a href="../index.html" class="btn btn-secondary" style="padding:6px 12px;">Back</a>
+    <button class="btn btn-primary" style="padding:6px 12px;" onclick="window.print()">Print</button>
+  </div>
+</div>
+
+<div class="container no-print">
+  <div class="patient-banner">
+    <div><div class="pname" id="pb_name">Loading…</div><div class="pmeta" id="pb_meta"></div></div>
+  </div>
+  <div id="pb_allergy"></div>
+  <div id="saveStatus" style="font-size:12px; color:#555; margin-top:8px; text-align:right;">—</div>
+</div>
+
+<div class="sheet" id="sheet">
+  <div class="header"><h1>68 Nigerian Army Reference Hospital Yaba</h1></div>
+  <div class="header-sub"><h2>Drugs Course Chart</h2></div>
+
+  <div class="info-grid">
+    <div class="info-row"><label>NAME:</label><span class="val" id="print_name"></span></div>
+    <div class="info-row"><label>EMR:</label><span class="val" id="print_emr"></span></div>
+    <div class="info-row"><label>WARD:</label><input type="text" id="f_ward"></div>
+    <div class="info-row"><label>Hospital No:</label><input type="text" id="f_hospno"></div>
+    <div class="info-row"><label>AGE:</label><input type="text" id="f_age"></div>
+    <div class="info-row"><label>Date of Admission:</label><input type="text" id="f_admission"></div>
+    <div class="info-row"><label>Diagnosis:</label><span class="val" id="print_diagnosis"></span></div>
+    <div class="info-row"><label>Discharge Date:</label><input type="text" id="f_discharge"></div>
+  </div>
+
+  <div class="drug-num-list">
+    <div style="font-weight:bold; grid-column:1/-1; display:flex; align-items:baseline;">
+      DRUGS:&nbsp;<input type="text" id="f_drugsHeader" style="flex:1; border:none; border-bottom:1px solid #000; max-width:400px;">
+    </div>
+    <div class="drug-num-row"><span>1</span><input type="text" id="d1"></div>
+    <div class="drug-num-row"><span>5</span><input type="text" id="d5"></div>
+    <div class="drug-num-row"><span>2</span><input type="text" id="d2"></div>
+    <div class="drug-num-row"><span>6</span><input type="text" id="d6"></div>
+    <div class="drug-num-row"><span>3</span><input type="text" id="d3"></div>
+    <div class="drug-num-row"><span>7</span><input type="text" id="d7"></div>
+    <div class="drug-num-row"><span>4</span><input type="text" id="d4"></div>
+    <div class="drug-num-row"><span>8</span><input type="text" id="d8"></div>
+  </div>
+
+  <div class="table-wrap">
+  <table class="chart" id="chartTable">
+    <thead><tr><th>Date</th><th>Drug S/No</th><th>Time</th><th>Dose</th><th>Route</th><th>Signature</th><th>Remark</th></tr></thead>
+    <tbody id="chartBody"></tbody>
+  </table>
+  </div>
+  <div class="no-print" style="margin-top:10px;">
+    <button class="btn btn-success" onclick="addRow(1)">+ Add Row</button>
+    <button class="btn btn-secondary" onclick="removeRow()">− Remove Row</button>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from "../js/auth-guard.js";
+  import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
+  import { db } from "../js/firebase.js";
+  import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+  const patientId = getPatientIdFromUrl();
+  if (!patientId) window.location.href = '../index.html';
+
+  const fieldIds = ['f_ward','f_hospno','f_age','f_admission','f_discharge','f_drugsHeader','d1','d2','d3','d4','d5','d6','d7','d8'];
+  let chartRef;
+  let saveTimer;
+
+  window.addRow = function (count, dataRow) {
+    const tbody = document.getElementById('chartBody');
+    for (let i = 0; i < count; i++) {
+      const tr = document.createElement('tr');
+      for (let c = 0; c < 7; c++) {
+        const td = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = 'text';
+        if (dataRow && dataRow[c] !== undefined) input.value = dataRow[c];
+        input.addEventListener('input', scheduleSave);
+        td.appendChild(input);
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+  };
+  window.removeRow = function () {
+    const tbody = document.getElementById('chartBody');
+    if (tbody.rows.length > 0) { tbody.deleteRow(tbody.rows.length - 1); scheduleSave(); }
+  };
+
+  function scheduleSave() {
+    document.getElementById('saveStatus').textContent = 'Saving…';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveChart, 600);
+  }
+
+  async function saveChart() {
+    const data = {};
+    fieldIds.forEach(id => data[id] = document.getElementById(id).value);
+    const rows = [];
+    document.querySelectorAll('#chartBody tr').forEach(tr => {
+      const cells = [];
+      tr.querySelectorAll('input').forEach(inp => cells.push(inp.value));
+      rows.push(cells);
+    });
+    data.rows = rows;
+    data.updatedAt = serverTimestamp();
+    await setDoc(chartRef, data, { merge: true });
+    document.getElementById('saveStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
+  }
+
+  requireAuth(async (user, profile) => {
+    const patient = await loadPatientHeader(patientId, { name: 'pb_name', meta: 'pb_meta', allergy: 'pb_allergy' });
+    if (!patient) return;
+    document.getElementById('print_name').textContent = patient.name || '';
+    document.getElementById('print_emr').textContent = patient.emr || '';
+    document.getElementById('print_diagnosis').textContent = patient.diagnosis || '';
+
+    chartRef = doc(db, 'patients', patientId, 'drugCourseChart', 'main');
+    const snap = await getDoc(chartRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      fieldIds.forEach(id => { if (document.getElementById(id)) document.getElementById(id).value = data[id] || ''; });
+      const rows = (data.rows && data.rows.length) ? data.rows : Array(18).fill(['', '', '', '', '', '', '']);
+      rows.forEach(r => addRow(1, r));
+    } else {
+      addRow(18);
+    }
+    fieldIds.forEach(id => document.getElementById(id).addEventListener('input', scheduleSave));
+    document.getElementById('saveStatus').textContent = 'Changes save automatically';
+  });
+</script>
+</body>
+</html>

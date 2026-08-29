@@ -1,0 +1,49 @@
+import { auth, db } from "./firebase.js";
+import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+const SEED_ADMIN_EMAIL = "awarinelite@gmail.com";
+
+// Figure out how many folders deep the current page is, so redirects work
+// whether we're at / (index.html, admin.html, login.html) or /charts/*.html
+function loginPath() {
+  return window.location.pathname.includes('/charts/') ? '../login.html' : 'login.html';
+}
+
+export function requireAuth(onReady) {
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      window.location.href = loginPath();
+      return;
+    }
+
+    const userRef = doc(db, "users", user.uid);
+    let snap = await getDoc(userRef);
+
+    if (!snap.exists()) {
+      if (user.email === SEED_ADMIN_EMAIL) {
+        await setDoc(userRef, {
+          name: "Admin",
+          email: user.email,
+          role: "admin",
+          createdAt: serverTimestamp()
+        });
+        snap = await getDoc(userRef);
+      } else {
+        alert("Your account isn't set up yet. Please contact your admin.");
+        await signOut(auth);
+        window.location.href = loginPath();
+        return;
+      }
+    }
+
+    const profile = snap.data();
+    window.currentUser = user;
+    window.currentUserProfile = profile;
+    onReady(user, profile);
+  });
+}
+
+export function logout() {
+  signOut(auth).then(() => { window.location.href = loginPath(); });
+}

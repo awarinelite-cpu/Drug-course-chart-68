@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin · Ward Charts</title>
+<link rel="stylesheet" href="js/styles.css">
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">68 NARHY Ward Charts — Admin</div>
+  <div class="right">
+    <a href="index.html" class="btn btn-secondary" style="padding:6px 12px;">Back Home</a>
+    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="logout()">Log Out</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="card-box">
+    <h3 style="margin-top:0;">Create Nurse Account</h3>
+    <div class="field"><label>Full Name</label><input type="text" id="n_name"></div>
+    <div class="field"><label>Email</label><input type="email" id="n_email"></div>
+    <div class="field"><label>Temporary Password</label><input type="text" id="n_password" placeholder="At least 6 characters"></div>
+    <button class="btn btn-primary" onclick="createNurse()">Create Account</button>
+    <div id="msg"></div>
+    <p style="font-size:12px; color:#666; margin-top:10px;">
+      Share this email and temporary password with the nurse directly. They can change it anytime using
+      "Forgot password?" on the login page, which sends a reset link to their own email.
+    </p>
+  </div>
+
+  <div class="card-box">
+    <h3 style="margin-top:0;">All Users</h3>
+    <table class="entries">
+      <thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead>
+      <tbody id="userTableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth, logout } from "./js/auth-guard.js";
+  import { db, firebaseConfig } from "./js/firebase.js";
+  import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+  import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+  import { collection, getDocs, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+  window.logout = logout;
+
+  requireAuth((user, profile) => {
+    if (profile.role !== 'admin') {
+      alert('Admin access only.');
+      window.location.href = 'index.html';
+      return;
+    }
+    loadUsers();
+  });
+
+  async function loadUsers() {
+    const snap = await getDocs(collection(db, 'users'));
+    const tbody = document.getElementById('userTableBody');
+    tbody.innerHTML = '';
+    snap.forEach(d => {
+      const u = d.data();
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + escapeHtml(u.name || '') + '</td><td>' + escapeHtml(u.email || '') + '</td><td>' + escapeHtml(u.role || '') + '</td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  window.createNurse = async function () {
+    const name = document.getElementById('n_name').value.trim();
+    const email = document.getElementById('n_email').value.trim();
+    const password = document.getElementById('n_password').value;
+    const msg = document.getElementById('msg');
+    msg.innerHTML = '';
+    if (!name || !email || password.length < 6) {
+      msg.innerHTML = '<div class="error-msg">Fill in all fields; password needs at least 6 characters.</div>';
+      return;
+    }
+    try {
+      // Create the new account on a secondary Firebase app instance so the
+      // admin's own login session in this tab is never disturbed.
+      const secondaryApp = initializeApp(firebaseConfig, 'Secondary-' + Date.now());
+      const secondaryAuth = getAuth(secondaryApp);
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+      await setDoc(doc(db, 'users', cred.user.uid), {
+        name, email, role: 'nurse', createdAt: serverTimestamp()
+      });
+      await signOut(secondaryAuth);
+      await deleteApp(secondaryApp);
+
+      msg.innerHTML = '<div class="info-msg">Nurse account created for ' + escapeHtml(email) + '.</div>';
+      document.getElementById('n_name').value = '';
+      document.getElementById('n_email').value = '';
+      document.getElementById('n_password').value = '';
+      loadUsers();
+    } catch (e) {
+      msg.innerHTML = '<div class="error-msg">' + (e.message || 'Failed to create account.') + '</div>';
+    }
+  };
+
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+</script>
+</body>
+</html>

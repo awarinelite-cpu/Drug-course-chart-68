@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isKnownUser() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // User profiles / roles
+    match /users/{uid} {
+      allow read: if isKnownUser();
+      allow create: if isSignedIn() && (
+        isAdmin() ||
+        (request.auth.uid == uid
+          && request.auth.token.email == 'awarinelite@gmail.com'
+          && !exists(/databases/$(database)/documents/users/$(uid)))
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // Patients and every chart subcollection under them
+    match /patients/{patientId} {
+      allow read, create, update: if isKnownUser();
+      allow delete: if isAdmin();
+
+      match /{chartCollection}/{chartDoc} {
+        allow read, create, update, delete: if isKnownUser();
+      }
+    }
+  }
+}

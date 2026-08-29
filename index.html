@@ -3,577 +3,170 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Drugs Course Chart</title>
-<style>
-  * { box-sizing: border-box; }
-  html, body { overflow-x: hidden; max-width: 100%; }
-  body {
-    font-family: Arial, Helvetica, sans-serif;
-    background: #e9e9e9;
-    margin: 0;
-    padding: 20px;
-    color: #000;
-  }
-  .toolbar {
-    max-width: 900px;
-    margin: 0 auto 16px auto;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .toolbar .group { display: flex; gap: 8px; flex-wrap: wrap; }
-  .toolbar button, .toolbar select, .toolbar label.filebtn {
-    padding: 9px 14px;
-    font-size: 13px;
-    font-weight: bold;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-  }
-  #printBtn { background: #2563eb; color: #fff; }
-  #addRowBtn { background: #16a34a; color: #fff; }
-  #removeRowBtn { background: #dc2626; color: #fff; }
-  #saveBtn { background: #7c3aed; color: #fff; }
-  #newBtn { background: #ea580c; color: #fff; }
-  #logoBtn { background: #0891b2; color: #fff; display: inline-block; }
-  #logoInput { display: none; }
-  #loadSelect { background: #fff; border: 1px solid #999; }
-  .save-status {
-    font-size: 12px;
-    color: #555;
-    text-align: right;
-    max-width: 900px;
-    margin: 0 auto 10px auto;
-  }
-
-  .sheet {
-    background: #fff;
-    max-width: 900px;
-    width: 100%;
-    margin: 0 auto;
-    padding: 40px 45px;
-    border: 1px solid #ccc;
-  }
-
-  .table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-
-  .brand-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 14px;
-    margin-bottom: 6px;
-  }
-  #logoPreview {
-    max-height: 60px;
-    max-width: 60px;
-    display: none;
-    object-fit: contain;
-  }
-  .header h1 {
-    font-family: Impact, "Arial Black", sans-serif;
-    font-size: 30px;
-    letter-spacing: 0.5px;
-    margin: 0;
-    text-align: center;
-    text-transform: uppercase;
-  }
-  .header-sub {
-    display: flex;
-    justify-content: center;
-    align-items: baseline;
-    position: relative;
-    margin: 6px 0 18px 0;
-  }
-  .header-sub h2 {
-    font-size: 22px;
-    text-decoration: underline;
-    text-align: center;
-    margin: 0;
-    letter-spacing: 1px;
-  }
-  .rim-note {
-    position: absolute;
-    right: 0;
-    top: 0;
-    font-size: 12px;
-    font-style: italic;
-  }
-
-  .allergy-banner {
-    display: none;
-    background: #fee2e2;
-    border: 2px solid #dc2626;
-    color: #7f1d1d;
-    font-weight: bold;
-    font-size: 14px;
-    padding: 8px 12px;
-    border-radius: 4px;
-    margin-bottom: 16px;
-    text-align: center;
-  }
-
-  .info-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    column-gap: 40px;
-    row-gap: 10px;
-    margin-bottom: 6px;
-  }
-  .info-row {
-    display: flex;
-    align-items: baseline;
-    font-size: 15px;
-    white-space: nowrap;
-  }
-  .info-row label {
-    font-weight: bold;
-    margin-right: 6px;
-  }
-  .info-row input {
-    flex: 1;
-    border: none;
-    border-bottom: 1px solid #000;
-    font-size: 15px;
-    padding: 2px 4px;
-    outline: none;
-    background: transparent;
-    min-width: 0;
-  }
-  .allergy-field input {
-    border-bottom: 1px solid #dc2626;
-    font-weight: bold;
-    color: #b91c1c;
-  }
-
-  .drugs-block {
-    margin-top: 10px;
-    margin-bottom: 18px;
-  }
-  .drugs-block .drugs-title {
-    font-weight: bold;
-    font-size: 15px;
-    display: flex;
-    align-items: baseline;
-    margin-bottom: 6px;
-  }
-  .drugs-block .drugs-title input {
-    flex: 1;
-    border: none;
-    border-bottom: 1px solid #000;
-    font-size: 15px;
-    padding: 2px 4px;
-    outline: none;
-    background: transparent;
-    margin-left: 6px;
-    max-width: 400px;
-  }
-  .drug-num-list {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    column-gap: 40px;
-    row-gap: 4px;
-  }
-  .drug-num-row {
-    display: flex;
-    align-items: baseline;
-    font-size: 15px;
-  }
-  .drug-num-row span {
-    width: 22px;
-    flex-shrink: 0;
-  }
-  .drug-num-row input {
-    flex: 1;
-    border: none;
-    border-bottom: 1px solid #000;
-    font-size: 15px;
-    padding: 2px 4px;
-    outline: none;
-    background: transparent;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-    table-layout: fixed;
-  }
-  thead { display: table-header-group; }
-  tr { page-break-inside: avoid; }
-  th, td {
-    border: 1px solid #000;
-    padding: 6px 4px;
-    font-size: 13px;
-    text-align: center;
-  }
-  th {
-    background: #f2f2f2;
-    font-weight: bold;
-    text-transform: uppercase;
-  }
-  td input {
-    width: 100%;
-    border: none;
-    outline: none;
-    background: transparent;
-    text-align: center;
-    font-size: 13px;
-    font-family: inherit;
-    padding: 4px 2px;
-  }
-  col.date { width: 11%; }
-  col.drug { width: 24%; }
-  col.time { width: 11%; }
-  col.dose { width: 11%; }
-  col.route { width: 11%; }
-  col.sign { width: 16%; }
-  col.remark { width: 16%; }
-
-  .footer-note {
-    margin-top: 14px;
-    font-size: 12px;
-    color: #444;
-    display: flex;
-    justify-content: space-between;
-  }
-
-  @media print {
-    body { background: #fff; padding: 0; }
-    .toolbar, .save-status { display: none; }
-    .sheet { border: none; padding: 15px 25px; max-width: 100%; }
-    input { border-bottom: 1px solid #000 !important; }
-    .allergy-field input { border-bottom: 1px solid #dc2626 !important; }
-  }
-
-  @media (max-width: 700px) {
-    body { padding: 8px; }
-    .toolbar { max-width: 100%; }
-    .toolbar button, .toolbar select, .toolbar label.filebtn {
-      flex: 1 1 auto;
-      font-size: 12px;
-      padding: 10px 8px;
-      text-align: center;
-    }
-    .save-status { max-width: 100%; text-align: left; }
-    .sheet { padding: 18px 14px; }
-
-    .brand-row { flex-direction: column; gap: 4px; }
-    .header h1 { font-size: 20px; line-height: 1.2; }
-    #logoPreview { max-height: 44px; max-width: 44px; }
-
-    .header-sub { flex-direction: column; align-items: center; margin-bottom: 14px; }
-    .header-sub h2 { font-size: 17px; }
-    .rim-note { position: static; margin-top: 2px; font-size: 11px; }
-
-    .info-grid { grid-template-columns: 1fr; column-gap: 0; row-gap: 8px; }
-    .info-row { font-size: 13px; white-space: normal; flex-wrap: wrap; }
-    .info-row label { flex: 1 1 100%; margin-bottom: 2px; }
-    .info-row input { flex: 1 1 100%; font-size: 13px; }
-
-    .drugs-block .drugs-title { flex-wrap: wrap; }
-    .drugs-block .drugs-title input { margin-left: 0; margin-top: 4px; flex: 1 1 100%; max-width: 100%; }
-    .drug-num-list { grid-template-columns: 1fr; column-gap: 0; row-gap: 6px; }
-    .drug-num-row { font-size: 13px; }
-
-    .table-wrap { border: 1px solid #999; }
-    table { min-width: 620px; }
-    th, td { font-size: 11px; padding: 4px 2px; }
-    td input { font-size: 11px; }
-
-    .footer-note { flex-direction: column; gap: 4px; font-size: 11px; }
-  }
-</style>
+<title>Ward Charts · Home</title>
+<link rel="stylesheet" href="js/styles.css">
 </head>
 <body>
-
-<div class="toolbar">
-  <div class="group">
-    <button id="newBtn" onclick="newChart()">New Chart</button>
-    <button id="saveBtn" onclick="saveChart()">Save</button>
-    <select id="loadSelect" onchange="loadChart(this.value)">
-      <option value="">Load saved chart…</option>
-    </select>
-    <button id="removeRowBtn" onclick="deleteSelectedChart()" title="Delete the chart currently selected in the dropdown">Delete Saved</button>
-  </div>
-  <div class="group">
-    <label class="filebtn" id="logoBtn">Upload Logo
-      <input type="file" id="logoInput" accept="image/*" onchange="handleLogo(event)">
-    </label>
-    <button id="addRowBtn" onclick="addRow(1)">+ Add Row</button>
-    <button onclick="removeRow()" style="background:#6b7280;color:#fff;">− Remove Row</button>
-    <button id="printBtn" onclick="window.print()">Print / Save as PDF</button>
-  </div>
-</div>
-<div class="save-status" id="saveStatus">Not saved yet</div>
-
-<div class="sheet" id="sheet">
-  <div class="brand-row">
-    <img id="logoPreview" alt="Hospital Logo">
-    <div class="header">
-      <h1>68 Nigerian Army Reference Hospital Yaba</h1>
-    </div>
-  </div>
-  <div class="header-sub">
-    <h2>Drugs Course Chart</h2>
-    <span class="rim-note">10 rim front only</span>
-  </div>
-
-  <div class="allergy-banner" id="allergyBanner"></div>
-
-  <div class="info-grid">
-    <div class="info-row">
-      <label>NAME:</label>
-      <input type="text" id="f_name">
-    </div>
-    <div class="info-row">
-      <label>Date of Admission:</label>
-      <input type="text" id="f_admission">
-    </div>
-    <div class="info-row">
-      <label>WARD:</label>
-      <input type="text" id="f_ward">
-    </div>
-    <div class="info-row">
-      <label>EMR:</label>
-      <input type="text" id="f_emr">
-    </div>
-    <div class="info-row">
-      <label>AGE:</label>
-      <input type="text" id="f_age">
-    </div>
-    <div class="info-row">
-      <label>Hospital No:</label>
-      <input type="text" id="f_hospno">
-    </div>
-    <div class="info-row">
-      <label>Diagnosis:</label>
-      <input type="text" id="f_diagnosis">
-    </div>
-    <div class="info-row">
-      <label>Discharge Date:</label>
-      <input type="text" id="f_discharge">
-    </div>
-    <div class="info-row allergy-field" style="grid-column: 1 / -1;">
-      <label>ALLERGIES:</label>
-      <input type="text" id="f_allergies" placeholder="None known / list allergies">
-    </div>
-  </div>
-
-  <div class="drugs-block">
-    <div class="drugs-title">DRUGS: <input type="text" id="f_drugsHeader"></div>
-    <div class="drug-num-list" id="drugNumList">
-      <div class="drug-num-row"><span>1</span><input type="text" id="d1"></div>
-      <div class="drug-num-row"><span>5</span><input type="text" id="d5"></div>
-      <div class="drug-num-row"><span>2</span><input type="text" id="d2"></div>
-      <div class="drug-num-row"><span>6</span><input type="text" id="d6"></div>
-      <div class="drug-num-row"><span>3</span><input type="text" id="d3"></div>
-      <div class="drug-num-row"><span>7</span><input type="text" id="d7"></div>
-      <div class="drug-num-row"><span>4</span><input type="text" id="d4"></div>
-      <div class="drug-num-row"><span>8</span><input type="text" id="d8"></div>
-    </div>
-  </div>
-
-  <div class="table-wrap">
-  <table id="chartTable">
-    <colgroup>
-      <col class="date"><col class="drug"><col class="time"><col class="dose"><col class="route"><col class="sign"><col class="remark">
-    </colgroup>
-    <thead>
-      <tr>
-        <th>Date</th>
-        <th>Drug S/No</th>
-        <th>Time</th>
-        <th>Dose</th>
-        <th>Route</th>
-        <th>Signature</th>
-        <th>Remark</th>
-      </tr>
-    </thead>
-    <tbody id="chartBody"></tbody>
-  </table>
-  </div>
-
-  <div class="footer-note">
-    <span id="lastSavedNote"></span>
-    <span id="printedNote"></span>
+<div class="topbar">
+  <div class="brand">68 NARHY Ward Charts</div>
+  <div class="right">
+    <span id="whoami"></span>
+    <a id="adminLink" href="admin.html" class="btn btn-purple" style="display:none; padding:6px 12px;">Admin</a>
+    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="logout()">Log Out</button>
   </div>
 </div>
 
-<script>
-  const STORAGE_KEY = 'dcc_charts_v1';
-  const DRAFT_KEY = 'dcc_draft_v1';
-  const fieldIds = ['f_name','f_admission','f_ward','f_emr','f_age','f_hospno','f_diagnosis','f_discharge','f_allergies','f_drugsHeader','d1','d2','d3','d4','d5','d6','d7','d8'];
+<div class="container">
+  <div class="card-box">
+    <label>Search Patient (EMR number or name)</label>
+    <div class="search-row">
+      <input type="text" id="searchInput" placeholder="e.g. EMR12345 or John Doe" onkeydown="if(event.key==='Enter') doSearch();">
+      <button class="btn btn-primary" onclick="doSearch()">Search</button>
+      <button class="btn btn-success" onclick="showNewPatientForm()">+ New Patient</button>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
 
-  function getStore() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
-    catch (e) { return {}; }
-  }
-  function setStore(store) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  <div class="card-box" id="newPatientBox" style="display:none;">
+    <h3 style="margin-top:0;">Register New Patient</h3>
+    <div class="field"><label>Name</label><input type="text" id="np_name"></div>
+    <div class="field"><label>EMR Number</label><input type="text" id="np_emr"></div>
+    <div class="field"><label>Diagnosis</label><input type="text" id="np_diagnosis"></div>
+    <div class="field"><label>Ward</label><input type="text" id="np_ward"></div>
+    <div class="field"><label>Age</label><input type="text" id="np_age"></div>
+    <div class="field"><label>Hospital No</label><input type="text" id="np_hospno"></div>
+    <div class="field"><label>Date of Admission</label><input type="text" id="np_admission"></div>
+    <div class="field"><label>Allergies</label><input type="text" id="np_allergies" placeholder="None known / list allergies"></div>
+    <button class="btn btn-primary" onclick="createPatient()">Save Patient</button>
+    <button class="btn btn-secondary" onclick="hideNewPatientForm()">Cancel</button>
+    <div id="npMsg"></div>
+  </div>
+
+  <div class="card-box" id="patientBox" style="display:none;">
+    <div class="patient-banner">
+      <div>
+        <div class="pname" id="pb_name"></div>
+        <div class="pmeta" id="pb_meta"></div>
+      </div>
+      <button class="btn btn-secondary" style="padding:6px 12px;" onclick="clearPatient()">Change Patient</button>
+    </div>
+    <div id="pb_allergy"></div>
+
+    <div class="chart-grid">
+      <div class="chart-card" onclick="openChart('drug-course-chart')"><span class="icon">💊</span>Drug Course Chart</div>
+      <div class="chart-card" onclick="openChart('vitals')"><span class="icon">❤️</span>Vital Signs</div>
+      <div class="chart-card" onclick="openChart('intake-output')"><span class="icon">💧</span>Intake &amp; Output</div>
+      <div class="chart-card" onclick="openChart('blood-glucose')"><span class="icon">🩸</span>Blood Glucose</div>
+      <div class="chart-card" onclick="openChart('seizure')"><span class="icon">⚡</span>Seizure Chart</div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth, logout } from "./js/auth-guard.js";
+  import { db } from "./js/firebase.js";
+  import { collection, getDocs, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+  window.logout = logout;
+  let selectedPatient = null;
+  let allPatientsCache = null;
+
+  requireAuth((user, profile) => {
+    document.getElementById('whoami').textContent = profile.name + ' (' + profile.role + ')';
+    if (profile.role === 'admin') document.getElementById('adminLink').style.display = 'inline-block';
+  });
+
+  async function loadAllPatients(force) {
+    if (allPatientsCache && !force) return allPatientsCache;
+    const snap = await getDocs(collection(db, 'patients'));
+    allPatientsCache = [];
+    snap.forEach(d => allPatientsCache.push({ id: d.id, ...d.data() }));
+    return allPatientsCache;
   }
 
-  function addRow(count, dataRow) {
-    const tbody = document.getElementById('chartBody');
-    const times = count || 1;
-    for (let i = 0; i < times; i++) {
-      const tr = document.createElement('tr');
-      for (let c = 0; c < 7; c++) {
-        const td = document.createElement('td');
-        const input = document.createElement('input');
-        input.type = 'text';
-        if (dataRow && dataRow[c] !== undefined) input.value = dataRow[c];
-        input.addEventListener('input', autosaveDraft);
-        td.appendChild(input);
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
+  window.doSearch = async function () {
+    const q = document.getElementById('searchInput').value.trim().toLowerCase();
+    const results = document.getElementById('searchResults');
+    if (!q) { results.innerHTML = ''; return; }
+    results.innerHTML = 'Searching…';
+    const patients = await loadAllPatients();
+    const matches = patients.filter(p =>
+      (p.emr || '').toLowerCase().includes(q) || (p.name || '').toLowerCase().includes(q)
+    );
+    if (matches.length === 0) {
+      results.innerHTML = '<div class="error-msg">No patient found. Use "+ New Patient" to register them.</div>';
+      return;
     }
-  }
-  function removeRow() {
-    const tbody = document.getElementById('chartBody');
-    if (tbody.rows.length > 0) {
-      tbody.deleteRow(tbody.rows.length - 1);
-      autosaveDraft();
-    }
-  }
-
-  function collectData() {
-    const data = {};
-    fieldIds.forEach(id => { data[id] = document.getElementById(id).value; });
-    const rows = [];
-    document.querySelectorAll('#chartBody tr').forEach(tr => {
-      const cells = [];
-      tr.querySelectorAll('input').forEach(inp => cells.push(inp.value));
-      rows.push(cells);
+    results.innerHTML = '';
+    matches.forEach(p => {
+      const div = document.createElement('div');
+      div.className = 'search-result-item';
+      div.innerHTML = '<span><b>' + escapeHtml(p.name || 'Unnamed') + '</b> — EMR: ' + escapeHtml(p.emr || 'N/A') + '</span><span>' + escapeHtml(p.diagnosis || '') + '</span>';
+      div.onclick = () => selectPatient(p);
+      results.appendChild(div);
     });
-    data.rows = rows;
-    data.logo = document.getElementById('logoPreview').src || '';
-    return data;
-  }
+  };
 
-  function applyData(data) {
-    fieldIds.forEach(id => { document.getElementById(id).value = (data[id] || ''); });
-    document.getElementById('chartBody').innerHTML = '';
-    const rows = data.rows && data.rows.length ? data.rows : Array(18).fill(['','','','','','','']);
-    rows.forEach(r => addRow(1, r));
-    if (data.logo) {
-      document.getElementById('logoPreview').src = data.logo;
-      document.getElementById('logoPreview').style.display = 'inline-block';
+  function selectPatient(p) {
+    selectedPatient = p;
+    document.getElementById('searchResults').innerHTML = '';
+    document.getElementById('searchInput').value = '';
+    document.getElementById('newPatientBox').style.display = 'none';
+    document.getElementById('pb_name').textContent = p.name || 'Unnamed';
+    document.getElementById('pb_meta').textContent = 'EMR: ' + (p.emr || 'N/A') + '   |   Diagnosis: ' + (p.diagnosis || 'Not specified');
+    const allergyBox = document.getElementById('pb_allergy');
+    const allergyVal = (p.allergies || '').trim();
+    if (allergyVal && !/^(none|nil|none known)$/i.test(allergyVal)) {
+      allergyBox.innerHTML = '<div class="allergy-alert">ALLERGY ALERT: ' + escapeHtml(allergyVal) + '</div>';
     } else {
-      document.getElementById('logoPreview').style.display = 'none';
+      allergyBox.innerHTML = '';
     }
-    updateAllergyBanner();
+    document.getElementById('patientBox').style.display = 'block';
   }
 
-  function updateAllergyBanner() {
-    const val = document.getElementById('f_allergies').value.trim();
-    const banner = document.getElementById('allergyBanner');
-    if (val && val.toLowerCase() !== 'none' && val.toLowerCase() !== 'none known' && val.toLowerCase() !== 'nil') {
-      banner.style.display = 'block';
-      banner.textContent = 'ALLERGY ALERT: ' + val;
-    } else {
-      banner.style.display = 'none';
-      banner.textContent = '';
+  window.clearPatient = function () {
+    selectedPatient = null;
+    document.getElementById('patientBox').style.display = 'none';
+  };
+
+  window.showNewPatientForm = function () { document.getElementById('newPatientBox').style.display = 'block'; };
+  window.hideNewPatientForm = function () { document.getElementById('newPatientBox').style.display = 'none'; };
+
+  window.createPatient = async function () {
+    const name = document.getElementById('np_name').value.trim();
+    const emr = document.getElementById('np_emr').value.trim();
+    const msgBox = document.getElementById('npMsg');
+    if (!name || !emr) {
+      msgBox.innerHTML = '<div class="error-msg">Name and EMR number are required.</div>';
+      return;
     }
-  }
-
-  function newChart() {
-    if (!confirm('Start a new blank chart? Unsaved changes will be lost.')) return;
-    fieldIds.forEach(id => { document.getElementById(id).value = ''; });
-    document.getElementById('chartBody').innerHTML = '';
-    document.getElementById('logoPreview').style.display = 'none';
-    document.getElementById('logoPreview').src = '';
-    addRow(18);
-    updateAllergyBanner();
-    document.getElementById('saveStatus').textContent = 'Not saved yet';
-    localStorage.removeItem(DRAFT_KEY);
-  }
-
-  function saveChart() {
-    const data = collectData();
-    const name = (data.f_name || 'Unnamed patient').trim();
-    const hospno = (data.f_hospno || '').trim();
-    const key = (hospno ? hospno + '_' : '') + name + '_' + Date.now();
-    const store = getStore();
-    store[key] = { label: name + (hospno ? ' (' + hospno + ')' : ''), savedAt: new Date().toLocaleString(), data };
-    setStore(store);
-    refreshLoadOptions();
-    document.getElementById('saveStatus').textContent = 'Saved as "' + store[key].label + '" at ' + store[key].savedAt;
-  }
-
-  function refreshLoadOptions() {
-    const select = document.getElementById('loadSelect');
-    const store = getStore();
-    select.innerHTML = '<option value="">Load saved chart…</option>';
-    Object.keys(store).sort((a,b) => store[b].savedAt.localeCompare(store[a].savedAt)).forEach(key => {
-      const opt = document.createElement('option');
-      opt.value = key;
-      opt.textContent = store[key].label + ' — ' + store[key].savedAt;
-      select.appendChild(opt);
-    });
-  }
-
-  function loadChart(key) {
-    if (!key) return;
-    const store = getStore();
-    if (store[key]) {
-      applyData(store[key].data);
-      document.getElementById('saveStatus').textContent = 'Loaded "' + store[key].label + '"';
-    }
-  }
-
-  function deleteSelectedChart() {
-    const select = document.getElementById('loadSelect');
-    const key = select.value;
-    if (!key) { alert('Select a saved chart from the dropdown first.'); return; }
-    if (!confirm('Delete this saved chart? This cannot be undone.')) return;
-    const store = getStore();
-    delete store[key];
-    setStore(store);
-    refreshLoadOptions();
-    document.getElementById('saveStatus').textContent = 'Deleted saved chart';
-  }
-
-  function handleLogo(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      const img = document.getElementById('logoPreview');
-      img.src = e.target.result;
-      img.style.display = 'inline-block';
-      autosaveDraft();
+    const data = {
+      name, emr,
+      diagnosis: document.getElementById('np_diagnosis').value.trim(),
+      ward: document.getElementById('np_ward').value.trim(),
+      age: document.getElementById('np_age').value.trim(),
+      hospNo: document.getElementById('np_hospno').value.trim(),
+      admissionDate: document.getElementById('np_admission').value.trim(),
+      allergies: document.getElementById('np_allergies').value.trim(),
+      createdAt: serverTimestamp(),
+      createdBy: window.currentUser ? window.currentUser.uid : null
     };
-    reader.readAsDataURL(file);
-  }
+    const ref = await addDoc(collection(db, 'patients'), data);
+    await loadAllPatients(true);
+    hideNewPatientForm();
+    ['np_name','np_emr','np_diagnosis','np_ward','np_age','np_hospno','np_admission','np_allergies'].forEach(id => document.getElementById(id).value = '');
+    msgBox.innerHTML = '';
+    selectPatient({ id: ref.id, ...data });
+  };
 
-  let autosaveTimer = null;
-  function autosaveDraft() {
-    updateAllergyBanner();
-    clearTimeout(autosaveTimer);
-    autosaveTimer = setTimeout(() => {
-      const data = collectData();
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(data));
-      document.getElementById('saveStatus').textContent = 'Draft autosaved ' + new Date().toLocaleTimeString();
-    }, 500);
-  }
+  window.openChart = function (chartName) {
+    if (!selectedPatient) return;
+    window.location.href = 'charts/' + chartName + '.html?patient=' + selectedPatient.id;
+  };
 
-  // wire up autosave listeners
-  fieldIds.forEach(id => document.getElementById(id).addEventListener('input', autosaveDraft));
-
-  // init
-  const draft = localStorage.getItem(DRAFT_KEY);
-  if (draft) {
-    try { applyData(JSON.parse(draft)); }
-    catch (e) { addRow(18); }
-  } else {
-    addRow(18);
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   }
-  refreshLoadOptions();
 </script>
-
 </body>
 </html>

@@ -1,0 +1,76 @@
+* { box-sizing: border-box; }
+html, body { overflow-x: hidden; max-width: 100%; }
+body { font-family: Arial, Helvetica, sans-serif; margin: 0; background: #f3f4f6; color: #111; }
+a { text-decoration: none; color: inherit; }
+
+.topbar {
+  background: #111827; color: #fff; padding: 12px 20px;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+}
+.topbar .brand { font-weight: bold; font-size: 16px; }
+.topbar .right { display: flex; align-items: center; gap: 10px; font-size: 13px; flex-wrap: wrap; }
+
+.btn { border: none; border-radius: 6px; padding: 10px 16px; font-weight: bold; font-size: 14px; cursor: pointer; }
+.btn-primary { background: #2563eb; color: #fff; }
+.btn-danger { background: #dc2626; color: #fff; }
+.btn-secondary { background: #6b7280; color: #fff; }
+.btn-success { background: #16a34a; color: #fff; }
+.btn-purple { background: #7c3aed; color: #fff; }
+
+.container { max-width: 960px; margin: 0 auto; padding: 20px 16px; }
+.card-box { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 20px; }
+
+input[type=text], input[type=email], input[type=password], input[type=number],
+input[type=date], input[type=datetime-local], textarea, select {
+  width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; font-family: inherit;
+}
+label { font-weight: bold; font-size: 13px; display: block; margin-bottom: 4px; }
+.field { margin-bottom: 14px; }
+.error-msg { color: #dc2626; font-size: 13px; margin-top: 8px; }
+.info-msg { color: #2563eb; font-size: 13px; margin-top: 8px; }
+
+.chart-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; margin-top: 16px; }
+.chart-card {
+  background: #fff; border-radius: 10px; padding: 20px 12px; text-align: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08); font-weight: bold; font-size: 14px; cursor: pointer;
+  border: 2px solid transparent; transition: border-color .15s;
+}
+.chart-card:hover { border-color: #2563eb; }
+.chart-card .icon { font-size: 28px; display: block; margin-bottom: 8px; }
+
+.patient-banner {
+  background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 14px 16px; margin-top: 16px;
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+}
+.pname { font-size: 16px; font-weight: bold; }
+.pmeta { font-size: 13px; color: #374151; }
+.allergy-alert {
+  background: #fee2e2; border: 2px solid #dc2626; color: #7f1d1d; font-weight: bold;
+  padding: 8px 12px; border-radius: 6px; margin-top: 10px; font-size: 13px;
+}
+
+.search-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.search-row input { flex: 1 1 200px; }
+.search-results { margin-top: 10px; }
+.search-result-item {
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px;
+  cursor: pointer; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;
+}
+.search-result-item:hover { border-color: #2563eb; }
+
+table.entries { width: 100%; border-collapse: collapse; margin-top: 14px; }
+table.entries th, table.entries td { border: 1px solid #d1d5db; padding: 8px 6px; font-size: 13px; text-align: center; }
+table.entries th { background: #f3f4f6; text-transform: uppercase; font-size: 11px; }
+
+@media print {
+  .topbar, .no-print { display: none !important; }
+  body { background: #fff; }
+  .card-box { box-shadow: none; border: 1px solid #ccc; }
+}
+
+@media (max-width: 700px) {
+  .topbar { padding: 10px; }
+  .container { padding: 14px 10px; }
+  .search-row { flex-direction: column; }
+  .patient-banner { flex-direction: column; align-items: flex-start; }
+}
