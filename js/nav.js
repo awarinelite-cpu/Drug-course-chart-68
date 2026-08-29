@@ -1,6 +1,8 @@
 // Persistent hamburger navigation, injected on every page that includes this script.
-// Fixed top-left button opens a slide-in drawer with Home, Search, Overview (and
-// Admin / Log Out when relevant). Works from both the site root and /charts/.
+// The button lives inside each page's topbar (top-left, alongside the brand) so it
+// scrolls away with the header instead of floating over page content. It opens a
+// slide-in drawer with Home, Search, Overview (and Admin / Log Out when relevant).
+// Works from both the site root and /charts/.
 
 const inCharts = window.location.pathname.includes('/charts/');
 const basePath = inCharts ? '../' : '';
@@ -15,13 +17,20 @@ function injectStyles() {
   style.id = 'gnavStyles';
   style.textContent = `
     .gnav-toggle {
-      position: fixed; top: 12px; left: 12px; z-index: 4000;
-      width: 40px; height: 40px; border: none; border-radius: 8px;
-      background: #111827; color: #fff; font-size: 18px; line-height: 1;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.35); padding: 0;
+      width: 34px; height: 34px; border: none; border-radius: 6px; flex-shrink: 0;
+      background: rgba(255,255,255,.14); color: #fff; font-size: 17px; line-height: 1;
+      display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
     }
-    .gnav-toggle:hover { background: #1f2937; }
+    .gnav-toggle:hover { background: rgba(255,255,255,.26); }
+    .gnav-toggle.gnav-fallback {
+      position: fixed; top: 12px; left: 12px; z-index: 4000;
+      background: #111827; border-radius: 8px; width: 40px; height: 40px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.35);
+    }
+    .gnav-toggle.gnav-fallback:hover { background: #1f2937; }
+    .gnav-topbar-left {
+      display: flex; align-items: center; gap: 10px; min-width: 0;
+    }
     .gnav-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,.45);
       z-index: 4998; opacity: 0; pointer-events: none; transition: opacity .18s ease;
@@ -92,10 +101,26 @@ function buildMenu() {
     </div>
   `;
 
-  wrap.appendChild(toggle);
   wrap.appendChild(overlay);
   wrap.appendChild(drawer);
   document.body.appendChild(wrap);
+
+  // Place the button inside the page's topbar, to the left of the brand text,
+  // so it's always in the same spot but scrolls away with the header rather
+  // than floating over content. Falls back to a fixed corner button on the
+  // rare page that has no .topbar.
+  const topbar = document.querySelector('.topbar');
+  const brand = topbar ? topbar.querySelector('.brand') : null;
+  if (topbar && brand) {
+    const leftWrap = document.createElement('div');
+    leftWrap.className = 'gnav-topbar-left';
+    topbar.insertBefore(leftWrap, brand);
+    leftWrap.appendChild(toggle);
+    leftWrap.appendChild(brand);
+  } else {
+    toggle.classList.add('gnav-fallback');
+    document.body.appendChild(toggle);
+  }
 
   function open() {
     overlay.classList.add('gnav-open');
