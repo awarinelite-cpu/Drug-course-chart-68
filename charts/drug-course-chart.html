@@ -26,10 +26,20 @@
   table.drugs-table td.remove-col { width:34px; }
   .remove-drug-btn { background:#dc2626; color:#fff; border:none; border-radius:4px; padding:3px 7px; font-size:11px; cursor:pointer; }
 
-  table.chart { width:100%; border-collapse:collapse; }
-  table.chart th, table.chart td { border:1px solid #000; padding:5px 3px; font-size:12px; text-align:center; }
+  table.chart { width:100%; border-collapse:collapse; table-layout:fixed; }
+  table.chart th, table.chart td { border:1px solid #000; padding:5px 3px; font-size:12px; text-align:center; word-wrap:break-word; }
   table.chart th { background:#f2f2f2; text-transform:uppercase; }
   table.chart td input, table.chart td select { width:100%; border:none; background:transparent; text-align:center; font-size:12px; font-family:inherit; }
+  table.chart td.view-cell { text-align:center; min-height:18px; }
+  table.chart th.col-date, table.chart td.col-date { width:10%; }
+  table.chart th.col-sno, table.chart td.col-sno { width:30%; text-align:left; }
+  table.chart td.col-sno input { text-align:left; }
+  table.chart th.col-time, table.chart td.col-time { width:9%; }
+  table.chart th.col-dose, table.chart td.col-dose { width:10%; }
+  table.chart th.col-route, table.chart td.col-route { width:11%; }
+  table.chart th.col-nurse, table.chart td.col-nurse { width:16%; }
+  table.chart th.col-remark, table.chart td.col-remark { width:14%; }
+  table.chart td input[readonly] { background:#f8f8f8; color:#333; }
   .table-wrap { overflow-x:auto; }
   @media print {
     .no-print { display:none !important; }
@@ -62,10 +72,10 @@
   <div class="info-grid">
     <div class="info-row"><label>NAME:</label><span class="val" id="print_name"></span></div>
     <div class="info-row"><label>EMR:</label><span class="val" id="print_emr"></span></div>
-    <div class="info-row"><label>WARD:</label><input type="text" id="f_ward"></div>
-    <div class="info-row"><label>Hospital No:</label><input type="text" id="f_hospno"></div>
-    <div class="info-row"><label>AGE:</label><input type="text" id="f_age"></div>
-    <div class="info-row"><label>Date of Admission:</label><input type="date" id="f_admission"></div>
+    <div class="info-row"><label>WARD:</label><span class="val" id="print_ward"></span></div>
+    <div class="info-row"><label>Hospital No:</label><span class="val" id="print_hospno"></span></div>
+    <div class="info-row"><label>AGE:</label><span class="val" id="print_age"></span></div>
+    <div class="info-row"><label>Date of Admission:</label><span class="val" id="print_admission"></span></div>
     <div class="info-row"><label>Diagnosis:</label><span class="val" id="print_diagnosis"></span></div>
     <div class="info-row"><label>Discharge Date:</label><input type="date" id="f_discharge"></div>
   </div>
@@ -85,13 +95,24 @@
 
   <div class="table-wrap">
   <table class="chart" id="chartTable">
-    <thead><tr><th>Date</th><th>Drug S/No</th><th>Time</th><th>Dose</th><th>Route</th><th>Signature</th><th>Remark</th></tr></thead>
+    <thead><tr>
+      <th class="col-date">Date</th>
+      <th class="col-sno">Drug S/N</th>
+      <th class="col-time">Time</th>
+      <th class="col-dose">Dose</th>
+      <th class="col-route">Route</th>
+      <th class="col-nurse">Nurses Name</th>
+      <th class="col-remark">Remark</th>
+    </tr></thead>
     <tbody id="chartBody"></tbody>
   </table>
   </div>
+  <datalist id="drugSnoList"></datalist>
   <div class="no-print" style="margin-top:10px;">
-    <button class="btn btn-success" onclick="addRow(1)">+ Add Row</button>
-    <button class="btn btn-secondary" onclick="removeRow()">− Remove Row</button>
+    <button class="btn btn-purple" id="editChartBtn" onclick="enterChartEditMode()">Edit</button>
+    <button class="btn btn-success" id="saveChartBtn" style="display:none;" onclick="exitChartEditMode()">Save</button>
+    <button class="btn btn-success" id="addRowBtn" style="display:none;" onclick="addRow(1)">+ Add Row</button>
+    <button class="btn btn-secondary" id="removeRowBtn" style="display:none;" onclick="removeRow()">− Remove Row</button>
   </div>
 </div>
 
@@ -107,12 +128,15 @@
   const ROUTE_OPTIONS = ['', 'Oral', 'IV', 'IM', 'SC', 'Sublingual', 'Topical', 'Rectal', 'Inhalation', 'NG Tube', 'Other'];
   const FREQ_OPTIONS = ['', 'OD', 'BD', 'TDS', 'QDS', 'STAT', 'PRN', 'Q4H', 'Q6H', 'Q8H', 'Q12H', 'Weekly', 'Other'];
   const ACTION_OPTIONS = ['', 'Ongoing', 'Completed', 'Discontinued', 'Withheld', 'Other'];
-  const fieldIds = ['f_ward', 'f_hospno', 'f_age', 'f_admission', 'f_discharge'];
+  const fieldIds = ['f_discharge']; // only fields not sourced from the patient record
 
   let chartRef;
   let saveTimer;
   let drugs = []; // { name, route, frequency, action }
   let drugsEditMode = false;
+  let chartRows = []; // { date, sno, time, dose, route, nurse, remark }
+  let chartEditMode = false;
+  let currentNurseName = '';
 
   function makeSelect(options, value) {
     const sel = document.createElement('select');
@@ -162,13 +186,13 @@
       const nameInput = document.createElement('input');
       nameInput.type = 'text';
       nameInput.value = d.name || '';
-      nameInput.addEventListener('input', () => { drugs[i].name = nameInput.value; refreshDrugDropdowns(); scheduleSave(); });
+      nameInput.addEventListener('input', () => { drugs[i].name = nameInput.value; refreshDrugSnoList(); scheduleSave(); });
       tdName.appendChild(nameInput);
       tr.appendChild(tdName);
 
       const tdRoute = document.createElement('td');
       const routeSel = makeSelect(ROUTE_OPTIONS, d.route || '');
-      routeSel.addEventListener('change', () => { drugs[i].route = routeSel.value; refreshDrugDropdowns(); scheduleSave(); });
+      routeSel.addEventListener('change', () => { drugs[i].route = routeSel.value; refreshDrugSnoList(); scheduleSave(); });
       tdRoute.appendChild(routeSel);
       tr.appendChild(tdRoute);
 
@@ -193,7 +217,7 @@
         if (confirm('Remove this drug from the list?')) {
           drugs.splice(i, 1);
           renderDrugsTable();
-          refreshDrugDropdowns();
+          refreshDrugSnoList();
           scheduleSave();
         }
       };
@@ -224,121 +248,158 @@
   window.addDrug = function () {
     drugs.push({ name: '', route: '', frequency: '', action: '' });
     renderDrugsTable();
-    refreshDrugDropdowns();
+    refreshDrugSnoList();
     scheduleSave();
   };
 
-  function drugSnoOptions() {
-    return [''].concat(drugs.map((d, i) => (i + 1) + (d.name ? ' - ' + d.name : '')));
-  }
-
-  function refreshDrugDropdowns() {
-    document.querySelectorAll('#chartBody select.drug-sno').forEach(sel => {
-      const current = sel.value;
-      sel.innerHTML = '';
-      drugSnoOptions().forEach(opt => {
-        const o = document.createElement('option');
-        o.value = opt;
-        o.textContent = opt || '—';
-        if (opt === current) o.selected = true;
-        sel.appendChild(o);
-      });
-      // if the previously selected drug no longer exists (renamed/removed), clear it
-      if (![...sel.options].some(o => o.value === current)) sel.value = '';
+  function refreshDrugSnoList() {
+    const list = document.getElementById('drugSnoList');
+    list.innerHTML = '';
+    drugs.forEach((d, i) => {
+      const o = document.createElement('option');
+      o.value = (i + 1) + (d.name ? ' - ' + d.name : '');
+      list.appendChild(o);
     });
   }
 
-  function onDrugSnoChange(sel, doseInput, routeInput) {
-    const val = sel.value;
-    const idx = parseInt(val, 10) - 1;
-    if (!isNaN(idx) && drugs[idx]) {
-      routeInput.value = drugs[idx].route || '';
-      doseInput.value = 'AP';
-    }
-    scheduleSave();
+  // Fill in the nurse's name the first time any other field in a row is touched.
+  function touchRowNurse(row) {
+    if (!row.nurse && currentNurseName) row.nurse = currentNurseName;
   }
 
-  window.addRow = function (count, dataRow) {
+  function renderChartTable() {
+    if (chartEditMode) renderChartEdit(); else renderChartView();
+    document.getElementById('editChartBtn').style.display = chartEditMode ? 'none' : 'inline-block';
+    document.getElementById('saveChartBtn').style.display = chartEditMode ? 'inline-block' : 'none';
+    document.getElementById('addRowBtn').style.display = chartEditMode ? 'inline-block' : 'none';
+    document.getElementById('removeRowBtn').style.display = chartEditMode ? 'inline-block' : 'none';
+  }
+
+  function renderChartView() {
     const tbody = document.getElementById('chartBody');
-    for (let i = 0; i < count; i++) {
+    tbody.innerHTML = '';
+    chartRows.forEach(row => {
+      const tr = document.createElement('tr');
+      const cols = [
+        ['col-date', row.date || ''],
+        ['col-sno', row.sno || ''],
+        ['col-time', row.time || ''],
+        ['col-dose', row.dose || ''],
+        ['col-route', row.route || ''],
+        ['col-nurse', row.nurse || ''],
+        ['col-remark', row.remark || '']
+      ];
+      cols.forEach(([cls, val]) => {
+        const td = document.createElement('td');
+        td.className = cls + ' view-cell';
+        td.textContent = val || '\u00A0';
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderChartEdit() {
+    const tbody = document.getElementById('chartBody');
+    tbody.innerHTML = '';
+    refreshDrugSnoList();
+    chartRows.forEach((row, i) => {
       const tr = document.createElement('tr');
 
       // Date
       const tdDate = document.createElement('td');
+      tdDate.className = 'col-date';
       const dateInput = document.createElement('input');
       dateInput.type = 'date';
-      if (dataRow && dataRow[0]) dateInput.value = dataRow[0];
-      dateInput.addEventListener('input', scheduleSave);
+      dateInput.value = row.date || '';
+      dateInput.addEventListener('input', () => { row.date = dateInput.value; touchRowNurse(row); scheduleSave(); nurseCell.value = row.nurse || ''; });
       tdDate.appendChild(dateInput);
       tr.appendChild(tdDate);
 
-      // Drug S/No (dropdown)
+      // Drug S/N — the widest column, filled in manually by the nurse for the drug given at that time
       const tdSno = document.createElement('td');
-      const snoSelect = document.createElement('select');
-      snoSelect.className = 'drug-sno';
-      drugSnoOptions().forEach(opt => {
-        const o = document.createElement('option');
-        o.value = opt;
-        o.textContent = opt || '—';
-        if (dataRow && dataRow[1] === opt) o.selected = true;
-        snoSelect.appendChild(o);
-      });
-      tdSno.appendChild(snoSelect);
+      tdSno.className = 'col-sno';
+      const snoInput = document.createElement('input');
+      snoInput.type = 'text';
+      snoInput.setAttribute('list', 'drugSnoList');
+      snoInput.placeholder = 'e.g. 1 - Paracetamol';
+      snoInput.value = row.sno || '';
+      snoInput.addEventListener('input', () => { row.sno = snoInput.value; touchRowNurse(row); scheduleSave(); nurseCell.value = row.nurse || ''; });
+      tdSno.appendChild(snoInput);
       tr.appendChild(tdSno);
 
       // Time
       const tdTime = document.createElement('td');
+      tdTime.className = 'col-time';
       const timeInput = document.createElement('input');
       timeInput.type = 'time';
-      if (dataRow && dataRow[2]) timeInput.value = dataRow[2];
-      timeInput.addEventListener('input', scheduleSave);
+      timeInput.value = row.time || '';
+      timeInput.addEventListener('input', () => { row.time = timeInput.value; touchRowNurse(row); scheduleSave(); nurseCell.value = row.nurse || ''; });
       tdTime.appendChild(timeInput);
       tr.appendChild(tdTime);
 
       // Dose
       const tdDose = document.createElement('td');
+      tdDose.className = 'col-dose';
       const doseInput = document.createElement('input');
       doseInput.type = 'text';
-      if (dataRow && dataRow[3] !== undefined) doseInput.value = dataRow[3];
-      doseInput.addEventListener('input', scheduleSave);
+      doseInput.value = row.dose || '';
+      doseInput.addEventListener('input', () => { row.dose = doseInput.value; touchRowNurse(row); scheduleSave(); nurseCell.value = row.nurse || ''; });
       tdDose.appendChild(doseInput);
       tr.appendChild(tdDose);
 
       // Route
       const tdRoute = document.createElement('td');
+      tdRoute.className = 'col-route';
       const routeInput = document.createElement('input');
       routeInput.type = 'text';
-      if (dataRow && dataRow[4] !== undefined) routeInput.value = dataRow[4];
-      routeInput.addEventListener('input', scheduleSave);
+      routeInput.value = row.route || '';
+      routeInput.addEventListener('input', () => { row.route = routeInput.value; touchRowNurse(row); scheduleSave(); nurseCell.value = row.nurse || ''; });
       tdRoute.appendChild(routeInput);
       tr.appendChild(tdRoute);
 
-      snoSelect.addEventListener('change', () => onDrugSnoChange(snoSelect, doseInput, routeInput));
-
-      // Signature
-      const tdSig = document.createElement('td');
-      const sigInput = document.createElement('input');
-      sigInput.type = 'text';
-      if (dataRow && dataRow[5] !== undefined) sigInput.value = dataRow[5];
-      sigInput.addEventListener('input', scheduleSave);
-      tdSig.appendChild(sigInput);
-      tr.appendChild(tdSig);
+      // Nurses Name — auto-filled with the logged-in nurse, read-only
+      const tdNurse = document.createElement('td');
+      tdNurse.className = 'col-nurse';
+      const nurseCell = document.createElement('input');
+      nurseCell.type = 'text';
+      nurseCell.readOnly = true;
+      nurseCell.value = row.nurse || '';
+      tdNurse.appendChild(nurseCell);
+      tr.appendChild(tdNurse);
 
       // Remark
       const tdRemark = document.createElement('td');
+      tdRemark.className = 'col-remark';
       const remarkInput = document.createElement('input');
       remarkInput.type = 'text';
-      if (dataRow && dataRow[6] !== undefined) remarkInput.value = dataRow[6];
-      remarkInput.addEventListener('input', scheduleSave);
+      remarkInput.value = row.remark || '';
+      remarkInput.addEventListener('input', () => { row.remark = remarkInput.value; touchRowNurse(row); scheduleSave(); nurseCell.value = row.nurse || ''; });
       tdRemark.appendChild(remarkInput);
       tr.appendChild(tdRemark);
 
       tbody.appendChild(tr);
-    }
+    });
+  }
+
+  window.enterChartEditMode = function () {
+    chartEditMode = true;
+    renderChartTable();
+  };
+
+  window.exitChartEditMode = function () {
+    chartEditMode = false;
+    renderChartTable();
+    saveChart();
+  };
+
+  window.addRow = function (count) {
+    for (let i = 0; i < count; i++) chartRows.push({ date: '', sno: '', time: '', dose: '', route: '', nurse: '', remark: '' });
+    renderChartTable();
+    scheduleSave();
   };
   window.removeRow = function () {
-    const tbody = document.getElementById('chartBody');
-    if (tbody.rows.length > 0) { tbody.deleteRow(tbody.rows.length - 1); scheduleSave(); }
+    if (chartRows.length > 0) { chartRows.pop(); renderChartTable(); scheduleSave(); }
   };
 
   function scheduleSave() {
@@ -350,13 +411,7 @@
   async function saveChart() {
     const data = {};
     fieldIds.forEach(id => data[id] = document.getElementById(id).value);
-    const rows = [];
-    document.querySelectorAll('#chartBody tr').forEach(tr => {
-      const cells = [];
-      tr.querySelectorAll('input, select').forEach(inp => cells.push(inp.value));
-      rows.push(cells);
-    });
-    data.rows = rows;
+    data.rows = chartRows;
     data.drugs = drugs;
     data.updatedAt = serverTimestamp();
     try {
@@ -367,12 +422,27 @@
     }
   }
 
+  // Safety net: if a nurse forgets to press Save (or leaves the page open) while
+  // editing, flush any pending changes to Firestore every 15s and whenever the
+  // tab is hidden/closed, on top of the normal debounced auto-save above.
+  setInterval(() => { if (chartEditMode || drugsEditMode) saveChart(); }, 15000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && (chartEditMode || drugsEditMode)) saveChart();
+  });
+  window.addEventListener('beforeunload', () => { if (chartEditMode || drugsEditMode) saveChart(); });
+
   requireAuth(async (user, profile) => {
+    currentNurseName = (profile && profile.name) || user.email || 'Unknown';
+
     const patient = await loadPatientHeader(patientId, { name: 'pb_name', meta: 'pb_meta', allergy: 'pb_allergy' });
     if (!patient) return;
     document.getElementById('print_name').textContent = patient.name || '';
     document.getElementById('print_emr').textContent = patient.emr || '';
     document.getElementById('print_diagnosis').textContent = patient.diagnosis || '';
+    document.getElementById('print_ward').textContent = patient.ward || '';
+    document.getElementById('print_hospno').textContent = patient.hospNo || '';
+    document.getElementById('print_age').textContent = patient.age || '';
+    document.getElementById('print_admission').textContent = patient.admission || '';
 
     chartRef = doc(db, 'patients', patientId, 'drugCourseChart', 'main');
     const snap = await getDoc(chartRef);
@@ -381,13 +451,17 @@
       fieldIds.forEach(id => { if (document.getElementById(id)) document.getElementById(id).value = data[id] || ''; });
       drugs = (data.drugs && data.drugs.length) ? data.drugs : Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '' }));
       renderDrugsTable();
-      const rows = (data.rows && data.rows.length) ? data.rows : Array(18).fill(['', '', '', '', '', '', '']);
-      rows.forEach(r => addRow(1, r));
+      chartRows = (data.rows && data.rows.length)
+        ? data.rows.map(r => Array.isArray(r)
+            ? { date: r[0] || '', sno: r[1] || '', time: r[2] || '', dose: r[3] || '', route: r[4] || '', nurse: r[5] || '', remark: r[6] || '' } // migrate old array-row format
+            : r)
+        : Array(18).fill(null).map(() => ({ date: '', sno: '', time: '', dose: '', route: '', nurse: '', remark: '' }));
     } else {
       drugs = Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '' }));
       renderDrugsTable();
-      addRow(18);
+      chartRows = Array(18).fill(null).map(() => ({ date: '', sno: '', time: '', dose: '', route: '', nurse: '', remark: '' }));
     }
+    renderChartTable();
     fieldIds.forEach(id => document.getElementById(id).addEventListener('input', scheduleSave));
     document.getElementById('saveStatus').textContent = 'Changes save automatically';
   });
