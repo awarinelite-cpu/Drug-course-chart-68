@@ -46,11 +46,27 @@
     <div class="patient-banner">
       <div>
         <div class="pname" id="pb_name"></div>
-        <div class="pmeta" id="pb_meta"></div>
+        <div class="pmeta" id="pb_meta" style="display:inline;"></div>
+        <button class="btn btn-secondary edit-patient-btn" id="editPatientBtn" title="Edit patient information" onclick="openEditPatient()">✎</button>
       </div>
       <button class="btn btn-secondary" style="padding:6px 12px;" onclick="clearPatient()">Change Patient</button>
     </div>
     <div id="pb_allergy"></div>
+
+    <div class="card-box" id="editPatientBox" style="display:none; margin-top:12px; box-shadow:none; border:1px solid #e5e7eb;">
+      <h3 style="margin-top:0;">Edit Patient Information</h3>
+      <div class="field"><label>Name</label><input type="text" id="ep_name"></div>
+      <div class="field"><label>EMR Number</label><input type="text" id="ep_emr"></div>
+      <div class="field"><label>Diagnosis</label><input type="text" id="ep_diagnosis"></div>
+      <div class="field"><label>Ward</label><input type="text" id="ep_ward"></div>
+      <div class="field"><label>Age</label><input type="text" id="ep_age"></div>
+      <div class="field"><label>Hospital No</label><input type="text" id="ep_hospno"></div>
+      <div class="field"><label>Date of Admission</label><input type="date" id="ep_admission"></div>
+      <div class="field"><label>Allergies</label><input type="text" id="ep_allergies" placeholder="None known / list allergies"></div>
+      <button class="btn btn-primary" onclick="saveEditPatient()">Save Changes</button>
+      <button class="btn btn-secondary" onclick="closeEditPatient()">Cancel</button>
+      <div id="epMsg"></div>
+    </div>
 
     <div class="chart-grid">
       <div class="chart-card" onclick="openChart('drug-course-chart')"><span class="icon">💊</span>Drug Course Chart</div>
@@ -65,7 +81,7 @@
 <script type="module">
   import { requireAuth, logout } from "./js/auth-guard.js";
   import { db } from "./js/firebase.js";
-  import { collection, getDocs, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
   window.logout = logout;
   let selectedPatient = null;
@@ -121,12 +137,65 @@
     } else {
       allergyBox.innerHTML = '';
     }
+    closeEditPatient();
     document.getElementById('patientBox').style.display = 'block';
   }
 
   window.clearPatient = function () {
     selectedPatient = null;
+    closeEditPatient();
     document.getElementById('patientBox').style.display = 'none';
+  };
+
+  window.openEditPatient = function () {
+    if (!selectedPatient) return;
+    const p = selectedPatient;
+    document.getElementById('ep_name').value = p.name || '';
+    document.getElementById('ep_emr').value = p.emr || '';
+    document.getElementById('ep_diagnosis').value = p.diagnosis || '';
+    document.getElementById('ep_ward').value = p.ward || '';
+    document.getElementById('ep_age').value = p.age || '';
+    document.getElementById('ep_hospno').value = p.hospNo || '';
+    document.getElementById('ep_admission').value = p.admissionDate || '';
+    document.getElementById('ep_allergies').value = p.allergies || '';
+    document.getElementById('epMsg').innerHTML = '';
+    document.getElementById('editPatientBox').style.display = 'block';
+  };
+
+  window.closeEditPatient = function () {
+    document.getElementById('editPatientBox').style.display = 'none';
+  };
+
+  window.saveEditPatient = async function () {
+    if (!selectedPatient) return;
+    const name = document.getElementById('ep_name').value.trim();
+    const emr = document.getElementById('ep_emr').value.trim();
+    const msgBox = document.getElementById('epMsg');
+    msgBox.innerHTML = '';
+    if (!name || !emr) {
+      msgBox.innerHTML = '<div class="error-msg">Name and EMR number are required.</div>';
+      return;
+    }
+    const updates = {
+      name, emr,
+      diagnosis: document.getElementById('ep_diagnosis').value.trim(),
+      ward: document.getElementById('ep_ward').value.trim(),
+      age: document.getElementById('ep_age').value.trim(),
+      hospNo: document.getElementById('ep_hospno').value.trim(),
+      admissionDate: document.getElementById('ep_admission').value.trim(),
+      allergies: document.getElementById('ep_allergies').value.trim(),
+      updatedAt: serverTimestamp()
+    };
+    try {
+      await updateDoc(doc(db, 'patients', selectedPatient.id), updates);
+    } catch (e) {
+      msgBox.innerHTML = '<div class="error-msg">Save failed: ' + (e.code || e.message || 'unknown error') + '</div>';
+      return;
+    }
+    const updatedPatient = { ...selectedPatient, ...updates };
+    delete updatedPatient.updatedAt;
+    await loadAllPatients(true);
+    selectPatient(updatedPatient);
   };
 
   window.showNewPatientForm = function () { document.getElementById('newPatientBox').style.display = 'block'; };
