@@ -51,7 +51,6 @@
         <button class="btn btn-secondary edit-patient-btn" id="editPatientBtn" title="Edit patient information" onclick="openEditPatient()">✎</button>
         <button class="btn btn-purple" id="overviewBtn" style="padding:4px 10px; font-size:12px; margin-left:6px;" onclick="openOverview()">Overview</button>
       </div>
-      <button class="btn btn-secondary" style="padding:6px 12px;" onclick="clearPatient()">Change Patient</button>
     </div>
     <div id="pb_allergy"></div>
 
@@ -83,7 +82,7 @@
 <script type="module">
   import { requireAuth, logout } from "./js/auth-guard.js";
   import { db } from "./js/firebase.js";
-  import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { collection, getDocs, addDoc, updateDoc, doc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
   window.logout = logout;
   let selectedPatient = null;
@@ -96,7 +95,28 @@
       const input = document.getElementById('searchInput');
       if (input) { input.scrollIntoView({ behavior: 'smooth', block: 'center' }); input.focus(); }
     }
+    restoreSelectedPatient();
   });
+
+  // Keeps the currently open patient showing when navigating back to this page
+  // (e.g. via the Back button on a chart), instead of losing the selection.
+  // Only replaced when the user searches for and picks a different patient.
+  const SELECTED_PATIENT_KEY = 'selectedPatientId';
+
+  async function restoreSelectedPatient() {
+    const storedId = sessionStorage.getItem(SELECTED_PATIENT_KEY);
+    if (!storedId) return;
+    try {
+      const snap = await getDoc(doc(db, 'patients', storedId));
+      if (snap.exists()) {
+        selectPatient({ id: snap.id, ...snap.data() });
+      } else {
+        sessionStorage.removeItem(SELECTED_PATIENT_KEY);
+      }
+    } catch (e) {
+      // If restore fails (offline, permissions, etc.) just leave the search screen showing.
+    }
+  }
 
   async function loadAllPatients(force) {
     if (allPatientsCache && !force) return allPatientsCache;
@@ -131,6 +151,7 @@
 
   function selectPatient(p) {
     selectedPatient = p;
+    sessionStorage.setItem(SELECTED_PATIENT_KEY, p.id);
     document.getElementById('searchResults').innerHTML = '';
     document.getElementById('searchInput').value = '';
     document.getElementById('newPatientBox').style.display = 'none';
@@ -146,12 +167,6 @@
     closeEditPatient();
     document.getElementById('patientBox').style.display = 'block';
   }
-
-  window.clearPatient = function () {
-    selectedPatient = null;
-    closeEditPatient();
-    document.getElementById('patientBox').style.display = 'none';
-  };
 
   window.openEditPatient = function () {
     if (!selectedPatient) return;

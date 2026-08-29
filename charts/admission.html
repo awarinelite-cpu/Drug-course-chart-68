@@ -22,7 +22,7 @@
 <div class="topbar no-print">
   <div class="brand">Admission Overview</div>
   <div class="right">
-    <a href="overview.html" id="backLink" class="btn btn-secondary" style="padding:6px 12px;">Back</a>
+    <button id="backLink" class="btn btn-secondary" style="padding:6px 12px;" onclick="gnavGoBack(this.dataset.fallback)" data-fallback="overview.html">Back</button>
     <button class="btn btn-secondary" style="padding:6px 12px;" onclick="shareAdmission()">Share</button>
     <button class="btn btn-primary" style="padding:6px 12px;" onclick="window.print()">Print</button>
   </div>
@@ -55,7 +55,7 @@
   const admissionId = params.get('admission');
   const isArchived = !!admissionId;
 
-  document.getElementById('backLink').href = 'overview.html?patient=' + patientId;
+  document.getElementById('backLink').dataset.fallback = 'overview.html?patient=' + patientId;
 
   const STATUS_LABELS = { referred: 'Referred to another hospital', transferred: 'Transferred to another ward', discharged: 'Discharged' };
   const BADGE_CLASS = { referred: 'badge-referred', transferred: 'badge-transferred', discharged: 'badge-discharged' };

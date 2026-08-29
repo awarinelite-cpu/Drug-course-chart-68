@@ -198,3 +198,14 @@ function wireIdentity(drawer) {
 injectStyles();
 const { drawer } = buildMenu();
 wireIdentity(drawer);
+
+// Shared "Back" behavior for every page's Back button: step back through real
+// browser history (so patient context and previous pages are preserved),
+// falling back to a given URL only when there's nowhere to go back to.
+window.gnavGoBack = function (fallbackHref) {
+  if (window.history.length > 1) {
+    window.history.back();
+  } else {
+    window.location.href = fallbackHref;
+  }
+};
