@@ -18,17 +18,30 @@ export function requireAuth(onReady) {
     }
 
     const userRef = doc(db, "users", user.uid);
-    let snap = await getDoc(userRef);
+    let snap;
+    try {
+      snap = await getDoc(userRef);
+    } catch (e) {
+      alert("Couldn't reach the database: " + (e.code || e.message || 'unknown error') +
+        "\n\nMake sure Firestore Database has been created for this Firebase project (Firebase Console > Firestore Database > Create database).");
+      return;
+    }
 
     if (!snap.exists()) {
       if (user.email === SEED_ADMIN_EMAIL) {
-        await setDoc(userRef, {
-          name: "Admin",
-          email: user.email,
-          role: "admin",
-          createdAt: serverTimestamp()
-        });
-        snap = await getDoc(userRef);
+        try {
+          await setDoc(userRef, {
+            name: "Admin",
+            email: user.email,
+            role: "admin",
+            createdAt: serverTimestamp()
+          });
+          snap = await getDoc(userRef);
+        } catch (e) {
+          alert("Couldn't create your admin profile: " + (e.code || e.message || 'unknown error') +
+            "\n\nCheck that Firestore security rules have been published for this project.");
+          return;
+        }
       } else {
         alert("Your account isn't set up yet. Please contact your admin.");
         await signOut(auth);

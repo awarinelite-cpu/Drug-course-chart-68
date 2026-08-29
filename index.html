@@ -136,6 +136,7 @@
     const name = document.getElementById('np_name').value.trim();
     const emr = document.getElementById('np_emr').value.trim();
     const msgBox = document.getElementById('npMsg');
+    msgBox.innerHTML = '';
     if (!name || !emr) {
       msgBox.innerHTML = '<div class="error-msg">Name and EMR number are required.</div>';
       return;
@@ -151,7 +152,13 @@
       createdAt: serverTimestamp(),
       createdBy: window.currentUser ? window.currentUser.uid : null
     };
-    const ref = await addDoc(collection(db, 'patients'), data);
+    let ref;
+    try {
+      ref = await addDoc(collection(db, 'patients'), data);
+    } catch (e) {
+      msgBox.innerHTML = '<div class="error-msg">Save failed: ' + (e.code || e.message || 'unknown error') + '</div>';
+      return;
+    }
     await loadAllPatients(true);
     hideNewPatientForm();
     ['np_name','np_emr','np_diagnosis','np_ward','np_age','np_hospno','np_admission','np_allergies'].forEach(id => document.getElementById(id).value = '');
