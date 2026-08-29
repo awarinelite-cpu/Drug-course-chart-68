@@ -6,6 +6,7 @@
 <title>Drugs Course Chart</title>
 <style>
   * { box-sizing: border-box; }
+  html, body { overflow-x: hidden; max-width: 100%; }
   body {
     font-family: Arial, Helvetica, sans-serif;
     background: #e9e9e9;
@@ -50,10 +51,13 @@
   .sheet {
     background: #fff;
     max-width: 900px;
+    width: 100%;
     margin: 0 auto;
     padding: 40px 45px;
     border: 1px solid #ccc;
   }
+
+  .table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
   .brand-row {
     display: flex;
@@ -243,6 +247,44 @@
     input { border-bottom: 1px solid #000 !important; }
     .allergy-field input { border-bottom: 1px solid #dc2626 !important; }
   }
+
+  @media (max-width: 700px) {
+    body { padding: 8px; }
+    .toolbar { max-width: 100%; }
+    .toolbar button, .toolbar select, .toolbar label.filebtn {
+      flex: 1 1 auto;
+      font-size: 12px;
+      padding: 10px 8px;
+      text-align: center;
+    }
+    .save-status { max-width: 100%; text-align: left; }
+    .sheet { padding: 18px 14px; }
+
+    .brand-row { flex-direction: column; gap: 4px; }
+    .header h1 { font-size: 20px; line-height: 1.2; }
+    #logoPreview { max-height: 44px; max-width: 44px; }
+
+    .header-sub { flex-direction: column; align-items: center; margin-bottom: 14px; }
+    .header-sub h2 { font-size: 17px; }
+    .rim-note { position: static; margin-top: 2px; font-size: 11px; }
+
+    .info-grid { grid-template-columns: 1fr; column-gap: 0; row-gap: 8px; }
+    .info-row { font-size: 13px; white-space: normal; flex-wrap: wrap; }
+    .info-row label { flex: 1 1 100%; margin-bottom: 2px; }
+    .info-row input { flex: 1 1 100%; font-size: 13px; }
+
+    .drugs-block .drugs-title { flex-wrap: wrap; }
+    .drugs-block .drugs-title input { margin-left: 0; margin-top: 4px; flex: 1 1 100%; max-width: 100%; }
+    .drug-num-list { grid-template-columns: 1fr; column-gap: 0; row-gap: 6px; }
+    .drug-num-row { font-size: 13px; }
+
+    .table-wrap { border: 1px solid #999; }
+    table { min-width: 620px; }
+    th, td { font-size: 11px; padding: 4px 2px; }
+    td input { font-size: 11px; }
+
+    .footer-note { flex-direction: column; gap: 4px; font-size: 11px; }
+  }
 </style>
 </head>
 <body>
@@ -334,6 +376,7 @@
     </div>
   </div>
 
+  <div class="table-wrap">
   <table id="chartTable">
     <colgroup>
       <col class="date"><col class="drug"><col class="time"><col class="dose"><col class="route"><col class="sign"><col class="remark">
@@ -351,6 +394,7 @@
     </thead>
     <tbody id="chartBody"></tbody>
   </table>
+  </div>
 
   <div class="footer-note">
     <span id="lastSavedNote"></span>
