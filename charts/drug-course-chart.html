@@ -295,6 +295,18 @@
     if (!row.nurse && currentNurseName) row.nurse = currentNurseName;
   }
 
+  // Look up the route(s) for whichever drug number(s) are written in the Drug S/N
+  // field (e.g. "1", "1 - Paracetamol", or "1, 3, 4") against the Drugs list above.
+  function computeRouteFromSno(snoText) {
+    const nums = (snoText || '').match(/\d+/g) || [];
+    const routes = [];
+    nums.forEach(n => {
+      const d = drugs[parseInt(n, 10) - 1];
+      if (d && d.route && !routes.includes(d.route)) routes.push(d.route);
+    });
+    return routes.join('/');
+  }
+
   function defaultRow() {
     return { date: '', sno: '', time: '', dose: 'AP', route: '', nurse: '', remark: '' };
   }
@@ -413,7 +425,14 @@
       snoInput.setAttribute('list', 'drugSnoList');
       snoInput.placeholder = 'e.g. 1 - Paracetamol';
       snoInput.value = row.sno || '';
-      snoInput.addEventListener('input', () => { row.sno = snoInput.value; touchRowNurse(row); scheduleSave(); nurseCell.value = row.nurse || ''; });
+      snoInput.addEventListener('input', () => {
+        row.sno = snoInput.value;
+        row.route = computeRouteFromSno(row.sno);
+        routeInput.value = row.route;
+        touchRowNurse(row);
+        scheduleSave();
+        nurseCell.value = row.nurse || '';
+      });
       tdSno.appendChild(snoInput);
       tr.appendChild(tdSno);
 
@@ -547,6 +566,7 @@
             ? { date: r[0] || '', sno: r[1] || '', time: r[2] || '', dose: r[3] || 'AP', route: r[4] || '', nurse: r[5] || '', remark: r[6] || '' } // migrate old array-row format
             : { ...r, dose: r.dose || 'AP' })
         : Array(18).fill(null).map(() => defaultRow());
+      chartRows.forEach(row => { if (row.sno && !row.route) row.route = computeRouteFromSno(row.sno); });
       verbalOrders = data.verbalOrders || [];
     } else {
       drugs = Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '' }));
