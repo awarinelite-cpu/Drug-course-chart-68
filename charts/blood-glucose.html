@@ -38,6 +38,7 @@
     <div><div class="pname" id="pb_name">Loading…</div><div class="pmeta" id="pb_meta"></div></div>
   </div>
   <div id="pb_allergy"></div>
+  <div id="archiveBanner" style="display:none; background:#fef3c7; border:1px solid #f59e0b; color:#78350f; font-weight:bold; padding:8px 12px; border-radius:6px; margin-top:10px; font-size:13px;"></div>
   <div id="saveStatus" style="font-size:12px; color:#555; margin-top:8px; text-align:right;">—</div>
 </div>
 
@@ -56,7 +57,7 @@
     <tbody id="chartBody"></tbody>
   </table>
   </div>
-  <div class="no-print" style="margin-top:10px;">
+  <div class="no-print" id="rowControls" style="margin-top:10px;">
     <button class="btn btn-success" onclick="addRow(1)">+ Add Row</button>
     <button class="btn btn-secondary" onclick="removeRow()">− Remove Row</button>
   </div>
@@ -72,6 +73,12 @@
   const patientId = getPatientIdFromUrl();
   if (!patientId) window.location.href = '../index.html';
   lockBackTo('../index.html');
+
+  // If ?admission=<id> is present we're viewing this chart as part of a closed-out
+  // admission folder — read-only, no edit controls.
+  const admissionId = new URLSearchParams(window.location.search).get('admission');
+  const isArchived = !!admissionId;
+  const STATUS_LABELS = { referred: 'Referred to another hospital', transferred: 'Transferred to another ward', discharged: 'Discharged' };
 
   const CHART_DEFS = {
     '6point': {
@@ -140,7 +147,11 @@
         const input = document.createElement('input');
         input.type = col.type;
         if (dataRow && dataRow[c] !== undefined) input.value = dataRow[c];
-        input.addEventListener('input', scheduleSave);
+        if (isArchived) {
+          input.readOnly = true;
+        } else {
+          input.addEventListener('input', scheduleSave);
+        }
         td.appendChild(input);
         tr.appendChild(td);
       });
@@ -159,6 +170,7 @@
   }
 
   async function saveChart() {
+    if (isArchived) return; // archived charts are read-only
     const rows = [];
     document.querySelectorAll('#chartBody tr').forEach(tr => {
       const cells = [];
@@ -177,11 +189,21 @@
     const patient = await loadPatientHeader(patientId, { name: 'pb_name', meta: 'pb_meta', allergy: 'pb_allergy' });
     if (!patient) return;
 
-    chartRef = doc(db, 'patients', patientId, 'bloodGlucose', 'main');
-    const snap = await getDoc(chartRef);
+    let data = null;
+    let admissionMeta = null;
+    if (isArchived) {
+      const admSnap = await getDoc(doc(db, 'patients', patientId, 'admissions', admissionId));
+      if (admSnap.exists()) {
+        admissionMeta = admSnap.data();
+        data = admissionMeta.bloodGlucose || null;
+      }
+    } else {
+      chartRef = doc(db, 'patients', patientId, 'bloodGlucose', 'main');
+      const snap = await getDoc(chartRef);
+      if (snap.exists()) data = snap.data();
+    }
 
-    if (snap.exists()) {
-      const data = snap.data();
+    if (data) {
       currentType = data.chartType === '3point' ? '3point' : '6point';
       document.getElementById('btn6').classList.toggle('active', currentType === '6point');
       document.getElementById('btn3').classList.toggle('active', currentType === '3point');
@@ -189,13 +211,26 @@
       buildHead();
       const rows = (data.rows && data.rows.length) ? data.rows : [];
       if (rows.length) rows.forEach(r => addRow(1, r));
-      else addRow(10);
+      else if (!isArchived) addRow(10);
     } else {
       document.getElementById('btn6').classList.add('active');
       buildHead();
-      addRow(10);
+      if (!isArchived) addRow(10);
     }
-    document.getElementById('saveStatus').textContent = 'Changes save automatically';
+
+    if (isArchived) {
+      document.getElementById('saveStatus').textContent = 'Viewing archived chart (read-only)';
+      document.querySelector('.toggle-row').style.display = 'none';
+      document.getElementById('rowControls').style.display = 'none';
+      if (admissionMeta) {
+        const when = admissionMeta.archivedAtDisplay || '';
+        const banner = document.getElementById('archiveBanner');
+        banner.textContent = 'Archived chart — ' + (admissionMeta.archiveReasonLabel || STATUS_LABELS[admissionMeta.archiveReason] || 'Closed') + (when ? ' on ' + when : '');
+        banner.style.display = 'block';
+      }
+    } else {
+      document.getElementById('saveStatus').textContent = 'Changes save automatically';
+    }
   });
 </script>
 </body>

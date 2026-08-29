@@ -3,7 +3,7 @@ import { loadPatientHeader, getPatientIdFromUrl } from "./chart-common.js";
 import { lockBackTo } from "./back-guard.js";
 import { db } from "./firebase.js";
 import {
-  collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp
+  collection, addDoc, deleteDoc, doc, getDoc, onSnapshot, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 export function initEntryChart({ collectionName, columns }) {
@@ -11,8 +11,67 @@ export function initEntryChart({ collectionName, columns }) {
   if (!patientId) { window.location.href = '../index.html'; return; }
   lockBackTo('../index.html');
 
+  // If ?admission=<id> is present we're viewing this chart as part of a closed-out
+  // admission folder (referred/transferred/discharged) — read-only, no entry form.
+  const admissionId = new URLSearchParams(window.location.search).get('admission');
+  const isArchived = !!admissionId;
+
+  const STATUS_LABELS = { referred: 'Referred to another hospital', transferred: 'Transferred to another ward', discharged: 'Discharged' };
+
+  function buildHeadRow() {
+    const thead = document.getElementById('entryHead');
+    const trh = document.createElement('tr');
+    columns.forEach(col => { const th = document.createElement('th'); th.textContent = col.label; trh.appendChild(th); });
+    if (!isArchived) {
+      const thAction = document.createElement('th');
+      thAction.className = 'no-print';
+      trh.appendChild(thAction);
+    }
+    thead.appendChild(trh);
+  }
+
   requireAuth(async (user, profile) => {
     await loadPatientHeader(patientId, { name: 'pb_name', meta: 'pb_meta', allergy: 'pb_allergy' });
+
+    if (isArchived) {
+      // Hide the "New Reading/Entry" box entirely — nothing can be added to a closed admission.
+      const formBox = document.getElementById('entryForm').closest('.card-box');
+      if (formBox) formBox.style.display = 'none';
+
+      const admSnap = await getDoc(doc(db, 'patients', patientId, 'admissions', admissionId));
+      const admData = admSnap.exists() ? admSnap.data() : {};
+
+      const container = document.querySelector('.container');
+      const allergyBox = document.getElementById('pb_allergy');
+      const banner = document.createElement('div');
+      banner.style.cssText = 'background:#fef3c7; border:1px solid #f59e0b; color:#78350f; font-weight:bold; padding:8px 12px; border-radius:6px; margin-top:10px; font-size:13px;';
+      banner.textContent = 'Archived chart — ' + (admData.archiveReasonLabel || STATUS_LABELS[admData.archiveReason] || 'Closed') + (admData.archivedAtDisplay ? ' on ' + admData.archivedAtDisplay : '');
+      container.insertBefore(banner, allergyBox.nextSibling);
+
+      buildHeadRow();
+      const tbody = document.getElementById('entryBody');
+      const entries = ((admData[collectionName] || [])).slice().sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+      if (!entries.length) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = columns.length;
+        td.textContent = 'No entries recorded for this admission.';
+        td.style.color = '#777';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+      entries.forEach(row => {
+        const tr = document.createElement('tr');
+        columns.forEach(col => {
+          const td = document.createElement('td');
+          td.textContent = row[col.key] || '';
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      return;
+    }
 
     // Build the entry form fields
     const formDiv = document.getElementById('entryForm');
@@ -48,13 +107,7 @@ export function initEntryChart({ collectionName, columns }) {
     };
 
     // Build the results table header
-    const thead = document.getElementById('entryHead');
-    const trh = document.createElement('tr');
-    columns.forEach(col => { const th = document.createElement('th'); th.textContent = col.label; trh.appendChild(th); });
-    const thAction = document.createElement('th');
-    thAction.className = 'no-print';
-    trh.appendChild(thAction);
-    thead.appendChild(trh);
+    buildHeadRow();
 
     // Live-updating table body
     const tbody = document.getElementById('entryBody');
@@ -96,3 +149,4 @@ export function initEntryChart({ collectionName, columns }) {
     });
   });
 }
+

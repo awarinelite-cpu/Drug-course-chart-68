@@ -163,16 +163,17 @@
   import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
   import { lockBackTo } from "../js/back-guard.js";
   import { db } from "../js/firebase.js";
-  import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { doc, getDoc, setDoc, addDoc, collection, getDocs, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
   const patientId = getPatientIdFromUrl();
   if (!patientId) window.location.href = '../index.html';
   lockBackTo('../index.html');
 
-  // If ?archive=<id> is present we're viewing a closed-out (referred/transferred/
-  // discharged) chart from the Overview page — read-only, no edit controls.
-  const archiveId = new URLSearchParams(window.location.search).get('archive');
-  const isArchived = !!archiveId;
+  // If ?admission=<id> is present we're viewing this chart as part of a closed-out
+  // admission folder (referred/transferred/discharged) from the Overview page —
+  // read-only, no edit controls.
+  const admissionId = new URLSearchParams(window.location.search).get('admission');
+  const isArchived = !!admissionId;
 
   const ROUTE_OPTIONS = ['', 'Oral', 'IV', 'IM', 'SC', 'Sublingual', 'Topical', 'Rectal', 'Inhalation', 'NG Tube', 'Other'];
   const FREQ_OPTIONS = ['', 'OD', 'BD', 'TDS', 'QDS', 'STAT', 'PRN', 'Q4H', 'Q6H', 'Q8H', 'Q12H', 'Weekly', 'Other'];
@@ -726,10 +727,10 @@
   }
 
   // --- Patient status change: referred / transferred / discharged ---
-  // Archives the current chart (with whatever diagnosis was entered on it) into
-  // patients/{id}/drugCourseCharts, then resets the active "main" chart back to
-  // a blank slate — empty diagnosis, empty drug list, empty rows — ready for the
-  // next admission or the next stage of care.
+  // Closes out the ENTIRE admission — Drug Course Chart, Vital Signs, Glycemic
+  // Chart, Intake & Output, and Seizure Chart — bundling all five into one
+  // admission folder under patients/{id}/admissions, then wipes all five live
+  // charts back to blank so a new admission can start fresh.
   window.applyStatusAction = async function () {
     if (isArchived) return;
     const sel = document.getElementById('statusAction');
@@ -740,43 +741,89 @@
       return;
     }
     const label = STATUS_LABELS[reason];
-    if (!confirm('Confirm: ' + label + '?\n\nThe current drug course chart will be saved to Overview, and a fresh chart will open for this patient.')) return;
+    if (!confirm('Confirm: ' + label + '?\n\nAll care records for this admission (drug chart, vitals, glycemic chart, intake & output, seizure chart) will be saved together to Overview, and fresh charts will open for this patient.')) return;
 
-    msg.innerHTML = 'Saving…';
-    await saveChart(); // flush latest edits first
+    msg.innerHTML = 'Saving all charts for this admission…';
+    await saveChart(); // flush latest drug-chart edits first
 
-    const archiveData = {};
-    fieldIds.forEach(id => archiveData[id] = document.getElementById(id).value);
-    archiveData.rows = chartRows;
-    archiveData.drugs = drugs;
-    archiveData.verbalOrders = verbalOrders;
-    archiveData.archiveReason = reason;
-    archiveData.archiveReasonLabel = label;
-    archiveData.archivedAt = serverTimestamp();
-    archiveData.archivedAtDisplay = new Date().toLocaleString();
+    async function fetchEntries(collName) {
+      const snap = await getDocs(collection(db, 'patients', patientId, collName));
+      const arr = [];
+      snap.forEach(d => arr.push(d.data()));
+      return arr;
+    }
+    async function clearEntries(collName) {
+      const snap = await getDocs(collection(db, 'patients', patientId, collName));
+      const deletions = [];
+      snap.forEach(d => deletions.push(deleteDoc(doc(db, 'patients', patientId, collName, d.id))));
+      await Promise.all(deletions);
+    }
+
+    let bgData = { chartType: '6point', rows: [] };
+    try {
+      const bgSnap = await getDoc(doc(db, 'patients', patientId, 'bloodGlucose', 'main'));
+      if (bgSnap.exists()) {
+        const d = bgSnap.data();
+        bgData = { chartType: d.chartType || '6point', rows: d.rows || [] };
+      }
+    } catch (e) { /* fine to archive with blank glycemic data if this fails */ }
+
+    let vitalsArr = [], ioArr = [], seizureArr = [];
+    try {
+      [vitalsArr, ioArr, seizureArr] = await Promise.all([
+        fetchEntries('vitals'), fetchEntries('intakeOutput'), fetchEntries('seizure')
+      ]);
+    } catch (e) { /* fine to archive with whatever we could gather */ }
+
+    const drugChartData = {};
+    fieldIds.forEach(id => drugChartData[id] = document.getElementById(id).value);
+    drugChartData.rows = chartRows;
+    drugChartData.drugs = drugs;
+    drugChartData.verbalOrders = verbalOrders;
+
+    const admissionDoc = {
+      diagnosis: document.getElementById('f_diagnosis').value,
+      archiveReason: reason,
+      archiveReasonLabel: label,
+      archivedAt: serverTimestamp(),
+      archivedAtDisplay: new Date().toLocaleString(),
+      drugCourseChart: drugChartData,
+      bloodGlucose: bgData,
+      vitals: vitalsArr,
+      intakeOutput: ioArr,
+      seizure: seizureArr
+    };
 
     try {
-      await addDoc(collection(db, 'patients', patientId, 'drugCourseCharts'), archiveData);
+      await addDoc(collection(db, 'patients', patientId, 'admissions'), admissionDoc);
     } catch (e) {
       msg.innerHTML = '<span style="color:#dc2626;">Could not save to Overview: ' + (e.code || e.message) + '</span>';
       return;
     }
 
-    const blank = {};
-    fieldIds.forEach(id => blank[id] = '');
-    blank.rows = Array(18).fill(null).map(() => defaultRow());
-    blank.drugs = Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '', duration: '' }));
-    blank.verbalOrders = [];
-    blank.updatedAt = serverTimestamp();
+    // Reset every live chart back to blank for the next admission.
+    const blankDrugChart = {};
+    fieldIds.forEach(id => blankDrugChart[id] = '');
+    blankDrugChart.rows = Array(18).fill(null).map(() => defaultRow());
+    blankDrugChart.drugs = Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '', duration: '' }));
+    blankDrugChart.verbalOrders = [];
+    blankDrugChart.updatedAt = serverTimestamp();
+
     try {
-      await setDoc(chartRef, blank); // full overwrite (no merge) so old data doesn't linger
+      await Promise.all([
+        setDoc(chartRef, blankDrugChart), // full overwrite (no merge) so old data doesn't linger
+        setDoc(doc(db, 'patients', patientId, 'bloodGlucose', 'main'), { chartType: '6point', rows: [], updatedAt: serverTimestamp() }),
+        clearEntries('vitals'),
+        clearEntries('intakeOutput'),
+        clearEntries('seizure')
+      ]);
     } catch (e) {
-      msg.innerHTML = '<span style="color:#dc2626;">Archived, but could not start the new chart: ' + (e.code || e.message) + '</span>';
+      msg.innerHTML = '<span style="color:#dc2626;">Archived, but could not fully reset the new charts: ' + (e.code || e.message) + '</span>';
       return;
     }
 
-    msg.innerHTML = '<span style="color:#16a34a;">Saved to Overview. Starting a new chart…</span>';
-    setTimeout(() => window.location.reload(), 900);
+    msg.innerHTML = '<span style="color:#16a34a;">Saved to Overview. Redirecting…</span>';
+    setTimeout(() => window.location.href = '../index.html', 900);
   };
 
   // Safety net: if a nurse forgets to press Save (or leaves the page open) while
@@ -801,12 +848,21 @@
     document.getElementById('print_age').textContent = patient.age || '';
     document.getElementById('print_admission').textContent = patient.admission || '';
 
-    chartRef = isArchived
-      ? doc(db, 'patients', patientId, 'drugCourseCharts', archiveId)
-      : doc(db, 'patients', patientId, 'drugCourseChart', 'main');
-    const snap = await getDoc(chartRef);
-    if (snap.exists()) {
-      const data = snap.data();
+    chartRef = doc(db, 'patients', patientId, 'drugCourseChart', 'main');
+    let data = null;
+    let admissionMeta = null;
+    if (isArchived) {
+      const admSnap = await getDoc(doc(db, 'patients', patientId, 'admissions', admissionId));
+      if (admSnap.exists()) {
+        admissionMeta = admSnap.data();
+        data = admissionMeta.drugCourseChart || null;
+      }
+    } else {
+      const snap = await getDoc(chartRef);
+      if (snap.exists()) data = snap.data();
+    }
+
+    if (data) {
       fieldIds.forEach(id => { if (document.getElementById(id)) document.getElementById(id).value = data[id] || ''; });
       drugs = (data.drugs && data.drugs.length) ? data.drugs : Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '', duration: '' }));
       renderDrugsTable();
@@ -817,10 +873,10 @@
         : Array(18).fill(null).map(() => defaultRow());
       chartRows.forEach(row => { if (row.sno && !row.route) row.route = computeRouteFromSno(row.sno); });
       verbalOrders = data.verbalOrders || [];
-      if (isArchived) {
-        const when = data.archivedAtDisplay || '';
+      if (isArchived && admissionMeta) {
+        const when = admissionMeta.archivedAtDisplay || '';
         const banner = document.getElementById('archiveBanner');
-        banner.textContent = 'Archived chart — ' + (data.archiveReasonLabel || STATUS_LABELS[data.archiveReason] || 'Closed') + (when ? ' on ' + when : '');
+        banner.textContent = 'Archived chart — ' + (admissionMeta.archiveReasonLabel || STATUS_LABELS[admissionMeta.archiveReason] || 'Closed') + (when ? ' on ' + when : '');
         banner.style.display = 'block';
       }
     } else {

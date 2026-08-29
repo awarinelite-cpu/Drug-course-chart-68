@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admission</title>
+<link rel="stylesheet" href="../js/styles.css">
+<style>
+  .badge { display:inline-block; padding:3px 10px; border-radius:10px; color:#fff; font-size:11px; font-weight:bold; margin-left:8px; vertical-align:middle; }
+  .badge-active { background:#2563eb; }
+  .badge-referred { background:#7c3aed; }
+  .badge-transferred { background:#d97706; }
+  .badge-discharged { background:#16a34a; }
+  @media print {
+    .no-print { display:none !important; }
+    body { background:#fff; }
+  }
+</style>
+</head>
+<body>
+<div class="topbar no-print">
+  <div class="brand">Admission Overview</div>
+  <div class="right">
+    <a href="overview.html" id="backLink" class="btn btn-secondary" style="padding:6px 12px;">Back</a>
+    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="shareAdmission()">Share</button>
+    <button class="btn btn-primary" style="padding:6px 12px;" onclick="window.print()">Print</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="patient-banner">
+    <div><div class="pname" id="pb_name">Loading…</div><div class="pmeta" id="pb_meta"></div></div>
+  </div>
+  <div id="pb_allergy"></div>
+
+  <div class="card-box" style="margin-top:16px;">
+    <div class="pname" id="adm_diagnosis" style="font-size:17px;">—<span class="badge" id="adm_badge"></span></div>
+    <div class="pmeta" id="adm_meta" style="margin-top:4px;"></div>
+  </div>
+
+  <div class="chart-grid" id="chartGrid"></div>
+</div>
+
+<script type="module">
+  import { requireAuth } from "../js/auth-guard.js";
+  import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
+  import { db } from "../js/firebase.js";
+  import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+  const patientId = getPatientIdFromUrl();
+  if (!patientId) window.location.href = '../index.html';
+
+  const params = new URLSearchParams(window.location.search);
+  const admissionId = params.get('admission');
+  const isArchived = !!admissionId;
+
+  document.getElementById('backLink').href = 'overview.html?patient=' + patientId;
+
+  const STATUS_LABELS = { referred: 'Referred to another hospital', transferred: 'Transferred to another ward', discharged: 'Discharged' };
+  const BADGE_CLASS = { referred: 'badge-referred', transferred: 'badge-transferred', discharged: 'badge-discharged' };
+
+  const CHARTS = [
+    { key: 'drug-course-chart', label: 'Drug Course Chart', icon: '💊' },
+    { key: 'vitals', label: 'Vital Signs', icon: '❤️' },
+    { key: 'blood-glucose', label: 'Glycemic Chart', icon: '🩸' },
+    { key: 'intake-output', label: 'Intake & Output', icon: '💧' },
+    { key: 'seizure', label: 'Seizure Chart', icon: '⚡' }
+  ];
+
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+
+  function chartHref(key) {
+    return key + '.html?patient=' + patientId + (isArchived ? '&admission=' + admissionId : '');
+  }
+
+  window.shareAdmission = async function () {
+    const shareData = {
+      title: 'Drug Course Chart · Admission',
+      text: document.getElementById('adm_diagnosis').textContent.trim() + ' — ' + document.getElementById('pb_name').textContent,
+      url: window.location.href
+    };
+    if (navigator.share) {
+      try { await navigator.share(shareData); } catch (e) { /* user cancelled — nothing to do */ }
+    } else {
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        alert('Link copied to clipboard.');
+      } catch (e) {
+        prompt('Copy this link to share:', window.location.href);
+      }
+    }
+  };
+
+  requireAuth(async () => {
+    const patient = await loadPatientHeader(patientId, { name: 'pb_name', meta: 'pb_meta', allergy: 'pb_allergy' });
+    if (!patient) return;
+
+    let diagnosis = 'No diagnosis recorded';
+    let metaLabel = '';
+    let badgeText = '';
+    let badgeClass = 'badge-active';
+
+    if (isArchived) {
+      const snap = await getDoc(doc(db, 'patients', patientId, 'admissions', admissionId));
+      if (!snap.exists()) {
+        alert('Admission record not found.');
+        window.location.href = 'overview.html?patient=' + patientId;
+        return;
+      }
+      const data = snap.data();
+      diagnosis = data.diagnosis || diagnosis;
+      metaLabel = data.archivedAtDisplay ? 'Closed on ' + data.archivedAtDisplay : '';
+      badgeText = data.archiveReasonLabel || STATUS_LABELS[data.archiveReason] || 'Closed';
+      badgeClass = BADGE_CLASS[data.archiveReason] || 'badge-discharged';
+    } else {
+      const drugSnap = await getDoc(doc(db, 'patients', patientId, 'drugCourseChart', 'main'));
+      diagnosis = (drugSnap.exists() && drugSnap.data().f_diagnosis) || 'No diagnosis entered yet';
+      metaLabel = 'Currently active';
+      badgeText = 'Active';
+      badgeClass = 'badge-active';
+    }
+
+    document.getElementById('adm_diagnosis').innerHTML = escapeHtml(diagnosis) + '<span class="badge ' + badgeClass + '" id="adm_badge">' + escapeHtml(badgeText) + '</span>';
+    document.getElementById('adm_meta').textContent = metaLabel;
+
+    const grid = document.getElementById('chartGrid');
+    grid.innerHTML = '';
+    CHARTS.forEach(c => {
+      const div = document.createElement('div');
+      div.className = 'chart-card';
+      div.innerHTML = '<span class="icon">' + c.icon + '</span>' + escapeHtml(c.label);
+      div.onclick = () => { window.location.href = chartHref(c.key); };
+      grid.appendChild(div);
+    });
+  });
+</script>
+</body>
+</html>
