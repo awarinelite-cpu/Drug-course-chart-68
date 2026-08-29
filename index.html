@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Drugs Course Chart</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #e9e9e9;
+    margin: 0;
+    padding: 20px;
+    color: #000;
+  }
+  .toolbar {
+    max-width: 900px;
+    margin: 0 auto 16px auto;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+  .toolbar button {
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: bold;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  #printBtn { background: #2563eb; color: #fff; }
+  #addRowBtn { background: #16a34a; color: #fff; }
+  #removeRowBtn { background: #dc2626; color: #fff; }
+
+  .sheet {
+    background: #fff;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 45px;
+    border: 1px solid #ccc;
+  }
+
+  .header h1 {
+    font-family: Impact, "Arial Black", sans-serif;
+    font-size: 32px;
+    letter-spacing: 0.5px;
+    margin: 0 0 6px 0;
+    text-align: center;
+    text-transform: uppercase;
+  }
+  .header-sub {
+    display: flex;
+    justify-content: center;
+    align-items: baseline;
+    position: relative;
+    margin-bottom: 20px;
+  }
+  .header-sub h2 {
+    font-size: 22px;
+    text-decoration: underline;
+    text-align: center;
+    margin: 0;
+    letter-spacing: 1px;
+  }
+  .rim-note {
+    position: absolute;
+    right: 0;
+    top: 0;
+    font-size: 12px;
+    font-style: italic;
+  }
+
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 40px;
+    row-gap: 10px;
+    margin-bottom: 6px;
+  }
+  .info-row {
+    display: flex;
+    align-items: baseline;
+    font-size: 15px;
+    white-space: nowrap;
+  }
+  .info-row label {
+    font-weight: bold;
+    margin-right: 6px;
+  }
+  .info-row input {
+    flex: 1;
+    border: none;
+    border-bottom: 1px solid #000;
+    font-size: 15px;
+    padding: 2px 4px;
+    outline: none;
+    background: transparent;
+    min-width: 0;
+  }
+
+  .drugs-block {
+    margin-top: 10px;
+    margin-bottom: 18px;
+  }
+  .drugs-block .drugs-title {
+    font-weight: bold;
+    font-size: 15px;
+    display: flex;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .drugs-block .drugs-title input {
+    flex: 1;
+    border: none;
+    border-bottom: 1px solid #000;
+    font-size: 15px;
+    padding: 2px 4px;
+    outline: none;
+    background: transparent;
+    margin-left: 6px;
+    max-width: 400px;
+  }
+  .drug-num-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 40px;
+    row-gap: 4px;
+  }
+  .drug-num-row {
+    display: flex;
+    align-items: baseline;
+    font-size: 15px;
+  }
+  .drug-num-row span {
+    width: 22px;
+    flex-shrink: 0;
+  }
+  .drug-num-row input {
+    flex: 1;
+    border: none;
+    border-bottom: 1px solid #000;
+    font-size: 15px;
+    padding: 2px 4px;
+    outline: none;
+    background: transparent;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    table-layout: fixed;
+  }
+  th, td {
+    border: 1px solid #000;
+    padding: 6px 4px;
+    font-size: 13px;
+    text-align: center;
+  }
+  th {
+    background: #f2f2f2;
+    font-weight: bold;
+    text-transform: uppercase;
+  }
+  td input {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    text-align: center;
+    font-size: 13px;
+    font-family: inherit;
+    padding: 4px 2px;
+  }
+  col.date { width: 11%; }
+  col.drug { width: 24%; }
+  col.time { width: 11%; }
+  col.dose { width: 11%; }
+  col.route { width: 11%; }
+  col.sign { width: 16%; }
+  col.remark { width: 16%; }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .toolbar { display: none; }
+    .sheet { border: none; padding: 15px 25px; max-width: 100%; }
+    input { border-bottom: 1px solid #000 !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button id="addRowBtn" onclick="addRow()">+ Add Row</button>
+  <button id="removeRowBtn" onclick="removeRow()">− Remove Row</button>
+  <button id="printBtn" onclick="window.print()">Print / Save as PDF</button>
+</div>
+
+<div class="sheet">
+  <div class="header">
+    <h1>68 Nigerian Army Reference Hospital Yaba</h1>
+  </div>
+  <div class="header-sub">
+    <h2>Drugs Course Chart</h2>
+    <span class="rim-note">10 rim front only</span>
+  </div>
+
+  <div class="info-grid">
+    <div class="info-row">
+      <label>NAME:</label>
+      <input type="text">
+    </div>
+    <div class="info-row">
+      <label>Date of Admission:</label>
+      <input type="text">
+    </div>
+    <div class="info-row">
+      <label>WARD:</label>
+      <input type="text">
+    </div>
+    <div class="info-row">
+      <label>EMR:</label>
+      <input type="text">
+    </div>
+    <div class="info-row">
+      <label>AGE:</label>
+      <input type="text">
+    </div>
+  </div>
+
+  <div class="drugs-block">
+    <div class="drugs-title">DRUGS: <input type="text"></div>
+    <div class="drug-num-list">
+      <div class="drug-num-row"><span>1</span><input type="text"></div>
+      <div class="drug-num-row"><span>5</span><input type="text"></div>
+      <div class="drug-num-row"><span>2</span><input type="text"></div>
+      <div class="drug-num-row"><span>6</span><input type="text"></div>
+      <div class="drug-num-row"><span>3</span><input type="text"></div>
+      <div class="drug-num-row"><span>7</span><input type="text"></div>
+      <div class="drug-num-row"><span>4</span><input type="text"></div>
+      <div class="drug-num-row"><span>8</span><input type="text"></div>
+    </div>
+  </div>
+
+  <table id="chartTable">
+    <colgroup>
+      <col class="date"><col class="drug"><col class="time"><col class="dose"><col class="route"><col class="sign"><col class="remark">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Drug S/No</th>
+        <th>Time</th>
+        <th>Dose</th>
+        <th>Route</th>
+        <th>Signature</th>
+        <th>Remark</th>
+      </tr>
+    </thead>
+    <tbody id="chartBody">
+      <!-- rows injected by script -->
+    </tbody>
+  </table>
+</div>
+
+<script>
+  function addRow(count) {
+    const tbody = document.getElementById('chartBody');
+    const times = count || 1;
+    for (let i = 0; i < times; i++) {
+      const tr = document.createElement('tr');
+      for (let c = 0; c < 7; c++) {
+        const td = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = 'text';
+        td.appendChild(input);
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+  }
+  function removeRow() {
+    const tbody = document.getElementById('chartBody');
+    if (tbody.rows.length > 0) {
+      tbody.deleteRow(tbody.rows.length - 1);
+    }
+  }
+  // initial 18 rows to match original chart
+  addRow(18);
+</script>
+
+</body>
+</html>
