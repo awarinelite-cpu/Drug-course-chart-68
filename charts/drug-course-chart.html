@@ -74,11 +74,13 @@
     <h3>Drugs</h3>
     <table class="drugs-table" id="drugsTable">
       <thead>
-        <tr><th style="width:34px;">No.</th><th>Drug Name</th><th>Route</th><th>Frequency</th><th>Action</th><th class="no-print" style="width:34px;"></th></tr>
+        <tr><th style="width:34px;">No.</th><th>Drug Name</th><th>Route</th><th>Frequency</th><th>Action</th><th class="no-print" id="drugsRemoveHeadCol" style="width:34px;"></th></tr>
       </thead>
       <tbody id="drugsBody"></tbody>
     </table>
-    <button class="btn btn-success no-print" style="padding:6px 12px; font-size:12px;" onclick="addDrug()">+ Add Drug</button>
+    <button class="btn btn-purple no-print" id="editDrugsBtn" style="padding:6px 12px; font-size:12px;" onclick="enterDrugsEditMode()">Edit</button>
+    <button class="btn btn-success no-print" id="saveDrugsBtn" style="padding:6px 12px; font-size:12px; display:none;" onclick="exitDrugsEditMode()">Save</button>
+    <button class="btn btn-success no-print" id="addDrugBtn" style="padding:6px 12px; font-size:12px; display:none;" onclick="addDrug()">+ Add Drug</button>
   </div>
 
   <div class="table-wrap">
@@ -110,6 +112,7 @@
   let chartRef;
   let saveTimer;
   let drugs = []; // { name, route, frequency, action }
+  let drugsEditMode = false;
 
   function makeSelect(options, value) {
     const sel = document.createElement('select');
@@ -124,6 +127,28 @@
   }
 
   function renderDrugsTable() {
+    if (drugsEditMode) renderDrugsTableEdit();
+    else renderDrugsTableView();
+  }
+
+  function renderDrugsTableView() {
+    const tbody = document.getElementById('drugsBody');
+    tbody.innerHTML = '';
+    document.getElementById('drugsRemoveHeadCol').style.display = 'none';
+    drugs.forEach((d, i) => {
+      const tr = document.createElement('tr');
+      const cells = [i + 1, d.name || '—', d.route || '—', d.frequency || '—', d.action || '—'];
+      cells.forEach(val => {
+        const td = document.createElement('td');
+        td.textContent = val;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderDrugsTableEdit() {
+    document.getElementById('drugsRemoveHeadCol').style.display = '';
     const tbody = document.getElementById('drugsBody');
     tbody.innerHTML = '';
     drugs.forEach((d, i) => {
@@ -178,6 +203,23 @@
       tbody.appendChild(tr);
     });
   }
+
+  window.enterDrugsEditMode = function () {
+    drugsEditMode = true;
+    document.getElementById('editDrugsBtn').style.display = 'none';
+    document.getElementById('saveDrugsBtn').style.display = 'inline-block';
+    document.getElementById('addDrugBtn').style.display = 'inline-block';
+    renderDrugsTable();
+  };
+
+  window.exitDrugsEditMode = function () {
+    drugsEditMode = false;
+    document.getElementById('editDrugsBtn').style.display = 'inline-block';
+    document.getElementById('saveDrugsBtn').style.display = 'none';
+    document.getElementById('addDrugBtn').style.display = 'none';
+    renderDrugsTable();
+    scheduleSave();
+  };
 
   window.addDrug = function () {
     drugs.push({ name: '', route: '', frequency: '', action: '' });
