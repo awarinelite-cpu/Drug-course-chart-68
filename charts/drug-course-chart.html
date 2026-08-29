@@ -180,7 +180,7 @@
   import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
   import { lockBackTo } from "../js/back-guard.js";
   import { db } from "../js/firebase.js";
-  import { doc, getDoc, setDoc, addDoc, collection, getDocs, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { doc, getDoc, setDoc, updateDoc, addDoc, collection, getDocs, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
   const patientId = getPatientIdFromUrl();
   if (!patientId) window.location.href = '../index.html';
@@ -833,6 +833,17 @@
     } catch (e) {
       msg.innerHTML = '<span style="color:#dc2626;">Could not save to Overview: ' + (e.code || e.message) + '</span>';
       return;
+    }
+
+    // When transferring wards, keep the patient's own record (banner, print
+    // sheets, search results, etc.) in sync with the ward they were just
+    // moved to, so it doesn't keep showing the old ward.
+    if (reason === 'transferred' && transferWard) {
+      try {
+        await updateDoc(doc(db, 'patients', patientId), { ward: transferWard, updatedAt: serverTimestamp() });
+      } catch (e) {
+        // Not fatal — the admission itself is already saved; the ward field just won't auto-update.
+      }
     }
 
     // Reset every live chart back to blank for the next admission.
