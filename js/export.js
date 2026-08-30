@@ -379,7 +379,7 @@ function addAdmissionSection(pdf, y, admission, index, total) {
   return y;
 }
 
-export async function downloadRecordAsPdf(record, tag) {
+async function buildPdfDocument(record) {
   const JsPDF = await loadPdfLib();
   const pdf = new JsPDF({ unit: 'pt', format: 'a4' });
   let y = addPatientHeader(pdf, record);
@@ -402,6 +402,43 @@ export async function downloadRecordAsPdf(record, tag) {
     pdf.text('Page ' + p + ' of ' + pageCount, PAGE_RIGHT - 55, 822);
     pdf.setTextColor(0);
   }
+  return pdf;
+}
 
+export async function downloadRecordAsPdf(record, tag) {
+  const pdf = await buildPdfDocument(record);
   pdf.save(filenameFor(record, tag) + '.pdf');
+}
+
+// Builds the same PDF as downloadRecordAsPdf but returns it as a File, for
+// handing to the Web Share API (or anything else that wants the raw bytes)
+// instead of triggering a download.
+export async function getRecordPdfFile(record, tag) {
+  const pdf = await buildPdfDocument(record);
+  const blob = pdf.output('blob');
+  return new File([blob], filenameFor(record, tag) + '.pdf', { type: 'application/pdf' });
+}
+
+// Every "Share" action in the app goes through this: builds the PDF and hands
+// it to the OS share sheet (so it can go to WhatsApp, email, etc. as an actual
+// file) when the browser supports sharing files. If it doesn't, or sharing
+// fails for a reason other than the user cancelling, it falls back to just
+// downloading the PDF so the nurse still ends up with the file.
+export async function sharePdf(record, tag, shareText) {
+  const file = await getRecordPdfFile(record, tag);
+  if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: (record.patient.name || 'Patient') + ' — Record',
+        text: shareText || ''
+      });
+      return { shared: true };
+    } catch (e) {
+      if (e && e.name === 'AbortError') return { shared: false, cancelled: true };
+      // Fall through to a plain download for any other share failure.
+    }
+  }
+  triggerDownload(file, file.name);
+  return { shared: false, downloaded: true };
 }

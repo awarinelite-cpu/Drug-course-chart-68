@@ -26,7 +26,7 @@
   <div class="brand">Admission Overview</div>
   <div class="right">
     <button id="backLink" class="btn btn-secondary" style="padding:6px 12px;" onclick="gnavGoBack(this.dataset.fallback)" data-fallback="overview.html">Back</button>
-    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="shareAdmission()">Share</button>
+    <button id="shareBtn" class="btn btn-secondary" style="padding:6px 12px;" onclick="shareAdmission()">Share</button>
     <button class="btn btn-primary" style="padding:6px 12px;" onclick="window.print()">Print</button>
   </div>
 </div>
@@ -60,7 +60,7 @@
   import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
   import { db } from "../js/firebase.js";
   import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { buildExportRecord, downloadRecordAsPdf, downloadRecordAsJson } from "../js/export.js";
+  import { buildExportRecord, downloadRecordAsPdf, downloadRecordAsJson, sharePdf } from "../js/export.js";
 
   const patientId = getPatientIdFromUrl();
   if (!patientId) window.location.href = '../index.html';
@@ -91,20 +91,21 @@
   }
 
   window.shareAdmission = async function () {
-    const shareData = {
-      title: 'Drug Course Chart · Admission',
-      text: document.getElementById('adm_diagnosis').textContent.trim() + ' — ' + document.getElementById('pb_name').textContent,
-      url: window.location.href
-    };
-    if (navigator.share) {
-      try { await navigator.share(shareData); } catch (e) { /* user cancelled — nothing to do */ }
-    } else {
-      try {
-        await navigator.clipboard.writeText(window.location.href);
-        alert('Link copied to clipboard.');
-      } catch (e) {
-        prompt('Copy this link to share:', window.location.href);
+    const btn = document.getElementById('shareBtn');
+    const original = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Preparing…';
+    try {
+      const record = await buildExportRecord(patientId, { admissionId: isArchived ? admissionId : null });
+      const diagnosis = document.getElementById('adm_diagnosis').textContent.trim();
+      const patientName = document.getElementById('pb_name').textContent.trim();
+      const result = await sharePdf(record, isArchived ? 'admission' : 'active_admission', diagnosis + ' — ' + patientName);
+      if (result.downloaded) {
+        alert('Your browser can\u2019t share files directly, so the PDF has been downloaded instead \u2014 you can share it from there.');
       }
+    } catch (e) {
+      alert('Could not prepare the PDF to share: ' + (e.message || e.code || 'unknown error'));
+    } finally {
+      btn.disabled = false; btn.textContent = original;
     }
   };
 
