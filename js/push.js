@@ -154,7 +154,55 @@ export async function disablePushForThisDevice(uid) {
   }
 }
 
+// Generates the alarm tone itself with an oscillator rather than an audio
+// file — no asset to host, and it sidesteps autoplay-blocking since it's
+// triggered directly off a push event while the tab is in the foreground.
+// Two-tone beep (like a basic monitor alarm), repeating until stop() is
+// called. Capped at MAX_ALARM_MS as a safety net in case nobody's at the
+// phone to dismiss it, so it can't ring indefinitely in a quiet ward.
+const MAX_ALARM_MS = 60000;
+
+function startAlarmLoop() {
+  let stopped = false;
+  let ctx;
+  try {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+  } catch (e) {
+    return () => {}; // Web Audio unavailable — banner still shows, just silently
+  }
+
+  function beepPair() {
+    if (stopped || ctx.state === "closed") return;
+    [880, 660].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.value = freq;
+      gain.gain.value = 0.2;
+      osc.connect(gain).connect(ctx.destination);
+      const start = ctx.currentTime + i * 0.22;
+      osc.start(start);
+      osc.stop(start + 0.18);
+    });
+  }
+
+  beepPair();
+  const interval = setInterval(beepPair, 900);
+  const maxTimer = setTimeout(stop, MAX_ALARM_MS);
+
+  function stop() {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(interval);
+    clearTimeout(maxTimer);
+    ctx.close().catch(() => {});
+  }
+  return stop;
+}
+
 function showForegroundBanner(title, body, link) {
+  const stopAlarm = startAlarmLoop();
+
   const banner = document.createElement("div");
   banner.setAttribute("role", "alert");
   banner.style.cssText =
@@ -163,11 +211,14 @@ function showForegroundBanner(title, body, link) {
     "box-shadow:0 4px 16px rgba(0,0,0,.3); max-width:92vw; cursor:pointer; font-size:13px;";
   banner.innerHTML =
     '<div style="font-weight:bold; margin-bottom:2px;">' + (title || "Drug due") + "</div>" +
-    "<div>" + (body || "") + "</div>";
+    "<div>" + (body || "") + "</div>" +
+    '<div style="margin-top:6px; font-size:11px; opacity:.75;">Tap to dismiss</div>';
+
+  const cleanup = () => { stopAlarm(); banner.remove(); };
   banner.addEventListener("click", () => {
     if (link) window.location.href = link;
-    banner.remove();
+    cleanup();
   });
   document.body.appendChild(banner);
-  setTimeout(() => banner.remove(), 12000);
+  setTimeout(cleanup, MAX_ALARM_MS);
 }

@@ -45,7 +45,18 @@ try {
       icon: './icons/icon-192.png',
       badge: './icons/icon-192.png',
       data: { link },
-      tag: d.tag || undefined // same tag replaces an older, now-stale alert instead of stacking
+      tag: d.tag || undefined, // same tag replaces an older, now-stale alert instead of stacking
+      // Browsers/OSes don't let a background service worker play a custom
+      // sound — only the app's own foreground tab can (see js/push.js),
+      // which covers the phone-in-hand case. For phone-locked/app-closed,
+      // this is what's actually controllable: requireInteraction keeps the
+      // notification pinned (Android won't auto-clear it after a few
+      // seconds like a normal one), and vibrate gives a distinct, longer
+      // buzz pattern than a default notification's single blip. Both are
+      // still silenced entirely by phone-level silent/DND settings — no
+      // web API can override that.
+      requireInteraction: true,
+      vibrate: [400, 200, 400, 200, 400, 200, 400]
     });
   });
 } catch (e) {
