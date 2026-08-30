@@ -105,7 +105,7 @@ exports.checkDueDrugs = onSchedule(
       const patientId = chartDoc.ref.parent.parent.id;
       const data = chartDoc.data();
       const drugs = Array.isArray(data.drugs) ? data.drugs : [];
-      const chartRows = Array.isArray(data.chartRows) ? data.chartRows : [];
+      const chartRows = Array.isArray(data.rows) ? data.rows : [];
       let changed = false;
 
       drugs.forEach((drug, i) => {
