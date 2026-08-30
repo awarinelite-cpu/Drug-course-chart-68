@@ -257,8 +257,14 @@ function addPatientHeader(pdf, record) {
   pdf.text('Allergies: ' + (allergyText || 'None known'), PAGE_LEFT, y + 10);
   pdf.setTextColor(0);
   pdf.setFont(undefined, 'normal');
-  pdf.text('Diagnosis: ' + (p.diagnosis || 'Not specified'), PAGE_LEFT, y + 24);
-  return y + 38;
+  // No diagnosis line here deliberately: the patient record's diagnosis field
+  // is a general/current field that isn't scoped to any one admission, and
+  // showing it here made every exported admission — including old, closed
+  // ones — display whatever diagnosis happens to be on the patient record
+  // today. Each admission section below prints its own diagnosis instead
+  // (see addAdmissionSection), which is what was actually recorded for
+  // that stay and never changes after it's archived.
+  return y + 22;
 }
 
 function addDrugChartSection(pdf, y, dc) {
