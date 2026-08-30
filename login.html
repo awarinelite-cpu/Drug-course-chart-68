@@ -78,7 +78,12 @@
     if (code.includes('user-not-found') || code.includes('invalid-credential') || code.includes('wrong-password')) return 'Incorrect email or password.';
     if (code.includes('too-many-requests')) return 'Too many attempts. Please try again later.';
     if (code.includes('invalid-email')) return 'Enter a valid email address.';
-    return 'Something went wrong. Please try again.';
+    // Temporary: show the raw code/message for anything unmatched, so a
+    // failure specific to the wrapped Android app (vs. the plain web app)
+    // can actually be diagnosed instead of hiding behind one generic
+    // string. Safe to revert to a plain "Something went wrong" once the
+    // native login path is confirmed working.
+    return 'Something went wrong (' + (code || e.message || 'unknown error') + '). Please try again.';
   }
 </script>
 </body>
