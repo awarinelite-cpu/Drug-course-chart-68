@@ -38,6 +38,50 @@ function toWardDate(dateStr, timeStr) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// Same doc admin.html writes to and js/alarm-settings.js reads on the client
+// (settings/alarm) — mirrored here by hand since Cloud Functions can't
+// import that browser ES module. Only the two fields that affect whether a
+// push gets sent at all are used server-side; sound/appearance/repeat are
+// purely a foreground-tab concern handled in js/push.js.
+const DEFAULT_FREQUENCIES = Object.keys(INTERVAL_HOURS);
+
+async function loadAlarmSettings() {
+  try {
+    const snap = await db.collection('settings').doc('alarm').get();
+    const d = snap.exists ? snap.data() : {};
+    const frequencies = Array.isArray(d.frequencies) && d.frequencies.length
+      ? d.frequencies.filter((f) => DEFAULT_FREQUENCIES.includes(f))
+      : DEFAULT_FREQUENCIES;
+    const qh = d.quietHours || {};
+    return {
+      frequencies,
+      quietHours: { enabled: !!qh.enabled, start: qh.start || '22:00', end: qh.end || '06:00' }
+    };
+  } catch (e) {
+    console.error('Failed to load alarm settings, defaulting to all frequencies / no quiet hours:', e);
+    return { frequencies: DEFAULT_FREQUENCIES, quietHours: { enabled: false, start: '22:00', end: '06:00' } };
+  }
+}
+
+// Ward-local "now", for comparing against the admin's quiet-hours start/end
+// (which are entered as ward-local HH:mm, e.g. "22:00").
+function wardMinutesNow(now) {
+  const wardNow = new Date(now.getTime() + 60 * 60 * 1000); // UTC -> WAT (+1, no DST)
+  return wardNow.getUTCHours() * 60 + wardNow.getUTCMinutes();
+}
+
+function isWithinQuietHours(quietHours, now) {
+  if (!quietHours.enabled) return false;
+  const minutesNow = wardMinutesNow(now);
+  const [sh, sm] = quietHours.start.split(':').map(Number);
+  const [eh, em] = quietHours.end.split(':').map(Number);
+  const startMin = sh * 60 + sm;
+  const endMin = eh * 60 + em;
+  if (startMin === endMin) return false; // zero-length window — treat as disabled
+  if (startMin < endMin) return minutesNow >= startMin && minutesNow < endMin;
+  return minutesNow >= startMin || minutesNow < endMin; // wraps past midnight
+}
+
 // Chart rows are matched back to a drug by its "S/N" column, which contains
 // the drug's 1-based row number (see refreshDrugSnoList() in
 // charts/drug-course-chart.html) — same lookup drug-course-chart.html itself
@@ -72,6 +116,17 @@ exports.checkDueDrugs = onSchedule(
   { schedule: 'every 1 minutes', timeZone: 'Africa/Lagos', region: 'us-central1' },
   async () => {
     const now = new Date();
+    const alarmSettings = await loadAlarmSettings();
+
+    // Quiet hours suppress sending entirely for this cycle. Doses that go
+    // due during the window are deliberately left un-marked (lastAlertedFor
+    // is only set for drugs actually processed below), so the very next
+    // cycle after quiet hours end will catch them as still-due and alert
+    // then — nothing is silently missed, it's just delayed.
+    if (isWithinQuietHours(alarmSettings.quietHours, now)) {
+      console.log('Within admin-configured quiet hours — skipping this cycle.');
+      return;
+    }
 
     const [patientsSnap, chartsSnap, usersSnap] = await Promise.all([
       db.collection('patients').get(),
@@ -110,6 +165,7 @@ exports.checkDueDrugs = onSchedule(
 
       drugs.forEach((drug, i) => {
         if (!INTERVAL_HOURS[drug.frequency]) return; // STAT / PRN / custom text — not covered yet
+        if (!alarmSettings.frequencies.includes(drug.frequency)) return; // admin turned this frequency off
         if (drug.action && drug.action !== 'Ongoing') return; // discontinued/withheld/completed/other
 
         const dueAt = computeDueAt(drug, chartRows, i);

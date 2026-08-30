@@ -85,6 +85,45 @@
   </div>
 
   <div class="card-box">
+    <h3 style="margin-top:0;">Drug-Due Alarm Settings</h3>
+    <p style="font-size:12px; color:#666; margin-top:-6px;">
+      Controls the alert nurses get when a drug dose is due — see "Alerts" on the Profile page for how a nurse opts a
+      device in. Changes here apply to every nurse's device; already-open tabs pick them up live, no reload needed.
+    </p>
+
+    <div class="field">
+      <label>Alarm Sound</label>
+      <select id="al_sound"></select>
+    </div>
+
+    <div class="field">
+      <label>Alarm Type (how it appears)</label>
+      <select id="al_appearance"></select>
+    </div>
+
+    <div class="field">
+      <label>Repeat Behavior</label>
+      <select id="al_repeat"></select>
+    </div>
+
+    <div class="field">
+      <label><input type="checkbox" id="al_quietEnabled" style="width:auto; margin-right:6px; vertical-align:middle;">Quiet Hours (mute alerts overnight)</label>
+    </div>
+    <div style="display:flex; gap:10px;">
+      <div class="field" style="flex:1;"><label>Quiet From</label><input type="time" id="al_quietStart" value="22:00"></div>
+      <div class="field" style="flex:1;"><label>Quiet Until</label><input type="time" id="al_quietEnd" value="06:00"></div>
+    </div>
+
+    <div class="field">
+      <label>Alarm Schedule — Which Frequencies Alert</label>
+      <div id="al_frequencies" style="display:flex; flex-wrap:wrap; gap:10px 16px; margin-top:4px;"></div>
+    </div>
+
+    <button class="btn btn-primary" id="al_saveBtn" onclick="saveAlarmSettings()">Save Alarm Settings</button>
+    <div id="al_msg"></div>
+  </div>
+
+  <div class="card-box">
     <h3 style="margin-top:0;">Backup All Patients</h3>
     <p style="font-size:12px; color:#666; margin-top:-6px;">
       Downloads every patient's full record (active + closed admissions) as one JSON file, independent of Firestore —
@@ -105,6 +144,10 @@
   import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
   import { downloadFullBackup } from "./js/export.js";
   import { avatarMarkup } from "./js/avatar.js";
+  import {
+    SOUND_OPTIONS, APPEARANCE_OPTIONS, REPEAT_OPTIONS, ALL_FREQUENCIES,
+    loadAlarmSettings, saveAlarmSettings as persistAlarmSettings
+  } from "./js/alarm-settings.js";
 
   window.logout = logout;
   let currentAdminName = '';
@@ -118,7 +161,83 @@
     currentAdminName = profile.name;
     loadUsers();
     loadPatients();
+    initAlarmSettingsForm();
   });
+
+  function populateSelect(select, options) {
+    select.innerHTML = '';
+    options.forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = o.value;
+      opt.textContent = o.label;
+      select.appendChild(opt);
+    });
+  }
+
+  async function initAlarmSettingsForm() {
+    populateSelect(document.getElementById('al_sound'), SOUND_OPTIONS);
+    populateSelect(document.getElementById('al_appearance'), APPEARANCE_OPTIONS);
+    populateSelect(document.getElementById('al_repeat'), REPEAT_OPTIONS);
+
+    const freqWrap = document.getElementById('al_frequencies');
+    freqWrap.innerHTML = '';
+    ALL_FREQUENCIES.forEach(f => {
+      const label = document.createElement('label');
+      label.style.cssText = 'display:flex; align-items:center; gap:5px; font-weight:normal; font-size:13px;';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = f;
+      cb.className = 'al_freqCheckbox';
+      cb.style.width = 'auto';
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(f));
+      freqWrap.appendChild(label);
+    });
+
+    const settings = await loadAlarmSettings(db);
+    document.getElementById('al_sound').value = settings.sound;
+    document.getElementById('al_appearance').value = settings.appearance;
+    document.getElementById('al_repeat').value = settings.repeat;
+    document.getElementById('al_quietEnabled').checked = settings.quietHours.enabled;
+    document.getElementById('al_quietStart').value = settings.quietHours.start;
+    document.getElementById('al_quietEnd').value = settings.quietHours.end;
+    document.querySelectorAll('.al_freqCheckbox').forEach(cb => {
+      cb.checked = settings.frequencies.includes(cb.value);
+    });
+  }
+
+  window.saveAlarmSettings = async function () {
+    const btn = document.getElementById('al_saveBtn');
+    const msg = document.getElementById('al_msg');
+    const selectedFrequencies = Array.from(document.querySelectorAll('.al_freqCheckbox'))
+      .filter(cb => cb.checked).map(cb => cb.value);
+
+    if (selectedFrequencies.length === 0) {
+      msg.innerHTML = '<div class="error-msg">Select at least one frequency, or nurses will never get an alert.</div>';
+      return;
+    }
+
+    btn.disabled = true;
+    msg.innerHTML = '';
+    try {
+      await persistAlarmSettings(db, {
+        sound: document.getElementById('al_sound').value,
+        appearance: document.getElementById('al_appearance').value,
+        repeat: document.getElementById('al_repeat').value,
+        quietHours: {
+          enabled: document.getElementById('al_quietEnabled').checked,
+          start: document.getElementById('al_quietStart').value || '22:00',
+          end: document.getElementById('al_quietEnd').value || '06:00'
+        },
+        frequencies: selectedFrequencies
+      });
+      msg.innerHTML = '<div class="info-msg">Alarm settings saved.</div>';
+    } catch (e) {
+      msg.innerHTML = '<div class="error-msg">' + (e.message || 'Failed to save alarm settings.') + '</div>';
+    } finally {
+      btn.disabled = false;
+    }
+  };
 
   let allPatients = [];
 

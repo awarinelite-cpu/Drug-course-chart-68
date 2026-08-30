@@ -41,6 +41,16 @@ service cloud.firestore {
       }
     }
 
+    // Drug-due alarm policy (sound/appearance/repeat/quiet-hours/frequencies)
+    // set by an admin in admin.html and applied on every device in
+    // js/push.js. Any signed-in user needs read access — it's their own
+    // device's alarm behavior that depends on it — but only an admin may
+    // change ward-wide alarm policy.
+    match /settings/{settingId} {
+      allow read: if isKnownUser();
+      allow write: if isAdmin();
+    }
+
     // Patients and every chart subcollection under them
     match /patients/{patientId} {
       allow read, create, update: if isKnownUser();

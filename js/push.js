@@ -19,6 +19,39 @@ import {
   getMessaging, getToken, onMessage, isSupported
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js";
 import { doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { DEFAULT_ALARM_SETTINGS, watchAlarmSettings } from "./alarm-settings.js";
+
+// Admin-configured alarm policy (sound / appearance / repeat / quiet hours /
+// which frequencies alert) — see js/alarm-settings.js and the "Alarm
+// Settings" card in admin.html. Kept live via a Firestore listener so a
+// change the admin makes applies to already-open tabs without a reload.
+// Starts at the built-in defaults so an alarm firing before the first
+// snapshot arrives still behaves sensibly rather than doing nothing.
+let currentAlarmSettings = { ...DEFAULT_ALARM_SETTINGS };
+let alarmSettingsWatchStarted = false;
+function ensureAlarmSettingsWatch() {
+  if (alarmSettingsWatchStarted) return;
+  alarmSettingsWatchStarted = true;
+  watchAlarmSettings(db, (settings) => { currentAlarmSettings = settings; });
+}
+
+// Ward is Africa/Lagos — UTC+1 year-round, no DST — matching
+// functions/index.js's WARD_UTC_OFFSET, so quiet-hours-driven behavior here
+// stays consistent with what the server already decided to (not) send.
+function isWithinQuietHours(settings, now) {
+  const qh = settings.quietHours;
+  if (!qh || !qh.enabled) return false;
+  const wardNow = new Date(now.getTime() + 60 * 60 * 1000); // UTC -> WAT
+  const minutesNow = wardNow.getUTCHours() * 60 + wardNow.getUTCMinutes();
+  const [sh, sm] = (qh.start || "22:00").split(":").map(Number);
+  const [eh, em] = (qh.end || "06:00").split(":").map(Number);
+  const startMin = sh * 60 + sm;
+  const endMin = eh * 60 + em;
+  if (startMin === endMin) return false; // zero-length window — treat as disabled
+  if (startMin < endMin) return minutesNow >= startMin && minutesNow < endMin;
+  // Wraps past midnight (e.g. 22:00 -> 06:00)
+  return minutesNow >= startMin || minutesNow < endMin;
+}
 
 // Firestore doc IDs can't contain "/", and an FCM token can be 140+ chars —
 // both fine for a doc ID, but slashes do show up in some token formats, so
@@ -236,6 +269,7 @@ let foregroundHandlerAttached = false;
 function registerForegroundHandler(messaging) {
   if (foregroundHandlerAttached) return; // onMessage isn't idempotent — guard against double-firing
   foregroundHandlerAttached = true;
+  ensureAlarmSettingsWatch();
   onMessage(messaging, (payload) => {
     const n = payload.notification || {};
     const d = payload.data || {};
@@ -253,6 +287,7 @@ let nativeForegroundHandlerAttached = false;
 function registerForegroundHandlerNative(PushNotifications) {
   if (nativeForegroundHandlerAttached) return;
   nativeForegroundHandlerAttached = true;
+  ensureAlarmSettingsWatch();
   PushNotifications.addListener("pushNotificationReceived", (notification) => {
     const d = notification.data || {};
     showForegroundBanner(notification.title, notification.body, d.link);
@@ -357,22 +392,13 @@ function tryResume(ctx) {
   });
 })();
 
-// Two-tone beep (like a basic monitor alarm), repeating until stop() is
-// called. Capped at MAX_ALARM_MS as a safety net in case nobody's at the
-// phone to dismiss it, so it can't ring indefinitely in a quiet ward.
-const MAX_ALARM_MS = 60000;
-
-function startAlarmLoop() {
-  let stopped = false;
-  const ctx = getSharedAudioContext();
-  if (!ctx) return () => {}; // Web Audio unavailable — banner still shows, just silently
-
-  tryResume(ctx);
-
-  function beepPair() {
-    if (stopped) return;
-    tryResume(ctx); // cheap no-op once running; catches a late unlock mid-alarm
-    if (ctx.state !== "running") return; // still locked — stay silent, don't throw
+// One "cycle" of oscillator scheduling per admin-selected sound. Each
+// function schedules whatever notes/sweep it needs starting at ctx.currentTime
+// and returns nothing — startAlarmLoop() below re-invokes the whole function
+// on every tick for "repeat" mode, or once for "once" mode.
+const SOUND_PATTERNS = {
+  // Classic two-tone beep (like a basic monitor alarm).
+  beep(ctx) {
     [880, 660].forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -384,25 +410,127 @@ function startAlarmLoop() {
       osc.start(start);
       osc.stop(start + 0.18);
     });
+  },
+  // Gentler two-note sine chime — quieter and rounder than the square-wave beep.
+  chime(ctx) {
+    [988, 784].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const start = ctx.currentTime + i * 0.28;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.18, start + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.5);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.52);
+    });
+  },
+  // Continuous rising/falling sweep, like an ambulance siren.
+  siren(ctx) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    gain.gain.value = 0.16;
+    const start = ctx.currentTime;
+    const dur = 0.85;
+    osc.frequency.setValueAtTime(500, start);
+    osc.frequency.linearRampToValueAtTime(1000, start + dur / 2);
+    osc.frequency.linearRampToValueAtTime(500, start + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + dur);
+  },
+  // Three sharp, quick high beeps — the most attention-grabbing preset.
+  urgent(ctx) {
+    for (let i = 0; i < 3; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.value = 1046;
+      gain.gain.value = 0.22;
+      osc.connect(gain).connect(ctx.destination);
+      const start = ctx.currentTime + i * 0.16;
+      osc.start(start);
+      osc.stop(start + 0.09);
+    }
+  }
+};
+
+function playSoundPattern(ctx, soundType) {
+  (SOUND_PATTERNS[soundType] || SOUND_PATTERNS.beep)(ctx);
+}
+
+// Repeats the admin-selected sound until stop() is called. Capped at
+// MAX_ALARM_MS as a safety net in case nobody's at the phone to dismiss it,
+// so it can't ring indefinitely in a quiet ward. When repeat is "once" it
+// plays a single pattern and never loops (the MAX_ALARM_MS cap still applies
+// to the banner separately, in showForegroundBanner).
+const MAX_ALARM_MS = 60000;
+
+function startAlarmLoop(soundType, repeatMode) {
+  let stopped = false;
+  const ctx = getSharedAudioContext();
+  if (!ctx) return () => {}; // Web Audio unavailable — banner still shows, just silently
+
+  tryResume(ctx);
+
+  function tick() {
+    if (stopped) return;
+    tryResume(ctx); // cheap no-op once running; catches a late unlock mid-alarm
+    if (ctx.state !== "running") return; // still locked — stay silent, don't throw
+    playSoundPattern(ctx, soundType);
   }
 
-  beepPair();
-  const interval = setInterval(beepPair, 900);
-  const maxTimer = setTimeout(stop, MAX_ALARM_MS);
+  tick();
+  const interval = repeatMode === "once" ? null : setInterval(tick, 900);
+  const maxTimer = repeatMode === "once" ? null : setTimeout(stop, MAX_ALARM_MS);
 
   function stop() {
     if (stopped) return;
     stopped = true;
-    clearInterval(interval);
-    clearTimeout(maxTimer);
+    if (interval) clearInterval(interval);
+    if (maxTimer) clearTimeout(maxTimer);
     // Don't close() — this context is shared across the page's lifetime so
     // the next alarm can reuse an already-unlocked context.
   }
   return stop;
 }
 
+// Vibration pattern for the "vibrate" appearance — only Chrome/Android
+// WebViews implement navigator.vibrate (iOS Safari silently has no effect),
+// so this is a best-effort enhancement, not the primary alert channel there.
+function tryVibrate(repeatMode) {
+  if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
+  const pulse = [250, 150, 250];
+  navigator.vibrate(repeatMode === "once" ? pulse : pulse.concat([300, 250, 150, 250]));
+}
+
 function showForegroundBanner(title, body, link) {
-  const stopAlarm = startAlarmLoop();
+  const settings = currentAlarmSettings;
+
+  // Quiet hours suppress the whole foreground alert (sound, banner, and
+  // vibration) — the Cloud Function already skips sending in this window for
+  // most cases, but a device's local clock or a delayed message could still
+  // land here right at the boundary, so this is a second line of defense.
+  if (isWithinQuietHours(settings, new Date())) return;
+
+  const appearance = settings.appearance || "banner_sound";
+  const showBanner = appearance !== "sound_only";
+  const playSound = appearance === "banner_sound" || appearance === "sound_only";
+  const vibrate = appearance === "vibrate";
+
+  const stopAlarm = playSound ? startAlarmLoop(settings.sound, settings.repeat) : () => {};
+  if (vibrate) tryVibrate(settings.repeat);
+
+  if (!showBanner) {
+    // Sound Only — nothing to click to dismiss; let the alarm's own repeat/
+    // cap behavior end it (single pattern for "once", MAX_ALARM_MS for "repeat").
+    if (settings.repeat === "once") return;
+    setTimeout(stopAlarm, MAX_ALARM_MS);
+    return;
+  }
 
   const banner = document.createElement("div");
   banner.setAttribute("role", "alert");
