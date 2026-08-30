@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="../icons/icon-192.png">
+<title>Lab Reference</title>
+<link rel="stylesheet" href="../js/styles.css">
+</head>
+<body>
+<script type="module" src="../js/nav.js"></script>
+<div class="topbar no-print">
+  <div class="brand">Lab Reference</div>
+  <div class="right">
+    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="gnavGoBack('../index.html')">Back</button>
+  </div>
+</div>
+<div class="container">
+  <div class="card-box">
+    <div id="labRoot"></div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from "../js/auth-guard.js";
+  import { initLabReference } from "../js/lab-reference.js";
+
+  // General-purpose clinical reference, independent of any single patient —
+  // just gated behind login like the rest of the app.
+  requireAuth(() => {
+    initLabReference(document.getElementById('labRoot'));
+  });
+</script>
+</body>
+</html>

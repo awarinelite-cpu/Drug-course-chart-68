@@ -99,6 +99,7 @@
       <div class="chart-card" onclick="openChart('blood-glucose')"><span class="icon">🩸</span>Blood Glucose</div>
       <div class="chart-card" onclick="openChart('seizure')"><span class="icon">⚡</span>Seizure Chart</div>
       <div class="chart-card" onclick="openCalculators()"><span class="icon">🧮</span>Calculators</div>
+      <div class="chart-card" onclick="openLabReference()"><span class="icon">🔬</span>Lab Reference</div>
     </div>
   </div>
 </div>
@@ -297,6 +298,10 @@
     // current patient (if one is selected) so the page can show their
     // banner for orientation, but never require one.
     window.location.href = 'charts/calculators.html' + (selectedPatient ? ('?patient=' + selectedPatient.id) : '');
+  };
+
+  window.openLabReference = function () {
+    window.location.href = 'charts/lab-reference.html';
   };
 
   function escapeHtml(s) {
