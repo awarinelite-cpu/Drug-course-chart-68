@@ -131,7 +131,9 @@ export async function enablePushForThisDevice(uid, onProgress) {
   // Foreground messages (app open and on-screen right now) don't trigger the
   // OS notification tray automatically — show an in-page banner instead.
   onMessage(messaging, (payload) => {
-    showForegroundBanner(payload.notification?.title, payload.notification?.body, payload.data?.link);
+    const n = payload.notification || {};
+    const d = payload.data || {};
+    showForegroundBanner(n.title, n.body, d.link);
   });
 
   return token;

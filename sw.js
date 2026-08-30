@@ -27,26 +27,25 @@ firebase.initializeApp({
   appId: "1:922657172970:web:f7a5c8f6ce8bb536d0d693"
 });
 
-// Fires only when no page on this origin is in the foreground — foreground
-// delivery is handled instead by onMessage() in js/push.js.
-//
-// Wrapped in try/catch: constructing firebase.messaging() touches the
-// browser's push/registration internals immediately, and on some devices or
-// browser builds that throws synchronously. Since this whole file evaluates
-// as one script, an uncaught throw here previously killed SW registration
-// entirely — breaking offline caching too, not just push. A push failure on
-// an unsupported device should mean "no dose alerts," not "no offline app."
+// Written without optional chaining (?.) or other very-recent syntax on
+// purpose: this whole file has to be parsed successfully before ANY of it
+// runs, on ANY browser that loads it, or the entire service worker fails
+// evaluation with an unhelpful generic error (this bit the app once already
+// on an older Chrome/WebView build) -- an ordinary try/catch can't protect
+// against that since it's a parse-time failure, not a runtime exception.
 try {
   firebase.messaging().onBackgroundMessage((payload) => {
-    const title = payload.notification?.title || 'Drug due';
-    const body = payload.notification?.body || '';
-    const link = payload.data?.link || './index.html';
+    const n = payload.notification || {};
+    const d = payload.data || {};
+    const title = n.title || 'Drug due';
+    const body = n.body || '';
+    const link = d.link || './index.html';
     self.registration.showNotification(title, {
       body,
       icon: './icons/icon-192.png',
       badge: './icons/icon-192.png',
       data: { link },
-      tag: payload.data?.tag || undefined // same tag replaces an older, now-stale alert instead of stacking
+      tag: d.tag || undefined // same tag replaces an older, now-stale alert instead of stacking
     });
   });
 } catch (e) {
@@ -55,7 +54,8 @@ try {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const link = event.notification.data?.link || './index.html';
+  const data = event.notification.data || {};
+  const link = data.link || './index.html';
   event.waitUntil(clients.openWindow(link));
 });
 
