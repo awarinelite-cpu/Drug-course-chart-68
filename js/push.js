@@ -9,7 +9,7 @@
 //
 // Web Push VAPID public key — Firebase Console → Project Settings → Cloud
 // Messaging → Web configuration → Web Push certificates.
-const VAPID_KEY = "BDV2tyIpcpEof_9MBzU5Kzw8ZiAeOBHqDQXcUq9sPI-m-l0oG7QqGkfYeb4PxuFi4z2O2XFcOxOVeVcA_zvFXfQ";
+const VAPID_KEY = "BAPXwiBktw0KdKPUWBfE4MG-399Nj-QPAvNJLbJJ5Uq5oojGI_kYARiKq_RexHJQmomYmzpAFsAq4t-fPYj0DfY";
 
 import { app, db } from "./firebase.js";
 import {
