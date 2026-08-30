@@ -1150,7 +1150,7 @@
       lockBtn.className = 'row-lock-btn';
       lockBtn.textContent = '✓';
       lockBtn.title = 'Done editing this row';
-      lockBtn.onclick = () => { editingChartRows.delete(i); renderChartTable(); };
+      lockBtn.onclick = () => { editingChartRows.delete(i); renderChartTable(); renderDrugsTable(); };
       tdLock.appendChild(lockBtn);
       tr.appendChild(tdLock);
 
@@ -1160,7 +1160,7 @@
       const dateInput = document.createElement('input');
       dateInput.type = 'date';
       dateInput.value = row.date || '';
-      dateInput.addEventListener('input', () => { row.date = dateInput.value; touchRowNurse(row); scheduleSave(); nurseCell.value = row.nurse || ''; });
+      dateInput.addEventListener('input', () => { row.date = dateInput.value; touchRowNurse(row); scheduleSave(); renderDrugsTable(); nurseCell.value = row.nurse || ''; });
       tdDate.appendChild(dateInput);
       tr.appendChild(tdDate);
 
@@ -1178,6 +1178,7 @@
         routeInput.value = row.route;
         touchRowNurse(row);
         scheduleSave();
+        renderDrugsTable();
         nurseCell.value = row.nurse || '';
       });
       tdSno.appendChild(snoInput);
@@ -1189,7 +1190,7 @@
       const timeInput = document.createElement('input');
       timeInput.type = 'time';
       timeInput.value = row.time || '';
-      timeInput.addEventListener('input', () => { row.time = timeInput.value; touchRowNurse(row); scheduleSave(); nurseCell.value = row.nurse || ''; });
+      timeInput.addEventListener('input', () => { row.time = timeInput.value; touchRowNurse(row); scheduleSave(); renderDrugsTable(); nurseCell.value = row.nurse || ''; });
       tdTime.appendChild(timeInput);
       tr.appendChild(tdTime);
 
@@ -1246,6 +1247,7 @@
     chartEditMode = false;
     editingChartRows.clear();
     renderChartTable();
+    renderDrugsTable();
     saveChart();
   };
 
@@ -1515,6 +1517,10 @@
   // no one touches the page the moment its duration runs out, and whenever
   // the tab is brought back into focus (e.g. next morning's shift).
   setInterval(checkDrugCompletion, 60 * 60 * 1000);
+  // Keep the Due/Overdue labels current even if nobody touches the page —
+  // otherwise a drug can silently sit at a stale time until something else
+  // triggers a re-render.
+  setInterval(() => { if (!drugsEditMode) renderDrugsTable(); }, 60 * 1000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') checkDrugCompletion();
   });
