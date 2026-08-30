@@ -81,6 +81,7 @@
     </p>
     <button class="btn btn-primary" id="pushToggleBtn" onclick="togglePush()">Loading…</button>
     <div id="pushMsg" style="margin-top:10px;"></div>
+    <div style="margin-top:10px; font-size:11px; color:#9ca3af;">build: push-diag-2</div>
   </div>
 
   <div class="card-box">
@@ -153,10 +154,16 @@
 
     try {
       if (pushIsEnabled()) {
+        msg.innerHTML = '<div class="info-msg">Turning off…</div>';
         await withTimeout(disablePushForThisDevice(currentUser.uid), 60000);
         msg.innerHTML = '<div class="info-msg">Dose alerts are now off for this phone.</div>';
       } else {
-        await withTimeout(enablePushForThisDevice(currentUser.uid), 60000);
+        await withTimeout(
+          enablePushForThisDevice(currentUser.uid, (label) => {
+            msg.innerHTML = '<div class="info-msg">' + label + '</div>';
+          }),
+          60000
+        );
         msg.innerHTML = '<div class="info-msg">Dose alerts are on for this phone.</div>';
       }
     } catch (e) {

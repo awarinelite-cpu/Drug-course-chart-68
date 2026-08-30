@@ -50,11 +50,17 @@ function withStepTimeout(promise, ms, label) {
 }
 
 // Call from a user gesture (button tap) — browsers require that for the
-// permission prompt to show at all.
-export async function enablePushForThisDevice(uid) {
+// permission prompt to show at all. onProgress(label), if given, fires right
+// before each step starts — so if a step hangs, whatever's on screen when it
+// freezes tells you exactly which one, even if the timeout itself never
+// fires (e.g. the tab gets backgrounded and browsers throttle timers).
+export async function enablePushForThisDevice(uid, onProgress) {
+  const note = (label) => { if (onProgress) onProgress(label); };
+
   if (!("Notification" in window) || !("serviceWorker" in navigator)) {
     throw new Error("This browser doesn't support push notifications.");
   }
+  note("Checking browser support…");
   if (!(await withStepTimeout(isSupported(), 8000, "checking browser support"))) {
     throw new Error("This browser doesn't support Firebase push messaging.");
   }
@@ -62,6 +68,7 @@ export async function enablePushForThisDevice(uid) {
     throw new Error("Push isn't configured yet (missing VAPID key) — ask your app admin.");
   }
 
+  note("Requesting notification permission…");
   const permission = await withStepTimeout(Notification.requestPermission(), 8000, "requesting notification permission");
   if (permission !== "granted") {
     throw new Error("Notification permission was not granted.");
@@ -69,8 +76,10 @@ export async function enablePushForThisDevice(uid) {
 
   // sw.js (registered by nav.js on every page) also handles background FCM
   // messages — see the importScripts block at the top of that file.
+  note("Waiting for the service worker…");
   const registration = await withStepTimeout(navigator.serviceWorker.ready, 8000, "service worker becoming ready");
   const messaging = getMessaging(app);
+  note("Requesting a push token from Google…");
   const token = await withStepTimeout(
     getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: registration }),
     15000,
@@ -78,6 +87,7 @@ export async function enablePushForThisDevice(uid) {
   );
   if (!token) throw new Error("Could not get a push token from the browser.");
 
+  note("Saving the push token…");
   await withStepTimeout(
     setDoc(doc(db, "users", uid, "pushTokens", tokenDocId(token)), {
       token,
