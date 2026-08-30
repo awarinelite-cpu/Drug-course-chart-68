@@ -61,6 +61,25 @@
     .sheet { box-shadow:none; margin:0; }
     body { background:#fff; }
   }
+  /* On screen (not print), let both tables keep their natural column widths
+     and scroll horizontally instead of squeezing every column to fit the
+     viewport — important on narrow mobile screens. */
+  @media screen {
+    table.drugs-table { width:max-content; min-width:100%; }
+    table.drugs-table th, table.drugs-table td { white-space:nowrap; }
+    table.drugs-table td input, table.drugs-table td select { width:auto; min-width:90px; }
+
+    table.chart { width:max-content; min-width:100%; table-layout:auto; }
+    table.chart th, table.chart td { white-space:nowrap; word-wrap:normal; }
+    table.chart th.col-date, table.chart td.col-date { width:auto; min-width:95px; }
+    table.chart th.col-sno, table.chart td.col-sno { width:auto; min-width:220px; }
+    table.chart th.col-time, table.chart td.col-time { width:auto; min-width:70px; }
+    table.chart th.col-dose, table.chart td.col-dose { width:auto; min-width:70px; }
+    table.chart th.col-route, table.chart td.col-route { width:auto; min-width:90px; }
+    table.chart th.col-nurse, table.chart td.col-nurse { width:auto; min-width:140px; }
+    table.chart th.col-remark, table.chart td.col-remark { width:auto; min-width:130px; }
+    table.chart td input, table.chart td select { width:auto; min-width:60px; }
+  }
 </style>
 </head>
 <body>
@@ -99,12 +118,14 @@
 
   <div class="drugs-block">
     <h3>Drugs</h3>
+    <div class="table-wrap">
     <table class="drugs-table" id="drugsTable">
       <thead>
         <tr><th style="width:34px;">No.</th><th>Drug Name</th><th>Route</th><th>Frequency</th><th>Action</th><th>Duration</th><th class="no-print" id="drugsRemoveHeadCol" style="width:34px;"></th></tr>
       </thead>
       <tbody id="drugsBody"></tbody>
     </table>
+    </div>
     <button class="btn btn-purple no-print" id="editDrugsBtn" style="padding:6px 12px; font-size:12px;" onclick="enterDrugsEditMode()">Edit</button>
     <button class="btn btn-success no-print" id="saveDrugsBtn" style="padding:6px 12px; font-size:12px; display:none;" onclick="exitDrugsEditMode()">Save</button>
     <button class="btn btn-success no-print" id="addDrugBtn" style="padding:6px 12px; font-size:12px; display:none;" onclick="addDrug()">+ Add Drug</button>
