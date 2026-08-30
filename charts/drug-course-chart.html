@@ -1475,13 +1475,13 @@
       // chart has its own explicitly-saved value.
       fieldIds.forEach(id => { if (document.getElementById(id) && data[id]) document.getElementById(id).value = data[id]; });
       drugs = (data.drugs && data.drugs.length) ? data.drugs : Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '', duration: '' }));
-      renderDrugsTable();
       chartRows = (data.rows && data.rows.length)
         ? data.rows.map(r => Array.isArray(r)
             ? { date: r[0] || '', sno: r[1] || '', time: r[2] || '', dose: r[3] || 'AP', route: r[4] || '', nurse: r[5] || '', remark: r[6] || '' } // migrate old array-row format
             : { ...r, dose: r.dose || 'AP' })
         : Array(18).fill(null).map(() => defaultRow());
       chartRows.forEach(row => { if (row.sno && !row.route) row.route = computeRouteFromSno(row.sno); });
+      renderDrugsTable();
       verbalOrders = data.verbalOrders || [];
       if (isArchived && admissionMeta) {
         const when = admissionMeta.archivedAtDisplay || '';
