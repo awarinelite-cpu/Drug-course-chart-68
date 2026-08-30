@@ -30,6 +30,14 @@
     <div class="field"><label>Full Name</label><input type="text" id="n_name"></div>
     <div class="field"><label>Email</label><input type="email" id="n_email"></div>
     <div class="field"><label>Temporary Password</label><input type="text" id="n_password" placeholder="At least 6 characters"></div>
+    <div class="field">
+      <label>Gender</label>
+      <select id="n_gender">
+        <option value="">Select gender…</option>
+        <option value="male">Male</option>
+        <option value="female">Female</option>
+      </select>
+    </div>
     <button class="btn btn-primary" onclick="createNurse()">Create Account</button>
     <div id="msg"></div>
     <p style="font-size:12px; color:#666; margin-top:10px;">
@@ -55,7 +63,7 @@
   <div class="card-box">
     <h3 style="margin-top:0;">All Users</h3>
     <table class="entries">
-      <thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead>
+      <thead><tr><th></th><th>Name</th><th>Email</th><th>Role</th></tr></thead>
       <tbody id="userTableBody"></tbody>
     </table>
   </div>
@@ -96,6 +104,7 @@
   import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
   import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
   import { downloadFullBackup } from "./js/export.js";
+  import { avatarMarkup } from "./js/avatar.js";
 
   window.logout = logout;
   let currentAdminName = '';
@@ -277,7 +286,15 @@
     snap.forEach(d => {
       const u = d.data();
       const tr = document.createElement('tr');
-      tr.innerHTML = '<td>' + escapeHtml(u.name || '') + '</td><td>' + escapeHtml(u.email || '') + '</td><td>' + escapeHtml(u.role || '') + '</td>';
+      const tdAvatar = document.createElement('td');
+      tdAvatar.innerHTML = avatarMarkup(u, 32);
+      const tdName = document.createElement('td');
+      tdName.textContent = u.name || '';
+      const tdEmail = document.createElement('td');
+      tdEmail.textContent = u.email || '';
+      const tdRole = document.createElement('td');
+      tdRole.textContent = u.role || '';
+      tr.append(tdAvatar, tdName, tdEmail, tdRole);
       tbody.appendChild(tr);
     });
   }
@@ -286,6 +303,7 @@
     const name = document.getElementById('n_name').value.trim();
     const email = document.getElementById('n_email').value.trim();
     const password = document.getElementById('n_password').value;
+    const gender = document.getElementById('n_gender').value;
     const msg = document.getElementById('msg');
     msg.innerHTML = '';
     if (!name || !email || password.length < 6) {
@@ -299,13 +317,14 @@
       const secondaryAuth = getAuth(secondaryApp);
       const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
       await setDoc(doc(db, 'users', cred.user.uid), {
-        name, email, role: 'nurse', createdAt: serverTimestamp()
+        name, email, gender, role: 'nurse', createdAt: serverTimestamp()
       });
       await signOut(secondaryAuth);
       await deleteApp(secondaryApp);
 
       msg.innerHTML = '<div class="info-msg">Nurse account created for ' + escapeHtml(email) + '.</div>';
       document.getElementById('n_name').value = '';
+      document.getElementById('n_gender').value = '';
       document.getElementById('n_email').value = '';
       document.getElementById('n_password').value = '';
       loadUsers();
