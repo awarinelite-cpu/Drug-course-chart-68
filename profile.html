@@ -135,14 +135,28 @@
   window.togglePush = async function () {
     const btn = document.getElementById('pushToggleBtn');
     const msg = document.getElementById('pushMsg');
-    msg.innerHTML = '';
+    msg.innerHTML = '<div class="info-msg">Working…</div>';
     btn.disabled = true;
+
+    // Registering a push token means waiting on browser permission, the
+    // service worker, and a network round-trip to Google's push servers —
+    // any of which can hang on a slow/restricted connection with no error at
+    // all. Without a timeout, the button would then stay disabled forever
+    // with zero feedback. Race it instead so the nurse always gets a message.
+    function withTimeout(promise, ms) {
+      let timer;
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Timed out — check your internet connection and try again.')), ms);
+      });
+      return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+    }
+
     try {
       if (pushIsEnabled()) {
-        await disablePushForThisDevice(currentUser.uid);
+        await withTimeout(disablePushForThisDevice(currentUser.uid), 20000);
         msg.innerHTML = '<div class="info-msg">Dose alerts are now off for this phone.</div>';
       } else {
-        await enablePushForThisDevice(currentUser.uid);
+        await withTimeout(enablePushForThisDevice(currentUser.uid), 20000);
         msg.innerHTML = '<div class="info-msg">Dose alerts are on for this phone.</div>';
       }
     } catch (e) {
