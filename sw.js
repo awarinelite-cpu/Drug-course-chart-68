@@ -9,8 +9,14 @@
 // Kept in this same file, rather than a separate firebase-messaging-sw.js,
 // so there's only one service worker registered for the whole site.
 
-importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js');
+// Self-hosted rather than pulled from gstatic.com: importScripts() runs at
+// service worker evaluation time, so if that fetch fails (spotty ward wifi,
+// a network that blocks Google CDN domains, an ad/content blocker) the whole
+// worker fails to install with a bare "ServiceWorker script evaluation
+// failed" and push/offline support silently breaks. Bundling these locally
+// removes that external dependency entirely.
+importScripts('./js/vendor/firebase/firebase-app-compat.js');
+importScripts('./js/vendor/firebase/firebase-messaging-compat.js');
 
 firebase.initializeApp({
   apiKey: "AIzaSyBLEzC5MusezdNS8RnDQQA8xoI7XbXEqiM",
