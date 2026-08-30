@@ -185,8 +185,51 @@ export async function disablePushForThisDevice(uid) {
 }
 
 // Generates the alarm tone itself with an oscillator rather than an audio
-// file — no asset to host, and it sidesteps autoplay-blocking since it's
-// triggered directly off a push event while the tab is in the foreground.
+// file — no asset to host. NOTE: this does NOT sidestep autoplay-blocking.
+// A brand-new AudioContext always starts life "suspended" and can only move
+// to "running" as a result of a real user gesture (tap/click/keydown)
+// somewhere on the page. A push message arriving via onMessage is not a
+// user gesture, so if the AudioContext were created fresh here (as before),
+// a nurse who reloaded the tab and never tapped anything would get a
+// silently-scheduled alarm: no errors, banner shows, but zero sound.
+//
+// Fix: keep ONE AudioContext for the whole page lifetime and unlock it the
+// moment the nurse makes ANY tap/keypress/touch on the page — not
+// necessarily on the alarm itself. In real use the chart is being tapped on
+// constantly, so by the time a dose alarm needs to fire, the context is
+// almost always already unlocked from ordinary use. As a second line of
+// defense, we also call resume() right when the alarm starts and on every
+// beep — if the nurse's very first interaction with the page turns out to
+// be tapping the alert banner itself, the context unlocks at that moment
+// and the beeps starting from the next 900ms tick become audible.
+let sharedCtx = null;
+function getSharedAudioContext() {
+  if (!sharedCtx) {
+    try {
+      sharedCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      return null;
+    }
+  }
+  return sharedCtx;
+}
+
+function tryResume(ctx) {
+  if (ctx && ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
+}
+
+// Attach once at module load — cheap, passive listeners that just try to
+// wake the shared context up on the very first real interaction anywhere on
+// the page, long before any alarm needs to fire.
+(function unlockAudioOnFirstGesture() {
+  const tryUnlock = () => tryResume(getSharedAudioContext());
+  ["pointerdown", "keydown", "touchstart"].forEach((evt) => {
+    document.addEventListener(evt, tryUnlock, { passive: true });
+  });
+})();
+
 // Two-tone beep (like a basic monitor alarm), repeating until stop() is
 // called. Capped at MAX_ALARM_MS as a safety net in case nobody's at the
 // phone to dismiss it, so it can't ring indefinitely in a quiet ward.
@@ -194,15 +237,15 @@ const MAX_ALARM_MS = 60000;
 
 function startAlarmLoop() {
   let stopped = false;
-  let ctx;
-  try {
-    ctx = new (window.AudioContext || window.webkitAudioContext)();
-  } catch (e) {
-    return () => {}; // Web Audio unavailable — banner still shows, just silently
-  }
+  const ctx = getSharedAudioContext();
+  if (!ctx) return () => {}; // Web Audio unavailable — banner still shows, just silently
+
+  tryResume(ctx);
 
   function beepPair() {
-    if (stopped || ctx.state === "closed") return;
+    if (stopped) return;
+    tryResume(ctx); // cheap no-op once running; catches a late unlock mid-alarm
+    if (ctx.state !== "running") return; // still locked — stay silent, don't throw
     [880, 660].forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -225,7 +268,8 @@ function startAlarmLoop() {
     stopped = true;
     clearInterval(interval);
     clearTimeout(maxTimer);
-    ctx.close().catch(() => {});
+    // Don't close() — this context is shared across the page's lifetime so
+    // the next alarm can reuse an already-unlocked context.
   }
   return stop;
 }
