@@ -109,6 +109,7 @@
     <button class="btn btn-success no-print" id="saveDrugsBtn" style="padding:6px 12px; font-size:12px; display:none;" onclick="exitDrugsEditMode()">Save</button>
     <button class="btn btn-success no-print" id="addDrugBtn" style="padding:6px 12px; font-size:12px; display:none;" onclick="addDrug()">+ Add Drug</button>
     <button class="btn btn-secondary no-print" id="verbalOrderBtn" onclick="openVerbalOrderModal()">+ Verbal Order</button>
+    <button class="btn btn-secondary no-print" id="bulkUploadBtn" onclick="openBulkUploadModal()">+ Bulk Upload</button>
   </div>
 
   <div class="table-wrap">
@@ -174,6 +175,47 @@
     <div class="modal-footer">
       <textarea id="verbalOrderInput" rows="2" placeholder="e.g. Dr. Adeyemi verbally ordered IV Furosemide 40mg STAT — not yet on the drug list"></textarea>
       <button class="btn btn-primary" onclick="submitVerbalOrder()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay no-print" id="bulkModalOverlay" onclick="if(event.target===this) closeBulkUploadModal();">
+  <div class="modal-box" style="max-width:640px;">
+    <div class="modal-header">
+      <h3>Bulk Upload Drugs</h3>
+      <button class="modal-close" onclick="closeBulkUploadModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="bulkStep1">
+        <p style="font-size:12px; color:#555; margin:0 0 8px;">Paste one drug per line, in the order: <b>drug name, dosage, frequency, duration</b>. Example: <i>Tabs Omeprazole 20mg bd x2/52</i></p>
+        <textarea id="bulkTextInput" rows="10" style="width:100%; font-family:inherit; font-size:13px; box-sizing:border-box; padding:8px;" placeholder="Tabs Omeprazole 20mg bd x2/52&#10;IV Ceftriaxone 1g 12hrly&#10;Tab Doxycycline 100mg bd"></textarea>
+        <div id="bulkParseMsg" style="font-size:12px; color:#dc2626; margin-top:6px;"></div>
+      </div>
+      <div id="bulkStep2" style="display:none;">
+        <p style="font-size:12px; color:#555; margin:0 0 8px;">Review the parsed drugs below and fix anything before adding them to the list.</p>
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:12px;">
+            <thead>
+              <tr style="background:#f2f2f2;">
+                <th style="border:1px solid #000; padding:4px;">Drug Name</th>
+                <th style="border:1px solid #000; padding:4px;">Route</th>
+                <th style="border:1px solid #000; padding:4px;">Frequency</th>
+                <th style="border:1px solid #000; padding:4px;">Duration</th>
+                <th style="border:1px solid #000; padding:4px;"></th>
+              </tr>
+            </thead>
+            <tbody id="bulkPreviewBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer" id="bulkFooterStep1">
+      <button class="btn btn-secondary" onclick="closeBulkUploadModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="parseBulkInput()">Parse</button>
+    </div>
+    <div class="modal-footer" id="bulkFooterStep2" style="display:none;">
+      <button class="btn btn-secondary" onclick="backToBulkInput()">Back</button>
+      <button class="btn btn-success" onclick="confirmBulkImport()">Add to List</button>
     </div>
   </div>
 </div>
@@ -451,6 +493,200 @@
       list.appendChild(o);
     });
   }
+
+  // --- Bulk Upload: paste "Drug Name Dosage Frequency Duration" lines and auto-parse ---
+  const ROUTE_ALIASES = {
+    'tab': 'Oral', 'tabs': 'Oral', 'tavs': 'Oral', 'tablet': 'Oral', 'tablets': 'Oral',
+    'cap': 'Oral', 'caps': 'Oral', 'capsule': 'Oral', 'capsules': 'Oral',
+    'susp': 'Oral', 'suspension': 'Oral', 'syr': 'Oral', 'syrup': 'Oral',
+    'iv': 'IV', 'i.v': 'IV', 'i.v.': 'IV',
+    'im': 'IM', 'i.m': 'IM', 'i.m.': 'IM',
+    'sc': 'SC', 's.c': 'SC', 's.c.': 'SC',
+    'ng': 'NG Tube', 'ngt': 'NG Tube',
+    'top': 'Topical', 'topical': 'Topical', 'cream': 'Topical', 'oint': 'Topical', 'ointment': 'Topical',
+    'pr': 'Rectal', 'rectal': 'Rectal', 'supp': 'Rectal', 'suppository': 'Rectal',
+    'sl': 'Sublingual', 'sublingual': 'Sublingual',
+    'neb': 'Inhalation', 'inhaler': 'Inhalation', 'inhalation': 'Inhalation'
+  };
+  const FREQ_ALIASES = {
+    'od': 'OD', 'once': 'OD', 'bd': 'BD', 'tds': 'TDS', 'tid': 'TDS', 'qds': 'QDS', 'qid': 'QDS',
+    'stat': 'STAT', 'prn': 'PRN',
+    'q4h': 'Q4H', '4hrly': 'Q4H', '4hourly': 'Q4H',
+    'q6h': 'Q6H', '6hrly': 'Q6H', '6hourly': 'Q6H',
+    'q8h': 'Q8H', '8hrly': 'Q8H', '8hourly': 'Q8H',
+    'q12h': 'Q12H', '12hrly': 'Q12H', '12hourly': 'Q12H',
+    'weekly': 'Weekly'
+  };
+  const DOSAGE_RE = /^\d+(\.\d+)?(mg|g|mcg|ug|ml|iu|units?|%|mmol)$/i;
+  const DURATION_RE = /^x?(\d+)\s*\/\s*(7|52|12)$/i;
+
+  function parseDrugLine(line) {
+    const raw = line.trim();
+    if (!raw) return null;
+    let tokens = raw.split(/\s+/);
+
+    // 1) Route — first token, matched against known prefixes/aliases.
+    let route = '';
+    const firstKey = tokens[0].toLowerCase().replace(/\.$/, '');
+    if (ROUTE_ALIASES[firstKey]) {
+      route = ROUTE_ALIASES[firstKey];
+      tokens = tokens.slice(1);
+    }
+
+    // 2) Dosage — first remaining token shaped like "20mg", "1g", "10ml", etc.
+    let dosageIdx = tokens.findIndex(t => DOSAGE_RE.test(t.replace(/,$/, '')));
+    let name, dosage, rest;
+    if (dosageIdx === -1) {
+      // No recognizable dosage token — treat everything as the name, nothing to infer.
+      name = tokens.join(' ');
+      dosage = '';
+      rest = [];
+    } else {
+      name = tokens.slice(0, dosageIdx).join(' ');
+      dosage = tokens[dosageIdx];
+      rest = tokens.slice(dosageIdx + 1);
+    }
+
+    // 3) Duration — a token like "x2/52" or "5/7" anywhere in what's left.
+    let duration = '';
+    const durIdx = rest.findIndex(t => DURATION_RE.test(t));
+    if (durIdx !== -1) {
+      const m = rest[durIdx].match(DURATION_RE);
+      duration = m[1] + '/' + m[2];
+      rest.splice(durIdx, 1);
+    }
+
+    // 4) Frequency — whatever tokens remain, normalized against known abbreviations.
+    const freqRaw = rest.join(' ').replace(/,+/g, ',').trim();
+    const freqKey = freqRaw.toLowerCase().replace(/[\s,]/g, '');
+    let frequency = '';
+    if (freqKey && FREQ_ALIASES[freqKey]) {
+      frequency = FREQ_ALIASES[freqKey];
+    } else if (freqRaw) {
+      // Irregular schedule (e.g. "0, 12, 24hr") — keep it visible on the name
+      // instead of silently dropping it, and flag the dropdown as "Other".
+      frequency = 'Other';
+      name = name + (dosage ? ' ' + dosage : '') + ' (' + freqRaw + ')';
+      dosage = '';
+    }
+
+    const fullName = (name + (dosage ? ' ' + dosage : '')).trim();
+    return { name: fullName, route, frequency, action: '', duration };
+  }
+
+  function parseBulkText(text) {
+    return text.split('\n').map(parseDrugLine).filter(Boolean);
+  }
+
+  let bulkParsedDrugs = [];
+
+  function renderBulkPreview() {
+    const tbody = document.getElementById('bulkPreviewBody');
+    tbody.innerHTML = '';
+    bulkParsedDrugs.forEach((d, i) => {
+      const tr = document.createElement('tr');
+
+      const tdName = document.createElement('td');
+      tdName.style.cssText = 'border:1px solid #000; padding:3px;';
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.style.cssText = 'width:100%; border:none; font-size:12px;';
+      nameInput.value = d.name;
+      nameInput.addEventListener('input', () => { d.name = nameInput.value; });
+      tdName.appendChild(nameInput);
+      tr.appendChild(tdName);
+
+      const tdRoute = document.createElement('td');
+      tdRoute.style.cssText = 'border:1px solid #000; padding:3px;';
+      const routeSel = makeSelect(ROUTE_OPTIONS, d.route || '');
+      routeSel.style.fontSize = '12px';
+      routeSel.addEventListener('change', () => { d.route = routeSel.value; });
+      tdRoute.appendChild(routeSel);
+      tr.appendChild(tdRoute);
+
+      const tdFreq = document.createElement('td');
+      tdFreq.style.cssText = 'border:1px solid #000; padding:3px;';
+      const freqSel = makeSelect(FREQ_OPTIONS, d.frequency || '');
+      freqSel.style.fontSize = '12px';
+      freqSel.addEventListener('change', () => { d.frequency = freqSel.value; });
+      tdFreq.appendChild(freqSel);
+      tr.appendChild(tdFreq);
+
+      const tdDuration = document.createElement('td');
+      tdDuration.style.cssText = 'border:1px solid #000; padding:3px;';
+      const durInput = document.createElement('input');
+      durInput.type = 'text';
+      durInput.style.cssText = 'width:100%; border:none; font-size:12px;';
+      durInput.value = d.duration;
+      durInput.addEventListener('input', () => { d.duration = durInput.value; });
+      tdDuration.appendChild(durInput);
+      tr.appendChild(tdDuration);
+
+      const tdRemove = document.createElement('td');
+      tdRemove.style.cssText = 'border:1px solid #000; padding:3px; text-align:center;';
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-drug-btn';
+      removeBtn.textContent = 'x';
+      removeBtn.onclick = () => { bulkParsedDrugs.splice(i, 1); renderBulkPreview(); };
+      tdRemove.appendChild(removeBtn);
+      tr.appendChild(tdRemove);
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  window.openBulkUploadModal = function () {
+    bulkParsedDrugs = [];
+    document.getElementById('bulkTextInput').value = '';
+    document.getElementById('bulkParseMsg').textContent = '';
+    document.getElementById('bulkStep1').style.display = 'block';
+    document.getElementById('bulkStep2').style.display = 'none';
+    document.getElementById('bulkFooterStep1').style.display = 'flex';
+    document.getElementById('bulkFooterStep2').style.display = 'none';
+    document.getElementById('bulkModalOverlay').style.display = 'flex';
+    setTimeout(() => document.getElementById('bulkTextInput').focus(), 0);
+  };
+
+  window.closeBulkUploadModal = function () {
+    document.getElementById('bulkModalOverlay').style.display = 'none';
+  };
+
+  window.parseBulkInput = function () {
+    const text = document.getElementById('bulkTextInput').value;
+    const parsed = parseBulkText(text);
+    if (!parsed.length) {
+      document.getElementById('bulkParseMsg').textContent = 'Paste at least one drug line first.';
+      return;
+    }
+    bulkParsedDrugs = parsed;
+    renderBulkPreview();
+    document.getElementById('bulkStep1').style.display = 'none';
+    document.getElementById('bulkStep2').style.display = 'block';
+    document.getElementById('bulkFooterStep1').style.display = 'none';
+    document.getElementById('bulkFooterStep2').style.display = 'flex';
+  };
+
+  window.backToBulkInput = function () {
+    document.getElementById('bulkStep1').style.display = 'block';
+    document.getElementById('bulkStep2').style.display = 'none';
+    document.getElementById('bulkFooterStep1').style.display = 'flex';
+    document.getElementById('bulkFooterStep2').style.display = 'none';
+  };
+
+  window.confirmBulkImport = function () {
+    if (!bulkParsedDrugs.length) { closeBulkUploadModal(); return; }
+    // Fill any still-empty drug slots first, then append the rest as new rows.
+    bulkParsedDrugs.forEach(d => {
+      const emptySlot = drugs.find(x => !x.name && !x.route && !x.frequency && !x.duration);
+      if (emptySlot) Object.assign(emptySlot, d);
+      else drugs.push(d);
+    });
+    closeBulkUploadModal();
+    if (!drugsEditMode) window.enterDrugsEditMode();
+    else renderDrugsTable();
+    refreshDrugSnoList();
+    scheduleSave();
+  };
 
   // Fill in the nurse's name the first time any other field in a row is touched.
   function touchRowNurse(row) {
