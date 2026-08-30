@@ -4,6 +4,14 @@ import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/fi
 
 const SEED_ADMIN_EMAIL = "awarinelite@gmail.com";
 
+// Every page calls requireAuth() twice: once from its own script, once from
+// nav.js (for the hamburger menu's name/role display). Without this cache
+// that meant two full onAuthStateChanged + Firestore getDoc round trips on
+// every single page load. Cache by uid so the second caller on the same
+// page reuses the first call's result instead of refetching.
+let cachedUid = null;
+let cachedProfile = null;
+
 // Figure out how many folders deep the current page is, so redirects work
 // whether we're at / (index.html, admin.html, login.html) or /charts/*.html
 function loginPath() {
@@ -14,6 +22,13 @@ export function requireAuth(onReady) {
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
       window.location.href = loginPath();
+      return;
+    }
+
+    if (cachedUid === user.uid && cachedProfile) {
+      window.currentUser = user;
+      window.currentUserProfile = cachedProfile;
+      onReady(user, cachedProfile);
       return;
     }
 
@@ -51,6 +66,8 @@ export function requireAuth(onReady) {
     }
 
     const profile = snap.data();
+    cachedUid = user.uid;
+    cachedProfile = profile;
     window.currentUser = user;
     window.currentUserProfile = profile;
     onReady(user, profile);
