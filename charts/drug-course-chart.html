@@ -28,6 +28,10 @@
   table.drugs-table td.no-col { width:34px; font-weight:bold; }
   table.drugs-table td.remove-col { width:34px; }
   .remove-drug-btn { background:#dc2626; color:#fff; border:none; border-radius:4px; padding:3px 7px; font-size:11px; cursor:pointer; }
+  table.drugs-table th.col-rowedit, table.drugs-table td.col-rowedit { width:30px; }
+  table.chart th.col-rowedit, table.chart td.col-rowedit { width:30px; }
+  .row-edit-btn { background:none; border:none; cursor:pointer; font-size:15px; padding:2px 5px; line-height:1; }
+  .row-lock-btn { background:none; border:none; cursor:pointer; font-size:13px; padding:2px 5px; line-height:1; color:#16a34a; font-weight:bold; }
 
   table.chart { width:100%; border-collapse:collapse; table-layout:fixed; }
   table.chart th, table.chart td { border:1px solid #000; padding:5px 3px; font-size:12px; text-align:center; word-wrap:break-word; }
@@ -121,7 +125,7 @@
     <div class="table-wrap">
     <table class="drugs-table" id="drugsTable">
       <thead>
-        <tr><th style="width:34px;">No.</th><th>Drug Name</th><th>Route</th><th>Frequency</th><th>Action</th><th>Duration</th><th class="no-print" id="drugsRemoveHeadCol" style="width:34px;"></th></tr>
+        <tr><th class="col-rowedit no-print" id="drugsEditHeadCol" style="display:none;"></th><th style="width:34px;">No.</th><th>Drug Name</th><th>Route</th><th>Frequency</th><th>Action</th><th>Duration</th><th class="no-print" id="drugsRemoveHeadCol" style="width:34px;"></th></tr>
       </thead>
       <tbody id="drugsBody"></tbody>
     </table>
@@ -136,6 +140,7 @@
   <div class="table-wrap">
   <table class="chart" id="chartTable">
     <thead><tr>
+      <th class="col-rowedit no-print" id="chartEditHeadCol" style="display:none;"></th>
       <th class="col-date">Date</th>
       <th class="col-sno">Drug S/N</th>
       <th class="col-time">Time</th>
@@ -285,8 +290,10 @@
   let saveTimer;
   let drugs = []; // { name, route, frequency, action, duration }
   let drugsEditMode = false;
+  let editingDrugRows = new Set(); // indices of drug rows currently unlocked for editing
   let chartRows = []; // { date, sno, time, dose, route, nurse, remark }
   let chartEditMode = false;
+  let editingChartRows = new Set(); // indices of chart rows currently unlocked for editing
   let currentNurseName = '';
   let verbalOrders = []; // { text, nurse, at }
 
@@ -466,122 +473,164 @@
 
 
   function renderDrugsTable() {
-    if (drugsEditMode) renderDrugsTableEdit();
+    if (drugsEditMode) renderDrugsTableSession();
     else renderDrugsTableView();
   }
 
+  // Fully view mode — before "Edit" has been clicked at all. No pencils, nothing editable.
   function renderDrugsTableView() {
     const tbody = document.getElementById('drugsBody');
     tbody.innerHTML = '';
+    document.getElementById('drugsEditHeadCol').style.display = 'none';
     document.getElementById('drugsRemoveHeadCol').style.display = 'none';
     drugs.forEach((d, i) => {
-      const tr = document.createElement('tr');
-      [i + 1, d.name || '—', d.route || '—', d.frequency || '—'].forEach(val => {
-        const td = document.createElement('td');
-        td.textContent = val;
-        tr.appendChild(td);
-      });
-
-      const tdAction = document.createElement('td');
-      if (d.action) {
-        const badge = document.createElement('span');
-        badge.textContent = d.action;
-        badge.style.cssText = 'display:inline-block; padding:2px 8px; border-radius:10px; color:#fff; font-size:11px; font-weight:bold; background:' + actionColor(d.action) + ';';
-        tdAction.appendChild(badge);
-      } else {
-        tdAction.textContent = '—';
-      }
-      tr.appendChild(tdAction);
-
-      const tdDuration = document.createElement('td');
-      tdDuration.textContent = d.duration || '—';
-      tr.appendChild(tdDuration);
-
-      tbody.appendChild(tr);
+      tbody.appendChild(buildDrugViewRow(d, i, false));
     });
   }
 
-  function renderDrugsTableEdit() {
-    document.getElementById('drugsRemoveHeadCol').style.display = '';
+  // Edit session active (nurse clicked "Edit"): every row shows a pencil icon and is
+  // read-only until its own pencil is tapped, so accidental touches (e.g. phone in a
+  // pocket) can't alter rows the nurse isn't actively working on.
+  function renderDrugsTableSession() {
     const tbody = document.getElementById('drugsBody');
     tbody.innerHTML = '';
+    document.getElementById('drugsEditHeadCol').style.display = '';
+    document.getElementById('drugsRemoveHeadCol').style.display = '';
     drugs.forEach((d, i) => {
-      const tr = document.createElement('tr');
-
-      const tdNo = document.createElement('td');
-      tdNo.textContent = i + 1;
-      tr.appendChild(tdNo);
-
-      const tdName = document.createElement('td');
-      const nameInput = document.createElement('input');
-      nameInput.type = 'text';
-      nameInput.value = d.name || '';
-      nameInput.addEventListener('input', () => { drugs[i].name = nameInput.value; refreshDrugSnoList(); scheduleSave(); });
-      tdName.appendChild(nameInput);
-      tr.appendChild(tdName);
-
-      const tdRoute = document.createElement('td');
-      const routeSel = makeSelect(ROUTE_OPTIONS, d.route || '');
-      routeSel.addEventListener('change', () => { drugs[i].route = routeSel.value; refreshDrugSnoList(); scheduleSave(); });
-      tdRoute.appendChild(routeSel);
-      tr.appendChild(tdRoute);
-
-      const tdFreq = document.createElement('td');
-      const freqControl = makeFreqControl(d, () => scheduleSave());
-      tdFreq.appendChild(freqControl.sel);
-      tdFreq.appendChild(freqControl.label);
-      tr.appendChild(tdFreq);
-
-      const tdAction = document.createElement('td');
-      const actionSel = makeSelect(ACTION_OPTIONS, d.action || '');
-      function applyActionColor() {
-        actionSel.style.background = d.action ? actionColor(d.action) : '';
-        actionSel.style.color = d.action ? '#fff' : '';
-        actionSel.style.fontWeight = d.action ? 'bold' : 'normal';
-      }
-      applyActionColor();
-      actionSel.addEventListener('change', () => { drugs[i].action = actionSel.value; applyActionColor(); scheduleSave(); });
-      tdAction.appendChild(actionSel);
-      tr.appendChild(tdAction);
-
-      const tdDuration = document.createElement('td');
-      const durationInput = document.createElement('input');
-      durationInput.type = 'text';
-      durationInput.placeholder = 'e.g. 3/7 or 5 days';
-      durationInput.value = d.duration || '';
-      durationInput.addEventListener('input', () => {
-        drugs[i].duration = durationInput.value;
-        if (durationInput.value && !drugs[i].startDate) {
-          drugs[i].startDate = new Date().toISOString().slice(0, 10);
-        }
-        scheduleSave();
-        checkDrugCompletion();
-      });
-      tdDuration.appendChild(durationInput);
-      tr.appendChild(tdDuration);
-
-      const tdRemove = document.createElement('td');
-      tdRemove.className = 'no-print';
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'remove-drug-btn';
-      removeBtn.textContent = 'x';
-      removeBtn.onclick = () => {
-        if (confirm('Remove this drug from the list?')) {
-          drugs.splice(i, 1);
-          renderDrugsTable();
-          refreshDrugSnoList();
-          scheduleSave();
-        }
-      };
-      tdRemove.appendChild(removeBtn);
-      tr.appendChild(tdRemove);
-
-      tbody.appendChild(tr);
+      if (editingDrugRows.has(i)) tbody.appendChild(buildDrugEditRow(d, i));
+      else tbody.appendChild(buildDrugViewRow(d, i, true));
     });
+  }
+
+  function buildDrugViewRow(d, i, showPencil) {
+    const tr = document.createElement('tr');
+
+    if (showPencil) {
+      const tdEdit = document.createElement('td');
+      tdEdit.className = 'col-rowedit no-print';
+      const pencilBtn = document.createElement('button');
+      pencilBtn.className = 'row-edit-btn';
+      pencilBtn.textContent = '🖊️';
+      pencilBtn.title = 'Edit this row';
+      pencilBtn.onclick = () => { editingDrugRows.add(i); renderDrugsTable(); };
+      tdEdit.appendChild(pencilBtn);
+      tr.appendChild(tdEdit);
+    }
+
+    [i + 1, d.name || '—', d.route || '—', d.frequency || '—'].forEach(val => {
+      const td = document.createElement('td');
+      td.textContent = val;
+      tr.appendChild(td);
+    });
+
+    const tdAction = document.createElement('td');
+    if (d.action) {
+      const badge = document.createElement('span');
+      badge.textContent = d.action;
+      badge.style.cssText = 'display:inline-block; padding:2px 8px; border-radius:10px; color:#fff; font-size:11px; font-weight:bold; background:' + actionColor(d.action) + ';';
+      tdAction.appendChild(badge);
+    } else {
+      tdAction.textContent = '—';
+    }
+    tr.appendChild(tdAction);
+
+    const tdDuration = document.createElement('td');
+    tdDuration.textContent = d.duration || '—';
+    tr.appendChild(tdDuration);
+
+    if (showPencil) tr.appendChild(document.createElement('td')); // keep column count aligned with remove col
+
+    return tr;
+  }
+
+  function buildDrugEditRow(d, i) {
+    const tr = document.createElement('tr');
+
+    const tdLock = document.createElement('td');
+    tdLock.className = 'col-rowedit no-print';
+    const lockBtn = document.createElement('button');
+    lockBtn.className = 'row-lock-btn';
+    lockBtn.textContent = '✓';
+    lockBtn.title = 'Done editing this row';
+    lockBtn.onclick = () => { editingDrugRows.delete(i); renderDrugsTable(); };
+    tdLock.appendChild(lockBtn);
+    tr.appendChild(tdLock);
+
+    const tdNo = document.createElement('td');
+    tdNo.textContent = i + 1;
+    tr.appendChild(tdNo);
+
+    const tdName = document.createElement('td');
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = d.name || '';
+    nameInput.addEventListener('input', () => { drugs[i].name = nameInput.value; refreshDrugSnoList(); scheduleSave(); });
+    tdName.appendChild(nameInput);
+    tr.appendChild(tdName);
+
+    const tdRoute = document.createElement('td');
+    const routeSel = makeSelect(ROUTE_OPTIONS, d.route || '');
+    routeSel.addEventListener('change', () => { drugs[i].route = routeSel.value; refreshDrugSnoList(); scheduleSave(); });
+    tdRoute.appendChild(routeSel);
+    tr.appendChild(tdRoute);
+
+    const tdFreq = document.createElement('td');
+    const freqControl = makeFreqControl(d, () => scheduleSave());
+    tdFreq.appendChild(freqControl.sel);
+    tdFreq.appendChild(freqControl.label);
+    tr.appendChild(tdFreq);
+
+    const tdAction = document.createElement('td');
+    const actionSel = makeSelect(ACTION_OPTIONS, d.action || '');
+    function applyActionColor() {
+      actionSel.style.background = d.action ? actionColor(d.action) : '';
+      actionSel.style.color = d.action ? '#fff' : '';
+      actionSel.style.fontWeight = d.action ? 'bold' : 'normal';
+    }
+    applyActionColor();
+    actionSel.addEventListener('change', () => { drugs[i].action = actionSel.value; applyActionColor(); scheduleSave(); });
+    tdAction.appendChild(actionSel);
+    tr.appendChild(tdAction);
+
+    const tdDuration = document.createElement('td');
+    const durationInput = document.createElement('input');
+    durationInput.type = 'text';
+    durationInput.placeholder = 'e.g. 3/7 or 5 days';
+    durationInput.value = d.duration || '';
+    durationInput.addEventListener('input', () => {
+      drugs[i].duration = durationInput.value;
+      if (durationInput.value && !drugs[i].startDate) {
+        drugs[i].startDate = new Date().toISOString().slice(0, 10);
+      }
+      scheduleSave();
+      checkDrugCompletion();
+    });
+    tdDuration.appendChild(durationInput);
+    tr.appendChild(tdDuration);
+
+    const tdRemove = document.createElement('td');
+    tdRemove.className = 'no-print';
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-drug-btn';
+    removeBtn.textContent = 'x';
+    removeBtn.onclick = () => {
+      if (confirm('Remove this drug from the list?')) {
+        drugs.splice(i, 1);
+        editingDrugRows.delete(i);
+        renderDrugsTable();
+        refreshDrugSnoList();
+        scheduleSave();
+      }
+    };
+    tdRemove.appendChild(removeBtn);
+    tr.appendChild(tdRemove);
+
+    return tr;
   }
 
   window.enterDrugsEditMode = function () {
     drugsEditMode = true;
+    editingDrugRows.clear();
     document.getElementById('editDrugsBtn').style.display = 'none';
     document.getElementById('saveDrugsBtn').style.display = 'inline-block';
     document.getElementById('addDrugBtn').style.display = 'inline-block';
@@ -590,6 +639,7 @@
 
   window.exitDrugsEditMode = function () {
     drugsEditMode = false;
+    editingDrugRows.clear();
     document.getElementById('editDrugsBtn').style.display = 'inline-block';
     document.getElementById('saveDrugsBtn').style.display = 'none';
     document.getElementById('addDrugBtn').style.display = 'none';
@@ -599,6 +649,7 @@
 
   window.addDrug = function () {
     drugs.push({ name: '', route: '', frequency: '', action: '', duration: '' });
+    editingDrugRows.add(drugs.length - 1); // a freshly added row opens straight into edit mode
     renderDrugsTable();
     refreshDrugSnoList();
     scheduleSave();
@@ -896,13 +947,33 @@
         editBtn.style.marginTop = '6px';
         editBtn.textContent = 'Edit';
         editBtn.onclick = () => { editingVerbalIndex = i; renderVerbalOrderList(); };
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-danger';
+        deleteBtn.style.padding = '3px 9px';
+        deleteBtn.style.fontSize = '11px';
+        deleteBtn.style.marginTop = '6px';
+        deleteBtn.style.marginLeft = '6px';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.onclick = () => deleteVerbalOrder(i);
+
         bubble.appendChild(meta);
         bubble.appendChild(text);
         bubble.appendChild(editBtn);
+        bubble.appendChild(deleteBtn);
       }
       box.appendChild(bubble);
     });
     box.scrollTop = box.scrollHeight;
+  }
+
+  async function deleteVerbalOrder(i) {
+    if (!confirm('Delete this verbal order? This cannot be undone.')) return;
+    verbalOrders.splice(i, 1);
+    if (editingVerbalIndex === i) editingVerbalIndex = -1;
+    renderVerbalOrderList();
+    renderVerbalOrderBtn();
+    await saveChart();
   }
 
   async function saveVerbalOrderEdit(i, newText) {
@@ -939,43 +1010,85 @@
   };
 
   function renderChartTable() {
-    if (chartEditMode) renderChartEdit(); else renderChartView();
+    if (chartEditMode) renderChartSession(); else renderChartView();
     document.getElementById('editChartBtn').style.display = chartEditMode ? 'none' : 'inline-block';
     document.getElementById('saveChartBtn').style.display = chartEditMode ? 'inline-block' : 'none';
     document.getElementById('addRowBtn').style.display = chartEditMode ? 'inline-block' : 'none';
     document.getElementById('removeRowBtn').style.display = chartEditMode ? 'inline-block' : 'none';
+    document.getElementById('chartEditHeadCol').style.display = chartEditMode ? '' : 'none';
   }
 
+  // Fully view mode — before "Edit" has been clicked at all. No pencils, nothing editable.
   function renderChartView() {
     const tbody = document.getElementById('chartBody');
     tbody.innerHTML = '';
     chartRows.forEach(row => {
-      const tr = document.createElement('tr');
-      const cols = [
-        ['col-date', row.date || ''],
-        ['col-sno', row.sno || ''],
-        ['col-time', row.time || ''],
-        ['col-dose', row.dose || 'AP'],
-        ['col-route', row.route || ''],
-        ['col-nurse', row.nurse || ''],
-        ['col-remark', row.remark || '']
-      ];
-      cols.forEach(([cls, val]) => {
-        const td = document.createElement('td');
-        td.className = cls + ' view-cell';
-        td.textContent = val || '\u00A0';
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
+      tbody.appendChild(buildChartViewRow(row, false));
     });
   }
 
-  function renderChartEdit() {
+  // Edit session active (nurse clicked "Edit"): every row shows a pencil icon and stays
+  // read-only until its own pencil is tapped, so a stray touch — a phone bumping in a
+  // pocket, a glitchy screen — can't alter rows the nurse isn't actively working on.
+  function renderChartSession() {
     const tbody = document.getElementById('chartBody');
     tbody.innerHTML = '';
     refreshDrugSnoList();
     chartRows.forEach((row, i) => {
+      if (editingChartRows.has(i)) tbody.appendChild(buildChartEditRow(row, i));
+      else tbody.appendChild(buildChartViewRow(row, true));
+    });
+  }
+
+  function buildChartViewRow(row, showPencil) {
+    const tr = document.createElement('tr');
+
+    if (showPencil) {
+      const tdEdit = document.createElement('td');
+      tdEdit.className = 'col-rowedit no-print';
+      const pencilBtn = document.createElement('button');
+      pencilBtn.className = 'row-edit-btn';
+      pencilBtn.textContent = '🖊️';
+      pencilBtn.title = 'Edit this row';
+      pencilBtn.onclick = () => {
+        const i = chartRows.indexOf(row);
+        editingChartRows.add(i);
+        renderChartTable();
+      };
+      tdEdit.appendChild(pencilBtn);
+      tr.appendChild(tdEdit);
+    }
+
+    const cols = [
+      ['col-date', row.date || ''],
+      ['col-sno', row.sno || ''],
+      ['col-time', row.time || ''],
+      ['col-dose', row.dose || 'AP'],
+      ['col-route', row.route || ''],
+      ['col-nurse', row.nurse || ''],
+      ['col-remark', row.remark || '']
+    ];
+    cols.forEach(([cls, val]) => {
+      const td = document.createElement('td');
+      td.className = cls + ' view-cell';
+      td.textContent = val || '\u00A0';
+      tr.appendChild(td);
+    });
+    return tr;
+  }
+
+  function buildChartEditRow(row, i) {
       const tr = document.createElement('tr');
+
+      const tdLock = document.createElement('td');
+      tdLock.className = 'col-rowedit no-print';
+      const lockBtn = document.createElement('button');
+      lockBtn.className = 'row-lock-btn';
+      lockBtn.textContent = '✓';
+      lockBtn.title = 'Done editing this row';
+      lockBtn.onclick = () => { editingChartRows.delete(i); renderChartTable(); };
+      tdLock.appendChild(lockBtn);
+      tr.appendChild(tdLock);
 
       // Date
       const tdDate = document.createElement('td');
@@ -1056,28 +1169,37 @@
       tdRemark.appendChild(remarkInput);
       tr.appendChild(tdRemark);
 
-      tbody.appendChild(tr);
-    });
+      return tr;
   }
 
   window.enterChartEditMode = function () {
     chartEditMode = true;
+    editingChartRows.clear();
     renderChartTable();
   };
 
   window.exitChartEditMode = function () {
     chartEditMode = false;
+    editingChartRows.clear();
     renderChartTable();
     saveChart();
   };
 
   window.addRow = function (count) {
-    for (let i = 0; i < count; i++) chartRows.push(defaultRow());
+    for (let i = 0; i < count; i++) {
+      chartRows.push(defaultRow());
+      editingChartRows.add(chartRows.length - 1); // a freshly added row opens straight into edit mode
+    }
     renderChartTable();
     scheduleSave();
   };
   window.removeRow = function () {
-    if (chartRows.length > 0) { chartRows.pop(); renderChartTable(); scheduleSave(); }
+    if (chartRows.length > 0) {
+      chartRows.pop();
+      editingChartRows.delete(chartRows.length);
+      renderChartTable();
+      scheduleSave();
+    }
   };
 
   function scheduleSave() {
