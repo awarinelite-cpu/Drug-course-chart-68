@@ -133,8 +133,8 @@
     <button class="btn btn-purple no-print" id="editDrugsBtn" style="padding:6px 12px; font-size:12px;" onclick="enterDrugsEditMode()">Edit</button>
     <button class="btn btn-success no-print" id="saveDrugsBtn" style="padding:6px 12px; font-size:12px; display:none;" onclick="exitDrugsEditMode()">Save</button>
     <button class="btn btn-success no-print" id="addDrugBtn" style="padding:6px 12px; font-size:12px; display:none;" onclick="addDrug()">+ Add Drug</button>
-    <button class="btn btn-secondary no-print" id="verbalOrderBtn" onclick="openVerbalOrderModal()">+ Verbal Order</button>
-    <button class="btn btn-secondary no-print" id="bulkUploadBtn" onclick="openBulkUploadModal()">+ Bulk Upload</button>
+    <button class="btn btn-secondary no-print" id="verbalOrderBtn" style="display:none;" onclick="openVerbalOrderModal()">+ Verbal Order</button>
+    <button class="btn btn-secondary no-print" id="bulkUploadBtn" style="display:none;" onclick="openBulkUploadModal()">+ Bulk Upload</button>
   </div>
 
   <div class="table-wrap">
@@ -634,6 +634,8 @@
     document.getElementById('editDrugsBtn').style.display = 'none';
     document.getElementById('saveDrugsBtn').style.display = 'inline-block';
     document.getElementById('addDrugBtn').style.display = 'inline-block';
+    document.getElementById('verbalOrderBtn').style.display = 'inline-block';
+    document.getElementById('bulkUploadBtn').style.display = 'inline-block';
     renderDrugsTable();
   };
 
@@ -643,6 +645,8 @@
     document.getElementById('editDrugsBtn').style.display = 'inline-block';
     document.getElementById('saveDrugsBtn').style.display = 'none';
     document.getElementById('addDrugBtn').style.display = 'none';
+    document.getElementById('verbalOrderBtn').style.display = 'none';
+    document.getElementById('bulkUploadBtn').style.display = 'none';
     renderDrugsTable();
     scheduleSave();
   };
@@ -1438,7 +1442,7 @@
       // Lock the page down to a read-only view: no editing, no status changes.
       document.getElementById('saveStatus').textContent = 'Viewing archived chart (read-only)';
       fieldIds.forEach(id => { const el = document.getElementById(id); if (el) el.readOnly = true; });
-      ['editDrugsBtn', 'verbalOrderBtn', 'editChartBtn', 'statusActionBox'].forEach(id => {
+      ['editDrugsBtn', 'verbalOrderBtn', 'bulkUploadBtn', 'editChartBtn', 'statusActionBox'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
       });
