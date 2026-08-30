@@ -8,15 +8,35 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>Ward Charts · Home</title>
 <link rel="stylesheet" href="js/styles.css">
+<style>
+  .whoami-link { display:flex; align-items:center; gap:8px; text-decoration:none; }
+  .whoami-avatar { width:32px; height:32px; border-radius:50%; overflow:hidden; flex-shrink:0; }
+  .whoami-name {
+    font-weight:bold;
+    background: linear-gradient(100deg, #b8860b 0%, #ffe985 25%, #ffd700 50%, #ffe985 75%, #b8860b 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shineGold 3s linear infinite;
+    text-shadow: 0 0 8px rgba(255, 215, 0, 0.35);
+  }
+  @keyframes shineGold {
+    0% { background-position: 0% center; }
+    100% { background-position: 200% center; }
+  }
+</style>
 </head>
 <body>
 <script type="module" src="js/nav.js"></script>
 <div class="topbar">
   <div class="brand">68 NARHY Ward Charts</div>
   <div class="right">
-    <a id="whoami" href="profile.html" style="color:#fff; text-decoration:underline;"></a>
+    <a id="whoami" href="profile.html" class="whoami-link">
+      <span class="whoami-avatar" id="whoami_avatar"></span>
+      <span class="whoami-name" id="whoami_name"></span>
+    </a>
     <a id="adminLink" href="admin.html" class="btn btn-purple" style="display:none; padding:6px 12px;">Admin</a>
-    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="logout()">Log Out</button>
   </div>
 </div>
 
@@ -83,16 +103,18 @@
 </div>
 
 <script type="module">
-  import { requireAuth, logout } from "./js/auth-guard.js";
+  import { requireAuth } from "./js/auth-guard.js";
   import { db } from "./js/firebase.js";
   import { collection, getDocs, addDoc, updateDoc, doc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { avatarMarkup } from "./js/avatar.js";
 
-  window.logout = logout;
   let selectedPatient = null;
   let allPatientsCache = null;
 
   requireAuth((user, profile) => {
-    document.getElementById('whoami').textContent = profile.name + ' (' + profile.role + ')';
+    document.getElementById('whoami_avatar').innerHTML = avatarMarkup(profile, 32);
+    const title = profile.role === 'nurse' ? 'Nr.' : (profile.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : '');
+    document.getElementById('whoami_name').textContent = (title ? title + ' ' : '') + (profile.name || '');
     if (profile.role === 'admin') document.getElementById('adminLink').style.display = 'inline-block';
     if (window.location.hash === '#search') {
       const input = document.getElementById('searchInput');
