@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "922657172970",
+    "project_id": "gen-lang-client-0406053716",
+    "storage_bucket": "gen-lang-client-0406053716.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:922657172970:android:d9230ff13018dac3d0d693",
+        "android_client_info": {
+          "package_name": "ng.mil.narhy.drugcoursechart"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "922657172970-2k7mi0u4m6unprc5jpu85kammai191f9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDPXSkDI6Nnhw150atbQ81h4tVez8K_D4w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "922657172970-2k7mi0u4m6unprc5jpu85kammai191f9.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
