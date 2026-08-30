@@ -60,6 +60,22 @@
     </table>
   </div>
 
+  <div id="deleteModalOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center; padding:16px;">
+    <div class="card-box" style="max-width:420px; width:100%; margin:0;">
+      <h3 style="margin-top:0; color:#dc2626;">Delete Patient</h3>
+      <p id="deleteModalText" style="font-size:14px; color:#374151;"></p>
+      <div class="field">
+        <label id="deleteModalLabel">Type to confirm</label>
+        <input type="text" id="deleteConfirmInput" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" onkeydown="if(event.key==='Enter'){event.preventDefault(); confirmDeletePatient();} else if(event.key==='Escape'){closeDeleteModal();}">
+      </div>
+      <div id="deleteModalError" class="error-msg" style="display:none;"></div>
+      <div style="display:flex; gap:10px; margin-top:6px;">
+        <button class="btn btn-secondary" style="flex:1;" onclick="closeDeleteModal()">Cancel</button>
+        <button class="btn" style="flex:1; background:#dc2626; color:#fff;" onclick="confirmDeletePatient()">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <div class="card-box">
     <h3 style="margin-top:0;">Backup All Patients</h3>
     <p style="font-size:12px; color:#666; margin-top:-6px;">
@@ -176,19 +192,51 @@
   // storage and still technically recoverable — not acceptable for a real delete).
   const PATIENT_SUBCOLLECTIONS = ['admissions', 'bloodGlucose', 'drugCourseChart', 'intakeOutput', 'intakeOutputSummary', 'seizure', 'vitals'];
 
+  let pendingDeletePatient = null;
+
+  // Normalizes typed confirmation text before comparing: trims edge whitespace,
+  // collapses internal whitespace, and lowercases. Mobile keyboards (especially
+  // in a PWA/WebView) can silently inject a trailing space via autocomplete/
+  // suggestion-bar taps or auto-capitalize the first character, which made the
+  // old exact-match check fail even when the admin typed the right EMR.
+  function normalizeConfirmText(s) {
+    return (s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+
   window.deletePatientPrompt = function (p) {
+    pendingDeletePatient = p;
     const label = (p.name || 'Unnamed') + ' (EMR: ' + (p.emr || 'N/A') + ')';
-    const typed = prompt(
-      'This permanently deletes ' + label + ' and every chart, drug list, and closed-admission record for this patient. This cannot be undone.\n\n' +
-      'Type the patient\u2019s EMR number to confirm: ' + (p.emr || '(no EMR on file — type DELETE instead)')
-    );
-    if (typed === null) return; // cancelled
-    const expected = (p.emr || 'DELETE').trim();
-    if (typed.trim() !== expected) {
-      alert('That didn\u2019t match — nothing was deleted.');
+    const hasEmr = !!(p.emr || '').trim();
+    document.getElementById('deleteModalText').textContent =
+      'This permanently deletes ' + label + ' and every chart, drug list, and closed-admission record for this patient. This cannot be undone.';
+    document.getElementById('deleteModalLabel').textContent =
+      hasEmr ? ('Type the patient\u2019s EMR number to confirm: ' + p.emr) : 'No EMR on file — type DELETE to confirm';
+    const input = document.getElementById('deleteConfirmInput');
+    input.value = '';
+    document.getElementById('deleteModalError').style.display = 'none';
+    document.getElementById('deleteModalOverlay').style.display = 'flex';
+    setTimeout(() => input.focus(), 0);
+  };
+
+  window.closeDeleteModal = function () {
+    pendingDeletePatient = null;
+    document.getElementById('deleteModalOverlay').style.display = 'none';
+  };
+
+  window.confirmDeletePatient = function () {
+    const p = pendingDeletePatient;
+    if (!p) return;
+    const typed = document.getElementById('deleteConfirmInput').value;
+    const expected = (p.emr || '').trim() || 'DELETE';
+    const errEl = document.getElementById('deleteModalError');
+    if (normalizeConfirmText(typed) !== normalizeConfirmText(expected)) {
+      errEl.textContent = 'That didn\u2019t match — nothing was deleted. Please re-type it exactly.';
+      errEl.style.display = 'block';
       return;
     }
+    document.getElementById('deleteModalOverlay').style.display = 'none';
     runDeletePatient(p);
+    pendingDeletePatient = null;
   };
 
   async function runDeletePatient(p) {
