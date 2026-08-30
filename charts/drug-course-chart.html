@@ -254,7 +254,7 @@
   const admissionId = new URLSearchParams(window.location.search).get('admission');
   const isArchived = !!admissionId;
 
-  const ROUTE_OPTIONS = ['', 'Oral', 'IV', 'IM', 'SC', 'Sublingual', 'Topical', 'Rectal', 'Inhalation', 'NG Tube', 'Other'];
+  const ROUTE_OPTIONS = ['', 'Oral', 'IV', 'IM', 'SC', 'Sublingual', 'Topical', 'Rectal', 'Suppository', 'Inhalation', 'NG Tube', 'Other'];
   const FREQ_OPTIONS = ['', 'OD', 'BD', 'TDS', 'QDS', 'STAT', 'PRN', 'Q4H', 'Q6H', 'Q8H', 'Q12H', 'Weekly', 'Other'];
   const ACTION_OPTIONS = ['', 'Ongoing', 'Completed', 'Discontinued', 'Withheld', 'Other'];
   const STATUS_LABELS = { referred: 'Referred to another hospital', transferred: 'Transferred to another ward', discharged: 'Discharged' };
@@ -598,12 +598,13 @@
     'tab': 'Oral', 'tabs': 'Oral', 'tavs': 'Oral', 'tablet': 'Oral', 'tablets': 'Oral',
     'cap': 'Oral', 'caps': 'Oral', 'capsule': 'Oral', 'capsules': 'Oral',
     'susp': 'Oral', 'suspension': 'Oral', 'syr': 'Oral', 'syrup': 'Oral',
-    'iv': 'IV', 'i.v': 'IV', 'i.v.': 'IV',
+    'iv': 'IV', 'i.v': 'IV', 'i.v.': 'IV', 'ivf': 'IV',
     'im': 'IM', 'i.m': 'IM', 'i.m.': 'IM',
     'sc': 'SC', 's.c': 'SC', 's.c.': 'SC',
     'ng': 'NG Tube', 'ngt': 'NG Tube',
     'top': 'Topical', 'topical': 'Topical', 'cream': 'Topical', 'oint': 'Topical', 'ointment': 'Topical',
-    'pr': 'Rectal', 'rectal': 'Rectal', 'supp': 'Rectal', 'suppository': 'Rectal',
+    'pr': 'Rectal', 'rectal': 'Rectal',
+    'sup': 'Suppository', 'supp': 'Suppository', 'suppository': 'Suppository',
     'sl': 'Sublingual', 'sublingual': 'Sublingual',
     'neb': 'Inhalation', 'inhaler': 'Inhalation', 'inhalation': 'Inhalation'
   };
