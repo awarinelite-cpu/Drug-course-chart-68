@@ -89,6 +89,7 @@
       title: '6 Points Glycemic Chart',
       columns: [
         { label: 'Date', type: 'date' },
+        { label: 'Time', type: 'time' },
         { label: 'FBS', type: 'text', glucose: true },
         { label: '2hrs Post Prandial', type: 'text', glucose: true },
         { label: 'Pre-Lunch', type: 'text', glucose: true },
@@ -102,6 +103,7 @@
       title: '3 Points Glycemic Chart',
       columns: [
         { label: 'Date', type: 'date' },
+        { label: 'Time', type: 'time' },
         { label: 'FBS', type: 'text', glucose: true },
         { label: 'RBS', type: 'text', glucose: true },
         { label: 'RBS', type: 'text', glucose: true },
@@ -109,6 +111,18 @@
       ]
     }
   };
+
+  // How many columns each chart type had BEFORE the Time column was added
+  // (right after Date). A saved row this short predates that change — insert
+  // a blank Time cell at index 1 so its existing values land back under the
+  // same headers they were saved under, instead of shifting one column left.
+  const PRE_TIME_COLUMN_COUNT = { '6point': 8, '3point': 5 };
+  function migrateRow(type, row) {
+    if (Array.isArray(row) && row.length === PRE_TIME_COLUMN_COUNT[type]) {
+      return [row[0], '', ...row.slice(1)];
+    }
+    return row;
+  }
 
   // Inpatient glycemic flags: hypoglycemia below 70 mg/dL, hyperglycemia above 180 mg/dL.
   function isAbnormalGlucose(v) {
@@ -222,7 +236,7 @@
       document.getElementById('chartTitle').textContent = CHART_DEFS[currentType].title;
       buildHead();
       const rows = (data.rows && data.rows.length) ? data.rows : [];
-      if (rows.length) rows.forEach(r => addRow(1, r));
+      if (rows.length) rows.forEach(r => addRow(1, migrateRow(currentType, r)));
       else if (!isArchived) addRow(10);
     } else {
       document.getElementById('btn6').classList.add('active');

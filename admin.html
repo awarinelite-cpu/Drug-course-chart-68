@@ -119,6 +119,20 @@
       <div id="al_frequencies" style="display:flex; flex-wrap:wrap; gap:10px 16px; margin-top:4px;"></div>
     </div>
 
+    <hr style="border:none; border-top:1px solid #e5e7eb; margin:18px 0;">
+
+    <div class="field">
+      <label><input type="checkbox" id="al_glucoseEnabled" style="width:auto; margin-right:6px; vertical-align:middle;">Glycemic Check Reminders</label>
+      <p style="font-size:12px; color:#666; margin:2px 0 0;">
+        Reminds nurses when a patient's blood glucose reading is overdue, timed from their last recorded reading
+        (see the Time column on the Glycemic Chart) — same alarm sound/appearance/quiet-hours above.
+      </p>
+    </div>
+    <div class="field">
+      <label>Remind Every</label>
+      <select id="al_glucoseInterval"></select>
+    </div>
+
     <button class="btn btn-primary" id="al_saveBtn" onclick="saveAlarmSettings()">Save Alarm Settings</button>
     <div id="al_msg"></div>
   </div>
@@ -145,7 +159,7 @@
   import { downloadFullBackup } from "./js/export.js";
   import { avatarMarkup } from "./js/avatar.js";
   import {
-    SOUND_OPTIONS, APPEARANCE_OPTIONS, REPEAT_OPTIONS, ALL_FREQUENCIES,
+    SOUND_OPTIONS, APPEARANCE_OPTIONS, REPEAT_OPTIONS, ALL_FREQUENCIES, GLUCOSE_INTERVAL_OPTIONS,
     loadAlarmSettings, saveAlarmSettings as persistAlarmSettings
   } from "./js/alarm-settings.js";
 
@@ -178,6 +192,7 @@
     populateSelect(document.getElementById('al_sound'), SOUND_OPTIONS);
     populateSelect(document.getElementById('al_appearance'), APPEARANCE_OPTIONS);
     populateSelect(document.getElementById('al_repeat'), REPEAT_OPTIONS);
+    populateSelect(document.getElementById('al_glucoseInterval'), GLUCOSE_INTERVAL_OPTIONS);
 
     const freqWrap = document.getElementById('al_frequencies');
     freqWrap.innerHTML = '';
@@ -204,6 +219,8 @@
     document.querySelectorAll('.al_freqCheckbox').forEach(cb => {
       cb.checked = settings.frequencies.includes(cb.value);
     });
+    document.getElementById('al_glucoseEnabled').checked = settings.glucose.enabled;
+    document.getElementById('al_glucoseInterval').value = String(settings.glucose.intervalHours);
   }
 
   window.saveAlarmSettings = async function () {
@@ -229,7 +246,11 @@
           start: document.getElementById('al_quietStart').value || '22:00',
           end: document.getElementById('al_quietEnd').value || '06:00'
         },
-        frequencies: selectedFrequencies
+        frequencies: selectedFrequencies,
+        glucose: {
+          enabled: document.getElementById('al_glucoseEnabled').checked,
+          intervalHours: Number(document.getElementById('al_glucoseInterval').value)
+        }
       });
       msg.innerHTML = '<div class="info-msg">Alarm settings saved.</div>';
     } catch (e) {

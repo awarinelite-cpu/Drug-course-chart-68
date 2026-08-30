@@ -53,13 +53,23 @@ async function loadAlarmSettings() {
       ? d.frequencies.filter((f) => DEFAULT_FREQUENCIES.includes(f))
       : DEFAULT_FREQUENCIES;
     const qh = d.quietHours || {};
+    const glucose = d.glucose || {};
+    const validGlucoseIntervals = [1, 2, 3, 4, 6, 8, 12, 24];
     return {
       frequencies,
-      quietHours: { enabled: !!qh.enabled, start: qh.start || '22:00', end: qh.end || '06:00' }
+      quietHours: { enabled: !!qh.enabled, start: qh.start || '22:00', end: qh.end || '06:00' },
+      glucose: {
+        enabled: d.glucose ? !!glucose.enabled : true, // default on if admin hasn't touched this setting yet
+        intervalHours: validGlucoseIntervals.includes(Number(glucose.intervalHours)) ? Number(glucose.intervalHours) : 4
+      }
     };
   } catch (e) {
     console.error('Failed to load alarm settings, defaulting to all frequencies / no quiet hours:', e);
-    return { frequencies: DEFAULT_FREQUENCIES, quietHours: { enabled: false, start: '22:00', end: '06:00' } };
+    return {
+      frequencies: DEFAULT_FREQUENCIES,
+      quietHours: { enabled: false, start: '22:00', end: '06:00' },
+      glucose: { enabled: true, intervalHours: 4 }
+    };
   }
 }
 
@@ -112,6 +122,44 @@ function computeDueAt(drug, chartRows, drugIndex) {
   return null;
 }
 
+// Mirrors CHART_DEFS in charts/blood-glucose.html — each chart type's column
+// layout by index, so the scheduler can tell a reading cell from date/time/
+// remark bookkeeping. Kept in sync by hand, same as INTERVAL_HOURS above.
+// dateIdx/timeIdx feed toWardDate(); readingIdxs are the glucose-value
+// columns — a row counts as "a reading was taken" if any of them is filled.
+const GLUCOSE_CHART_COLUMNS = {
+  '6point': { dateIdx: 0, timeIdx: 1, readingIdxs: [2, 3, 4, 5, 6, 7] },
+  '3point': { dateIdx: 0, timeIdx: 1, readingIdxs: [2, 3, 4] }
+};
+
+function lastGlucoseReadingAt(rows, chartType) {
+  const cols = GLUCOSE_CHART_COLUMNS[chartType] || GLUCOSE_CHART_COLUMNS['6point'];
+  let latest = null;
+  for (const row of rows || []) {
+    const hasReading = cols.readingIdxs.some((i) => (row[i] || '').toString().trim() !== '');
+    if (!hasReading) continue;
+    const dt = toWardDate(row[cols.dateIdx], row[cols.timeIdx]);
+    if (dt && (!latest || dt > latest)) latest = dt;
+  }
+  return latest;
+}
+
+// Reads every nurse's registered push token across all users (see
+// js/push.js's pushTokens subcollection). Shared by both scheduled checks
+// below so each does this Firestore read only once per its own cycle.
+async function getTokenEntries(usersSnap) {
+  const tokenEntries = []; // { token, ref }
+  await Promise.all(
+    usersSnap.docs.map(async (u) => {
+      const tokensSnap = await db.collection('users').doc(u.id).collection('pushTokens').get();
+      tokensSnap.forEach((t) => {
+        if (t.data().token) tokenEntries.push({ token: t.data().token, ref: t.ref });
+      });
+    })
+  );
+  return tokenEntries;
+}
+
 exports.checkDueDrugs = onSchedule(
   { schedule: 'every 1 minutes', timeZone: 'Africa/Lagos', region: 'us-central1' },
   async () => {
@@ -137,16 +185,7 @@ exports.checkDueDrugs = onSchedule(
     const patientNames = {};
     patientsSnap.forEach((d) => { patientNames[d.id] = d.data().name || 'Unnamed patient'; });
 
-    const tokenEntries = []; // { token, ref }
-    await Promise.all(
-      usersSnap.docs.map(async (u) => {
-        const tokensSnap = await db.collection('users').doc(u.id).collection('pushTokens').get();
-        tokensSnap.forEach((t) => {
-          if (t.data().token) tokenEntries.push({ token: t.data().token, ref: t.ref });
-        });
-      })
-    );
-
+    const tokenEntries = await getTokenEntries(usersSnap);
     if (tokenEntries.length === 0) {
       console.log('No nurses subscribed to dose alerts — nothing to send.');
       return;
@@ -237,5 +276,110 @@ exports.checkDueDrugs = onSchedule(
 
     await Promise.all([...chartUpdates, ...sends]);
     console.log(`Sent due-dose alerts for ${patientIds.length} patient(s) to ${tokens.length} device(s).`);
+  }
+);
+
+// Runs every 1 minute, same cadence and admin-configured quiet-hours/sound
+// policy as checkDueDrugs above, but for the glycemic chart instead of the
+// drug course chart. Unlike drugs (which have a per-row frequency like
+// BD/TDS), the glycemic chart has no such field — "due" is instead a single
+// ward-wide interval (settings/alarm.glucose.intervalHours, admin-configured
+// in admin.html) counted from EACH PATIENT'S OWN last recorded reading (the
+// Date+Time of their most recent row with any glucose value filled in). A
+// patient with no reading yet has no baseline to count from, so they're
+// skipped rather than alerted immediately on admission.
+exports.checkDueGlucoseChecks = onSchedule(
+  { schedule: 'every 1 minutes', timeZone: 'Africa/Lagos', region: 'us-central1' },
+  async () => {
+    const now = new Date();
+    const alarmSettings = await loadAlarmSettings();
+
+    if (!alarmSettings.glucose.enabled) {
+      console.log('Glucose check reminders are turned off in Alarm Settings.');
+      return;
+    }
+    if (isWithinQuietHours(alarmSettings.quietHours, now)) {
+      console.log('Within admin-configured quiet hours — skipping glucose reminders this cycle.');
+      return;
+    }
+
+    const [patientsSnap, chartsSnap, usersSnap] = await Promise.all([
+      db.collection('patients').get(),
+      db.collectionGroup('bloodGlucose').get(),
+      db.collection('users').get()
+    ]);
+
+    const patientNames = {};
+    patientsSnap.forEach((d) => { patientNames[d.id] = d.data().name || 'Unnamed patient'; });
+
+    const tokenEntries = await getTokenEntries(usersSnap);
+    if (tokenEntries.length === 0) {
+      console.log('No nurses subscribed to dose alerts — nothing to send.');
+      return;
+    }
+
+    const duePatientIds = [];
+    const chartUpdates = [];
+    const intervalMs = alarmSettings.glucose.intervalHours * 3600 * 1000;
+
+    chartsSnap.forEach((chartDoc) => {
+      if (chartDoc.id !== 'main') return; // this collection only ever holds one doc, 'main'
+      const patientId = chartDoc.ref.parent.parent.id;
+      const data = chartDoc.data();
+      const chartType = data.chartType === '3point' ? '3point' : '6point';
+      const rows = Array.isArray(data.rows) ? data.rows : [];
+
+      const lastReadingAt = lastGlucoseReadingAt(rows, chartType);
+      if (!lastReadingAt) return; // no reading recorded yet — nothing to base a "due" time on
+
+      const dueAt = new Date(lastReadingAt.getTime() + intervalMs);
+      if (dueAt > now) return;
+
+      const dueSlotKey = dueAt.toISOString();
+      if (data.lastAlertedForGlucose === dueSlotKey) return; // already alerted for this exact slot
+
+      chartUpdates.push(chartDoc.ref.update({ lastAlertedForGlucose: dueSlotKey }));
+      duePatientIds.push(patientId);
+    });
+
+    if (duePatientIds.length === 0) {
+      await Promise.all(chartUpdates);
+      console.log('No glucose checks due this cycle.');
+      return;
+    }
+
+    const tokens = tokenEntries.map((t) => t.token);
+    let tokensPruned = false; // token validity is the same across every send below, so only act on it once
+
+    const sends = duePatientIds.map(async (patientId) => {
+      const name = patientNames[patientId] || 'a patient';
+
+      const resp = await messaging.sendEachForMulticast({
+        tokens,
+        notification: { title: `Glucose check due — ${name}`, body: 'A blood glucose reading is due.' },
+        data: {
+          link: `./charts/blood-glucose.html?patient=${patientId}`,
+          tag: `glucose-${patientId}`
+        },
+        android: {
+          priority: 'high',
+          notification: { channelId: 'dose-due-alerts', sound: 'default' }
+        }
+      });
+
+      if (!tokensPruned) {
+        tokensPruned = true;
+        resp.responses.forEach((r, idx) => {
+          if (r.success) return;
+          const code = r.error?.code || '';
+          if (code.includes('registration-token-not-registered') || code.includes('invalid-argument')) {
+            chartUpdates.push(tokenEntries[idx].ref.delete());
+          }
+        });
+      }
+    });
+
+    await Promise.all([...chartUpdates, ...sends]);
+    console.log(`Sent glucose-check reminders for ${duePatientIds.length} patient(s) to ${tokens.length} device(s).`);
   }
 );

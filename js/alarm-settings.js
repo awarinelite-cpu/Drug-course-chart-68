@@ -36,12 +36,29 @@ export const REPEAT_OPTIONS = [
   { value: "once", label: "Single alert (no repeat)" }
 ];
 
+// How long after a patient's last recorded glucose reading before the next
+// one is considered "due" — unlike drugs, the glycemic chart has no
+// per-entry frequency field, so this is one ward-wide interval rather than
+// a per-row setting. See charts/blood-glucose.html (the Time column feeds
+// this) and functions/index.js's checkDueGlucoseChecks.
+export const GLUCOSE_INTERVAL_OPTIONS = [
+  { value: 1, label: "Every 1 hour" },
+  { value: 2, label: "Every 2 hours" },
+  { value: 3, label: "Every 3 hours" },
+  { value: 4, label: "Every 4 hours" },
+  { value: 6, label: "Every 6 hours" },
+  { value: 8, label: "Every 8 hours" },
+  { value: 12, label: "Every 12 hours" },
+  { value: 24, label: "Every 24 hours" }
+];
+
 export const DEFAULT_ALARM_SETTINGS = {
   sound: "beep",
   appearance: "banner_sound",
   repeat: "repeat",
   quietHours: { enabled: false, start: "22:00", end: "06:00" },
-  frequencies: ALL_FREQUENCIES.slice()
+  frequencies: ALL_FREQUENCIES.slice(),
+  glucose: { enabled: true, intervalHours: 4 }
 };
 
 // Merges Firestore data over the defaults field-by-field, so a doc that
@@ -49,6 +66,10 @@ export const DEFAULT_ALARM_SETTINGS = {
 // fully populated rather than leaving callers to guess at undefined fields.
 function mergeWithDefaults(data) {
   const d = data || {};
+  const validIntervals = GLUCOSE_INTERVAL_OPTIONS.map((o) => o.value);
+  const glucoseIntervalHours = validIntervals.includes(Number(d.glucose && d.glucose.intervalHours))
+    ? Number(d.glucose.intervalHours)
+    : DEFAULT_ALARM_SETTINGS.glucose.intervalHours;
   return {
     sound: d.sound || DEFAULT_ALARM_SETTINGS.sound,
     appearance: d.appearance || DEFAULT_ALARM_SETTINGS.appearance,
@@ -60,7 +81,11 @@ function mergeWithDefaults(data) {
     },
     frequencies: Array.isArray(d.frequencies) && d.frequencies.length
       ? d.frequencies.filter((f) => ALL_FREQUENCIES.includes(f))
-      : ALL_FREQUENCIES.slice()
+      : ALL_FREQUENCIES.slice(),
+    glucose: {
+      enabled: d.glucose ? !!d.glucose.enabled : DEFAULT_ALARM_SETTINGS.glucose.enabled,
+      intervalHours: glucoseIntervalHours
+    }
   };
 }
 
