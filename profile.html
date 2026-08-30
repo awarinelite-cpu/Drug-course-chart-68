@@ -21,6 +21,8 @@
   }
   .readonly-field { padding: 10px; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; font-size: 14px; color: #374151; }
   hr.section-sep { border: none; border-top: 1px solid #e5e7eb; margin: 20px 0; }
+  #pushToggleBtn.push-on { background: #16a34a; border-color: #16a34a; }
+  #pushToggleBtn.push-off { background: #dc2626; border-color: #dc2626; }
 </style>
 </head>
 <body>
@@ -112,6 +114,7 @@
 
   function renderPushButton() {
     const btn = document.getElementById('pushToggleBtn');
+    btn.classList.remove('push-on', 'push-off');
     if (!('Notification' in window)) {
       btn.textContent = 'Not supported on this browser';
       btn.disabled = true;
@@ -120,10 +123,13 @@
     if (Notification.permission === 'denied') {
       btn.textContent = 'Blocked — enable in browser settings';
       btn.disabled = true;
+      btn.classList.add('push-off');
       return;
     }
     btn.disabled = false;
-    btn.textContent = pushIsEnabled() ? 'Alerts On — Tap to Turn Off' : 'Turn On Dose Alerts';
+    const on = pushIsEnabled();
+    btn.textContent = on ? 'Alerts On — Tap to Turn Off' : 'Turn On Dose Alerts';
+    btn.classList.add(on ? 'push-on' : 'push-off');
   }
 
   window.togglePush = async function () {
