@@ -1,6 +1,6 @@
 // functions/index.js
 //
-// Runs every 2 minutes. A nurse's phone only ever shows one patient's chart
+// Runs every 1 minute. A nurse's phone only ever shows one patient's chart
 // at a time and is only open briefly, so alerts can't live in the page —
 // they have to come from the server, watching every patient's drug chart at
 // once, and push straight to each nurse's phone regardless of what's open.
@@ -69,7 +69,7 @@ function computeDueAt(drug, chartRows, drugIndex) {
 }
 
 exports.checkDueDrugs = onSchedule(
-  { schedule: 'every 2 minutes', timeZone: 'Africa/Lagos', region: 'us-central1' },
+  { schedule: 'every 1 minutes', timeZone: 'Africa/Lagos', region: 'us-central1' },
   async () => {
     const now = new Date();
 

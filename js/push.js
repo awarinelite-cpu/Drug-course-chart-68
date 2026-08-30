@@ -127,16 +127,46 @@ export async function enablePushForThisDevice(uid, onProgress) {
     "saving the push token to your account"
   );
   localStorage.setItem(LOCAL_FLAG, "1");
+  registerForegroundHandler(messaging);
 
-  // Foreground messages (app open and on-screen right now) don't trigger the
-  // OS notification tray automatically — show an in-page banner instead.
+  return token;
+}
+
+// Wires up the in-page alarm+banner for messages that arrive while this tab
+// is open and focused. Firebase only auto-shows the OS notification tray for
+// BACKGROUND messages (handled by sw.js) — a foreground tab has to catch the
+// message itself via onMessage, or nothing happens at all on that tab.
+//
+// Called two places: right after a nurse taps "Alerts On" (below), and once
+// automatically on every page load via initForegroundAlertsIfEnabled() (see
+// js/nav.js, which runs on every page) — otherwise the alarm would only ever
+// fire on whichever single page happened to be open at the moment enabling
+// ran, and silently do nothing on every other page/reload after that.
+let foregroundHandlerAttached = false;
+function registerForegroundHandler(messaging) {
+  if (foregroundHandlerAttached) return; // onMessage isn't idempotent — guard against double-firing
+  foregroundHandlerAttached = true;
   onMessage(messaging, (payload) => {
     const n = payload.notification || {};
     const d = payload.data || {};
     showForegroundBanner(n.title, n.body, d.link);
   });
+}
 
-  return token;
+// Call on every page load (regardless of whether push was just enabled here
+// or on a totally different device/session previously) so a tab that's open
+// and in the foreground always has a live alarm handler, not just the tab
+// that happened to be open when the nurse first tapped "Alerts On".
+export async function initForegroundAlertsIfEnabled() {
+  if (!pushIsEnabled()) return;
+  if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
+  try {
+    if (!(await isSupported())) return;
+    const messaging = getMessaging(app);
+    registerForegroundHandler(messaging);
+  } catch (e) {
+    // Non-fatal — background alerts (sw.js) still work even if this fails.
+  }
 }
 
 export async function disablePushForThisDevice(uid) {

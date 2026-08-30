@@ -235,11 +235,22 @@ function wireIdentity(drawer) {
   }).catch(() => { /* not on an authenticated page context */ });
 }
 
+// Re-attaches the foreground drug-due alarm (see js/push.js) on every page
+// load, not just the page where a nurse originally tapped "Alerts On" — a
+// page load with no listener registered means a foreground push arrives
+// with nothing to catch it, silently, so this has to run everywhere.
+function initForegroundAlerts() {
+  import(basePath + 'js/push.js').then(({ initForegroundAlertsIfEnabled }) => {
+    initForegroundAlertsIfEnabled();
+  }).catch(() => { /* push not usable on this page/browser — non-fatal */ });
+}
+
 injectStyles();
 injectOfflineBanner();
 registerServiceWorker();
 const { drawer } = buildMenu();
 wireIdentity(drawer);
+initForegroundAlerts();
 
 // Shared "Back" behavior for every page's Back button: step back through real
 // browser history (so patient context and previous pages are preserved),
