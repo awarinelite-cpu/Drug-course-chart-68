@@ -153,10 +153,10 @@
 
     try {
       if (pushIsEnabled()) {
-        await withTimeout(disablePushForThisDevice(currentUser.uid), 20000);
+        await withTimeout(disablePushForThisDevice(currentUser.uid), 60000);
         msg.innerHTML = '<div class="info-msg">Dose alerts are now off for this phone.</div>';
       } else {
-        await withTimeout(enablePushForThisDevice(currentUser.uid), 20000);
+        await withTimeout(enablePushForThisDevice(currentUser.uid), 60000);
         msg.innerHTML = '<div class="info-msg">Dose alerts are on for this phone.</div>';
       }
     } catch (e) {

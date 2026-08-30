@@ -38,36 +38,55 @@ export function pushIsEnabled() {
     localStorage.getItem(LOCAL_FLAG) === "1";
 }
 
+// Race a step against a timeout with its own label, so a hang reports
+// exactly which step it got stuck on instead of one generic message
+// covering the whole multi-step flow.
+function withStepTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Timed out waiting on: ${label}. Check your internet connection and try again.`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 // Call from a user gesture (button tap) — browsers require that for the
 // permission prompt to show at all.
 export async function enablePushForThisDevice(uid) {
   if (!("Notification" in window) || !("serviceWorker" in navigator)) {
     throw new Error("This browser doesn't support push notifications.");
   }
-  if (!(await isSupported())) {
+  if (!(await withStepTimeout(isSupported(), 8000, "checking browser support"))) {
     throw new Error("This browser doesn't support Firebase push messaging.");
   }
   if (VAPID_KEY.startsWith("REPLACE_WITH")) {
     throw new Error("Push isn't configured yet (missing VAPID key) — ask your app admin.");
   }
 
-  const permission = await Notification.requestPermission();
+  const permission = await withStepTimeout(Notification.requestPermission(), 8000, "requesting notification permission");
   if (permission !== "granted") {
     throw new Error("Notification permission was not granted.");
   }
 
   // sw.js (registered by nav.js on every page) also handles background FCM
   // messages — see the importScripts block at the top of that file.
-  const registration = await navigator.serviceWorker.ready;
+  const registration = await withStepTimeout(navigator.serviceWorker.ready, 8000, "service worker becoming ready");
   const messaging = getMessaging(app);
-  const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: registration });
+  const token = await withStepTimeout(
+    getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: registration }),
+    15000,
+    "requesting a push token from Google"
+  );
   if (!token) throw new Error("Could not get a push token from the browser.");
 
-  await setDoc(doc(db, "users", uid, "pushTokens", tokenDocId(token)), {
-    token,
-    userAgent: navigator.userAgent,
-    createdAt: serverTimestamp()
-  });
+  await withStepTimeout(
+    setDoc(doc(db, "users", uid, "pushTokens", tokenDocId(token)), {
+      token,
+      userAgent: navigator.userAgent,
+      createdAt: serverTimestamp()
+    }),
+    8000,
+    "saving the push token to your account"
+  );
   localStorage.setItem(LOCAL_FLAG, "1");
 
   // Foreground messages (app open and on-screen right now) don't trigger the
