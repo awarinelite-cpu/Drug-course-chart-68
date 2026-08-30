@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="../icons/icon-192.png">
 <title>Overview</title>
 <link rel="stylesheet" href="../js/styles.css">
 <style>
@@ -43,6 +46,16 @@
     <p style="font-size:13px; color:#555; margin-top:-6px;">Each folder holds every chart from one admission — drug course chart, vital signs, glycemic chart, intake &amp; output, and seizure chart. Tap one to open it.</p>
     <div id="listBox"></div>
   </div>
+
+  <div class="card-box no-print" style="margin-top:16px;">
+    <h3 style="margin-top:0;">Export Full History</h3>
+    <p style="font-size:12px; color:#555; margin-top:-6px;">Every admission for this patient — active and closed — in one file, independent of the app.</p>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <button class="btn btn-primary" style="padding:8px 14px;" id="exportAllPdfBtn">Export as PDF</button>
+      <button class="btn btn-secondary" style="padding:8px 14px;" id="exportAllJsonBtn">Export as JSON</button>
+    </div>
+    <div id="exportAllStatus" style="font-size:12px; color:#555; margin-top:8px;"></div>
+  </div>
 </div>
 
 <script type="module">
@@ -50,6 +63,7 @@
   import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
   import { db } from "../js/firebase.js";
   import { doc, getDoc, collection, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { buildExportRecord, downloadRecordAsPdf, downloadRecordAsJson } from "../js/export.js";
 
   const patientId = getPatientIdFromUrl();
   if (!patientId) window.location.href = '../index.html';
@@ -66,9 +80,33 @@
     try { return ts.toDate().toLocaleString(); } catch (e) { return ''; }
   }
 
-  requireAuth(async () => {
+  requireAuth(async (user, profile) => {
     const patient = await loadPatientHeader(patientId, { name: 'pb_name', meta: 'pb_meta', allergy: 'pb_allergy' });
     if (!patient) return;
+
+    const exportAllStatus = document.getElementById('exportAllStatus');
+    async function runFullExport(kind) {
+      const pdfBtn = document.getElementById('exportAllPdfBtn');
+      const jsonBtn = document.getElementById('exportAllJsonBtn');
+      pdfBtn.disabled = true; jsonBtn.disabled = true;
+      exportAllStatus.textContent = 'Gathering full admission history\u2026';
+      try {
+        const record = await buildExportRecord(patientId, { scope: 'all', exportedBy: profile.name });
+        if (kind === 'pdf') {
+          exportAllStatus.textContent = 'Building PDF\u2026';
+          await downloadRecordAsPdf(record, 'full_history');
+        } else {
+          downloadRecordAsJson(record, 'full_history');
+        }
+        exportAllStatus.textContent = 'Export complete.';
+      } catch (e) {
+        exportAllStatus.textContent = 'Export failed: ' + (e.message || e.code || 'unknown error');
+      } finally {
+        pdfBtn.disabled = false; jsonBtn.disabled = false;
+      }
+    }
+    document.getElementById('exportAllPdfBtn').addEventListener('click', () => runFullExport('pdf'));
+    document.getElementById('exportAllJsonBtn').addEventListener('click', () => runFullExport('json'));
 
     const listBox = document.getElementById('listBox');
     listBox.innerHTML = 'Loading…';

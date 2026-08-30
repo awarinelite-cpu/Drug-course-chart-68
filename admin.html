@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>Admin · Ward Charts</title>
 <link rel="stylesheet" href="js/styles.css">
 </head>
@@ -37,6 +40,18 @@
       <tbody id="userTableBody"></tbody>
     </table>
   </div>
+
+  <div class="card-box">
+    <h3 style="margin-top:0;">Backup All Patients</h3>
+    <p style="font-size:12px; color:#666; margin-top:-6px;">
+      Downloads every patient's full record (active + closed admissions) as one JSON file, independent of Firestore —
+      for legal/audit purposes or disaster recovery. This runs on demand rather than a fixed schedule (this is a static
+      site with no server to run a true automatic cron job on) — save the file somewhere safe (e.g. Google Drive) and
+      run it on whatever cadence you want, e.g. weekly.
+    </p>
+    <button class="btn btn-primary" id="backupBtn" onclick="runBackup()">Download Full Backup (JSON)</button>
+    <div id="backupStatus" style="font-size:12px; color:#555; margin-top:8px;"></div>
+  </div>
 </div>
 
 <script type="module">
@@ -45,8 +60,10 @@
   import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
   import { collection, getDocs, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { downloadFullBackup } from "./js/export.js";
 
   window.logout = logout;
+  let currentAdminName = '';
 
   requireAuth((user, profile) => {
     if (profile.role !== 'admin') {
@@ -54,8 +71,25 @@
       window.location.href = 'index.html';
       return;
     }
+    currentAdminName = profile.name;
     loadUsers();
   });
+
+  window.runBackup = async function () {
+    const btn = document.getElementById('backupBtn');
+    const status = document.getElementById('backupStatus');
+    btn.disabled = true;
+    try {
+      const result = await downloadFullBackup(currentAdminName, (done, total) => {
+        status.textContent = 'Backing up patient ' + done + ' of ' + total + '\u2026';
+      });
+      status.textContent = 'Done — ' + result.count + ' patient record(s) saved to your downloads.';
+    } catch (e) {
+      status.textContent = 'Backup failed: ' + (e.message || e.code || 'unknown error');
+    } finally {
+      btn.disabled = false;
+    }
+  };
 
   async function loadUsers() {
     const snap = await getDocs(collection(db, 'users'));

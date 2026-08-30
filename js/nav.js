@@ -67,11 +67,44 @@ function injectStyles() {
     .gnav-link .gnav-icon { font-size: 16px; width: 20px; text-align: center; }
     .gnav-drawer-foot { border-top: 1px solid #e5e7eb; padding: 10px; }
     .gnav-who { padding: 8px 14px 4px; font-size: 12px; color: #6b7280; }
+    .gnav-offline-banner {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 5000;
+      background: #78350f; color: #fff; text-align: center; font-size: 12px; font-weight: bold;
+      padding: 7px 12px; transform: translateY(-100%); transition: transform .2s ease;
+    }
+    .gnav-offline-banner.gnav-show { transform: translateY(0); }
     @media print {
-      .gnav-toggle, .gnav-overlay, .gnav-drawer { display: none !important; }
+      .gnav-toggle, .gnav-overlay, .gnav-drawer, .gnav-offline-banner { display: none !important; }
     }
   `;
   document.head.appendChild(style);
+}
+
+// Small always-visible banner so a nurse knows when they've lost connection —
+// entries still save locally and sync automatically once back online (see
+// js/firebase.js), but they should know they're currently offline.
+function injectOfflineBanner() {
+  const banner = document.createElement('div');
+  banner.className = 'gnav-offline-banner no-print';
+  banner.textContent = "You're offline — entries are being saved on this device and will sync automatically once you're back online.";
+  document.body.appendChild(banner);
+  const update = () => banner.classList.toggle('gnav-show', !navigator.onLine);
+  window.addEventListener('online', update);
+  window.addEventListener('offline', update);
+  update();
+}
+
+// Registers the app-shell service worker (see /sw.js) so the site keeps
+// loading with no network at all, not just Firestore data. Registered from
+// wherever the page happens to be (root or /charts/) — the script always
+// resolves to the same physical file at the repo root, so the browser's
+// default same-directory scope still covers the whole site either way.
+function registerServiceWorker() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register(basePath + 'sw.js').catch(() => {
+      // Non-fatal — the app still works online, it just won't have an offline app shell.
+    });
+  }
 }
 
 function buildMenu() {
@@ -203,6 +236,8 @@ function wireIdentity(drawer) {
 }
 
 injectStyles();
+injectOfflineBanner();
+registerServiceWorker();
 const { drawer } = buildMenu();
 wireIdentity(drawer);
 
