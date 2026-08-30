@@ -24,10 +24,18 @@ function tokenDocId(token) {
   return token.replace(/\//g, "_");
 }
 
-// Whether this device currently has an active subscription (best-effort;
-// reflects Notification.permission, not whether the token write succeeded).
+// Notification.permission, once granted, can never be un-granted by JS —
+// only the user can revoke it from browser/OS settings. So it can't be used
+// on its own to tell whether THIS APP currently has an active subscription:
+// a nurse who has tapped "turn off" still shows permission "granted" forever
+// after the first opt-in. Track our own on/off flag locally instead, and
+// treat it as the source of truth alongside permission.
+const LOCAL_FLAG = "narhy_dosePushEnabled";
+
 export function pushIsEnabled() {
-  return typeof Notification !== "undefined" && Notification.permission === "granted";
+  return typeof Notification !== "undefined" &&
+    Notification.permission === "granted" &&
+    localStorage.getItem(LOCAL_FLAG) === "1";
 }
 
 // Call from a user gesture (button tap) — browsers require that for the
@@ -60,6 +68,7 @@ export async function enablePushForThisDevice(uid) {
     userAgent: navigator.userAgent,
     createdAt: serverTimestamp()
   });
+  localStorage.setItem(LOCAL_FLAG, "1");
 
   // Foreground messages (app open and on-screen right now) don't trigger the
   // OS notification tray automatically — show an in-page banner instead.
@@ -71,6 +80,7 @@ export async function enablePushForThisDevice(uid) {
 }
 
 export async function disablePushForThisDevice(uid) {
+  localStorage.removeItem(LOCAL_FLAG);
   if (!(await isSupported())) return;
   const messaging = getMessaging(app);
   let token;

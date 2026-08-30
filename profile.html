@@ -134,6 +134,7 @@
     try {
       if (pushIsEnabled()) {
         await disablePushForThisDevice(currentUser.uid);
+        msg.innerHTML = '<div class="info-msg">Dose alerts are now off for this phone.</div>';
       } else {
         await enablePushForThisDevice(currentUser.uid);
         msg.innerHTML = '<div class="info-msg">Dose alerts are on for this phone.</div>';
