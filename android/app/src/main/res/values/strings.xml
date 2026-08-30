@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Drug Course Chart</string>
+    <string name="title_activity_main">Drug Course Chart</string>
+    <string name="package_name">ng.mil.narhy.drugcoursechart</string>
+    <string name="custom_url_scheme">ng.mil.narhy.drugcoursechart</string>
+</resources>

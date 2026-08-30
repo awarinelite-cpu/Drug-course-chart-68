@@ -1,0 +1,6 @@
+{
+  "appId": "ng.mil.narhy.drugcoursechart",
+  "appName": "Drug Course Chart",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}

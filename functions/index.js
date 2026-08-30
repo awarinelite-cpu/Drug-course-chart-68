@@ -150,6 +150,18 @@ exports.checkDueDrugs = onSchedule(
         data: {
           link: `./charts/drug-course-chart.html?patient=${patientId}`,
           tag: `due-${patientId}`
+        },
+        // android.notification.channel_id is only consulted by the Android
+        // FCM SDK (harmless no-op for plain web-push tokens from browsers).
+        // It matches the "dose-due-alerts" channel created natively in the
+        // Capacitor APK's MainActivity — without pinning this explicitly,
+        // Android falls back to an auto-created channel that isn't
+        // guaranteed to have sound or high-importance heads-up behavior.
+        // priority: 'high' asks FCM/the device to wake from Doze and
+        // deliver promptly rather than batching for later.
+        android: {
+          priority: 'high',
+          notification: { channelId: 'dose-due-alerts', sound: 'default' }
         }
       });
 
