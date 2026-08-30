@@ -34,6 +34,18 @@
   </div>
 
   <div class="card-box">
+    <h3 style="margin-top:0;">All Patients</h3>
+    <div class="search-row">
+      <input type="text" id="patientFilter" placeholder="Filter by name, EMR, or ward" oninput="renderPatientTable()">
+    </div>
+    <div id="patientCount" style="font-size:12px; color:#666; margin-top:6px;"></div>
+    <table class="entries">
+      <thead><tr><th>Name</th><th>EMR</th><th>Ward</th><th>Diagnosis</th><th>Admission Date</th></tr></thead>
+      <tbody id="patientTableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="card-box">
     <h3 style="margin-top:0;">All Users</h3>
     <table class="entries">
       <thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead>
@@ -73,7 +85,48 @@
     }
     currentAdminName = profile.name;
     loadUsers();
+    loadPatients();
   });
+
+  let allPatients = [];
+
+  async function loadPatients() {
+    const snap = await getDocs(collection(db, 'patients'));
+    allPatients = [];
+    snap.forEach(d => allPatients.push({ id: d.id, ...d.data() }));
+    allPatients.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    renderPatientTable();
+  }
+
+  window.renderPatientTable = function () {
+    const q = document.getElementById('patientFilter').value.trim().toLowerCase();
+    const matches = !q ? allPatients : allPatients.filter(p =>
+      (p.name || '').toLowerCase().includes(q) ||
+      (p.emr || '').toLowerCase().includes(q) ||
+      (p.ward || '').toLowerCase().includes(q)
+    );
+    document.getElementById('patientCount').textContent =
+      matches.length + ' of ' + allPatients.length + ' patient(s)' + (q ? ' matching "' + q + '"' : '');
+    const tbody = document.getElementById('patientTableBody');
+    tbody.innerHTML = '';
+    if (!matches.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:#666;">No patients found.</td></tr>';
+      return;
+    }
+    matches.forEach(p => {
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      tr.title = 'Open ' + (p.name || 'this patient') + '\u2019s overview';
+      tr.innerHTML =
+        '<td style="text-align:left;">' + escapeHtml(p.name || 'Unnamed') + '</td>' +
+        '<td>' + escapeHtml(p.emr || '-') + '</td>' +
+        '<td>' + escapeHtml(p.ward || '-') + '</td>' +
+        '<td style="text-align:left;">' + escapeHtml(p.diagnosis || 'Not specified') + '</td>' +
+        '<td>' + escapeHtml(p.admissionDate || '-') + '</td>';
+      tr.onclick = () => { window.location.href = 'charts/overview.html?patient=' + p.id; };
+      tbody.appendChild(tr);
+    });
+  };
 
   window.runBackup = async function () {
     const btn = document.getElementById('backupBtn');
