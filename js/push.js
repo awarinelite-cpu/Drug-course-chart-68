@@ -49,6 +49,35 @@ function withStepTimeout(promise, ms, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+// nav.js registers sw.js on every page load, but swallows any failure
+// silently (the app should still work online without an offline shell) — so
+// there's no guarantee a working registration exists by the time push needs
+// one. Rather than trust navigator.serviceWorker.ready, which just hangs
+// forever if that earlier registration never succeeded, look for an existing
+// registration and register fresh here if there isn't one, then explicitly
+// wait for it to actually activate.
+async function getActiveRegistration() {
+  let registration = await navigator.serviceWorker.getRegistration();
+  if (!registration) {
+    registration = await navigator.serviceWorker.register("./sw.js");
+  }
+  if (registration.active) return registration;
+
+  const worker = registration.installing || registration.waiting;
+  if (!worker) return registration; // nothing to wait on — assume it's fine
+
+  await new Promise((resolve) => {
+    if (worker.state === "activated") { resolve(); return; }
+    worker.addEventListener("statechange", function onChange() {
+      if (worker.state === "activated") {
+        worker.removeEventListener("statechange", onChange);
+        resolve();
+      }
+    });
+  });
+  return registration;
+}
+
 // Call from a user gesture (button tap) — browsers require that for the
 // permission prompt to show at all. onProgress(label), if given, fires right
 // before each step starts — so if a step hangs, whatever's on screen when it
@@ -74,10 +103,10 @@ export async function enablePushForThisDevice(uid, onProgress) {
     throw new Error("Notification permission was not granted.");
   }
 
-  // sw.js (registered by nav.js on every page) also handles background FCM
-  // messages — see the importScripts block at the top of that file.
+  // sw.js also handles background FCM messages — see the importScripts
+  // block at the top of that file.
   note("Waiting for the service worker…");
-  const registration = await withStepTimeout(navigator.serviceWorker.ready, 8000, "service worker becoming ready");
+  const registration = await withStepTimeout(getActiveRegistration(), 10000, "service worker becoming ready");
   const messaging = getMessaging(app);
   note("Requesting a push token from Google…");
   const token = await withStepTimeout(
