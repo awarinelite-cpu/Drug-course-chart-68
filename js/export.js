@@ -173,10 +173,10 @@ function loadPdfLib() {
   if (pdfLibPromise) return pdfLibPromise;
   pdfLibPromise = new Promise((resolve, reject) => {
     const s1 = document.createElement('script');
-    s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js';
+    s1.src = new URL('./vendor/jspdf.umd.min.js', import.meta.url).href;
     s1.onload = () => {
       const s2 = document.createElement('script');
-      s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.3/jspdf.plugin.autotable.min.js';
+      s2.src = new URL('./vendor/jspdf.plugin.autotable.min.js', import.meta.url).href;
       s2.onload = () => resolve(window.jspdf.jsPDF);
       s2.onerror = () => reject(new Error('Could not load the PDF library. Check your connection and try again.'));
       document.head.appendChild(s2);
