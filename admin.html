@@ -40,7 +40,7 @@
     </div>
     <div id="patientCount" style="font-size:12px; color:#666; margin-top:6px;"></div>
     <table class="entries">
-      <thead><tr><th>Name</th><th>EMR</th><th>Ward</th><th>Diagnosis</th><th>Admission Date</th></tr></thead>
+      <thead><tr><th>Name</th><th>EMR</th><th>Ward</th><th>Diagnosis</th><th>Admission Date</th><th></th></tr></thead>
       <tbody id="patientTableBody"></tbody>
     </table>
   </div>
@@ -71,7 +71,7 @@
   import { db, firebaseConfig } from "./js/firebase.js";
   import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-  import { collection, getDocs, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
   import { downloadFullBackup } from "./js/export.js";
 
   window.logout = logout;
@@ -110,23 +110,94 @@
     const tbody = document.getElementById('patientTableBody');
     tbody.innerHTML = '';
     if (!matches.length) {
-      tbody.innerHTML = '<tr><td colspan="5" style="color:#666;">No patients found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="color:#666;">No patients found.</td></tr>';
       return;
     }
     matches.forEach(p => {
       const tr = document.createElement('tr');
-      tr.style.cursor = 'pointer';
-      tr.title = 'Open ' + (p.name || 'this patient') + '\u2019s overview';
-      tr.innerHTML =
-        '<td style="text-align:left;">' + escapeHtml(p.name || 'Unnamed') + '</td>' +
-        '<td>' + escapeHtml(p.emr || '-') + '</td>' +
-        '<td>' + escapeHtml(p.ward || '-') + '</td>' +
-        '<td style="text-align:left;">' + escapeHtml(p.diagnosis || 'Not specified') + '</td>' +
-        '<td>' + escapeHtml(p.admissionDate || '-') + '</td>';
-      tr.onclick = () => { window.location.href = 'charts/overview.html?patient=' + p.id; };
+      const openCell = document.createElement('td');
+      openCell.style.cssText = 'text-align:left; cursor:pointer;';
+      openCell.textContent = p.name || 'Unnamed';
+      openCell.title = 'Open ' + (p.name || 'this patient') + '\u2019s overview';
+      openCell.onclick = () => { window.location.href = 'charts/overview.html?patient=' + p.id; };
+      tr.appendChild(openCell);
+
+      [p.emr || '-', p.ward || '-'].forEach(val => {
+        const td = document.createElement('td');
+        td.textContent = val;
+        td.style.cursor = 'pointer';
+        td.onclick = () => { window.location.href = 'charts/overview.html?patient=' + p.id; };
+        tr.appendChild(td);
+      });
+
+      const diagCell = document.createElement('td');
+      diagCell.style.cssText = 'text-align:left; cursor:pointer;';
+      diagCell.textContent = p.diagnosis || 'Not specified';
+      diagCell.onclick = () => { window.location.href = 'charts/overview.html?patient=' + p.id; };
+      tr.appendChild(diagCell);
+
+      const admCell = document.createElement('td');
+      admCell.textContent = p.admissionDate || '-';
+      admCell.style.cursor = 'pointer';
+      admCell.onclick = () => { window.location.href = 'charts/overview.html?patient=' + p.id; };
+      tr.appendChild(admCell);
+
+      const actionCell = document.createElement('td');
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-secondary';
+      delBtn.style.cssText = 'padding:4px 10px; font-size:11px; background:#dc2626; color:#fff; border:none;';
+      delBtn.textContent = 'Delete';
+      delBtn.onclick = (e) => { e.stopPropagation(); deletePatientPrompt(p); };
+      actionCell.appendChild(delBtn);
+      tr.appendChild(actionCell);
+
       tbody.appendChild(tr);
     });
   };
+
+  async function deleteAllInSubcollection(patientId, subcollection) {
+    const snap = await getDocs(collection(db, 'patients', patientId, subcollection));
+    const deletions = [];
+    snap.forEach(d => deletions.push(deleteDoc(doc(db, 'patients', patientId, subcollection, d.id))));
+    await Promise.all(deletions);
+  }
+
+  // Every chart type and archived-admission record a patient can accumulate.
+  // Firestore doesn't cascade-delete subcollections when the parent doc is
+  // removed, so each one has to be cleared out explicitly first, or the data
+  // would keep sitting there orphaned (invisible in the app, but still using
+  // storage and still technically recoverable — not acceptable for a real delete).
+  const PATIENT_SUBCOLLECTIONS = ['admissions', 'bloodGlucose', 'drugCourseChart', 'intakeOutput', 'intakeOutputSummary', 'seizure', 'vitals'];
+
+  window.deletePatientPrompt = function (p) {
+    const label = (p.name || 'Unnamed') + ' (EMR: ' + (p.emr || 'N/A') + ')';
+    const typed = prompt(
+      'This permanently deletes ' + label + ' and every chart, drug list, and closed-admission record for this patient. This cannot be undone.\n\n' +
+      'Type the patient\u2019s EMR number to confirm: ' + (p.emr || '(no EMR on file — type DELETE instead)')
+    );
+    if (typed === null) return; // cancelled
+    const expected = (p.emr || 'DELETE').trim();
+    if (typed.trim() !== expected) {
+      alert('That didn\u2019t match — nothing was deleted.');
+      return;
+    }
+    runDeletePatient(p);
+  };
+
+  async function runDeletePatient(p) {
+    const status = document.getElementById('patientCount');
+    status.textContent = 'Deleting ' + (p.name || 'patient') + '\u2026';
+    try {
+      await Promise.all(PATIENT_SUBCOLLECTIONS.map(sub => deleteAllInSubcollection(p.id, sub)));
+      await deleteDoc(doc(db, 'patients', p.id));
+    } catch (e) {
+      alert('Delete failed: ' + (e.code || e.message || 'unknown error'));
+      renderPatientTable();
+      return;
+    }
+    allPatients = allPatients.filter(x => x.id !== p.id);
+    renderPatientTable();
+  }
 
   window.runBackup = async function () {
     const btn = document.getElementById('backupBtn');
