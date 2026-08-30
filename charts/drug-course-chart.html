@@ -125,7 +125,7 @@
     <div class="table-wrap">
     <table class="drugs-table" id="drugsTable">
       <thead>
-        <tr><th class="col-rowedit no-print" id="drugsEditHeadCol" style="display:none;"></th><th style="width:34px;">No.</th><th>Drug Name</th><th>Route</th><th>Frequency</th><th>Action</th><th>Duration</th><th class="no-print" id="drugsRemoveHeadCol" style="width:34px;"></th></tr>
+        <tr><th class="col-rowedit no-print" id="drugsEditHeadCol" style="display:none;"></th><th style="width:34px;">No.</th><th>Drug Name</th><th>Route</th><th>Frequency</th><th>Action</th><th>Duration</th><th class="no-print">Due</th><th class="no-print" id="drugsRemoveHeadCol" style="width:34px;"></th></tr>
       </thead>
       <tbody id="drugsBody"></tbody>
     </table>
@@ -307,6 +307,62 @@
   };
   function actionColor(action) {
     return ACTION_COLORS[action] || '#9ca3af';
+  }
+
+  // --- Next dose due time, shown next to each drug ---------------------
+  // Same computation as functions/index.js (which is what actually sends the
+  // push alert): next due = this drug's own last-administered time + its
+  // frequency's interval, or its start/created time if never given yet.
+  // Kept here too so a nurse can see it at a glance without waiting on a push.
+  const INTERVAL_HOURS = { OD: 24, BD: 12, TDS: 8, QDS: 6, Q4H: 4, Q6H: 6, Q8H: 8, Q12H: 12, Weekly: 168 };
+
+  function toLocalDate(dateStr, timeStr) {
+    if (!dateStr || !timeStr) return null;
+    const d = new Date(dateStr + 'T' + timeStr + ':00');
+    return isNaN(d) ? null : d;
+  }
+
+  function lastGivenFor(drugIndex) {
+    let latest = null;
+    chartRows.forEach(row => {
+      const nums = (row.sno || '').match(/\d+/g) || [];
+      if (!nums.some(n => parseInt(n, 10) === drugIndex + 1)) return;
+      const dt = toLocalDate(row.date, row.time);
+      if (dt && (!latest || dt > latest)) latest = dt;
+    });
+    return latest;
+  }
+
+  function computeDueAt(d, i) {
+    const intervalHours = INTERVAL_HOURS[d.frequency];
+    if (!intervalHours) return null; // STAT / PRN / custom text — not covered
+    if (d.action && d.action !== 'Ongoing') return null;
+
+    const lastGiven = lastGivenFor(i);
+    if (lastGiven) return new Date(lastGiven.getTime() + intervalHours * 3600 * 1000);
+    if (d.startDate) return toLocalDate(d.startDate, '00:00');
+    if (d.createdAt) { const dt = new Date(d.createdAt); return isNaN(dt) ? null : dt; }
+    return null;
+  }
+
+  function dueLabelFor(d, i) {
+    const dueAt = computeDueAt(d, i);
+    if (!dueAt) return { text: '—', overdue: false };
+    const now = new Date();
+    const sameDay = dueAt.toDateString() === now.toDateString();
+    const hhmm = dueAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const dayPart = sameDay ? '' : (dueAt.toDateString() === new Date(now.getTime() + 86400000).toDateString() ? 'Tmrw ' : dueAt.toLocaleDateString([], { weekday: 'short' }) + ' ');
+    if (dueAt <= now) return { text: 'Overdue ' + dayPart + hhmm, overdue: true };
+    return { text: dayPart + hhmm, overdue: false };
+  }
+
+  function dueCell(d, i) {
+    const td = document.createElement('td');
+    td.className = 'no-print';
+    const info = dueLabelFor(d, i);
+    td.textContent = info.text;
+    if (info.overdue) td.style.cssText = 'color:#dc2626; font-weight:bold;';
+    return td;
   }
 
   // --- Auto-complete a drug once its Duration has elapsed ---
@@ -538,6 +594,8 @@
     tdDuration.textContent = d.duration || '—';
     tr.appendChild(tdDuration);
 
+    tr.appendChild(dueCell(d, i));
+
     if (showPencil) tr.appendChild(document.createElement('td')); // keep column count aligned with remove col
 
     return tr;
@@ -607,6 +665,8 @@
     });
     tdDuration.appendChild(durationInput);
     tr.appendChild(tdDuration);
+
+    tr.appendChild(dueCell(d, i));
 
     const tdRemove = document.createElement('td');
     tdRemove.className = 'no-print';
