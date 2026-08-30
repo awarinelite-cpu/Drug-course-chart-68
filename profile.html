@@ -71,6 +71,17 @@
   </div>
 
   <div class="card-box">
+    <h3 style="margin-top:0;">Dose Due Alerts</h3>
+    <p style="font-size:13px; color:#555; margin-top:0;">
+      Get a notification on this phone when a patient's next drug dose is due,
+      even if the app isn't open — covers every patient on the ward, not just
+      whoever you last had open.
+    </p>
+    <button class="btn btn-primary" id="pushToggleBtn" onclick="togglePush()">Loading…</button>
+    <div id="pushMsg" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="card-box">
     <h3 style="margin-top:0;">Change Password</h3>
     <div class="field"><label>Current Password</label><input type="password" id="pf_curpw"></div>
     <div class="field"><label>New Password</label><input type="password" id="pf_newpw" placeholder="At least 6 characters"></div>
@@ -86,6 +97,7 @@
   import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
   import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
   import { avatarMarkup } from "./js/avatar.js";
+  import { pushIsEnabled, enablePushForThisDevice, disablePushForThisDevice } from "./js/push.js";
 
   window.logout = logout;
   let currentUser = null;
@@ -95,7 +107,42 @@
     currentUser = user;
     currentProfile = profile;
     renderProfile();
+    renderPushButton();
   });
+
+  function renderPushButton() {
+    const btn = document.getElementById('pushToggleBtn');
+    if (!('Notification' in window)) {
+      btn.textContent = 'Not supported on this browser';
+      btn.disabled = true;
+      return;
+    }
+    if (Notification.permission === 'denied') {
+      btn.textContent = 'Blocked — enable in browser settings';
+      btn.disabled = true;
+      return;
+    }
+    btn.disabled = false;
+    btn.textContent = pushIsEnabled() ? 'Alerts On — Tap to Turn Off' : 'Turn On Dose Alerts';
+  }
+
+  window.togglePush = async function () {
+    const btn = document.getElementById('pushToggleBtn');
+    const msg = document.getElementById('pushMsg');
+    msg.innerHTML = '';
+    btn.disabled = true;
+    try {
+      if (pushIsEnabled()) {
+        await disablePushForThisDevice(currentUser.uid);
+      } else {
+        await enablePushForThisDevice(currentUser.uid);
+        msg.innerHTML = '<div class="info-msg">Dose alerts are on for this phone.</div>';
+      }
+    } catch (e) {
+      msg.innerHTML = '<div class="error-msg">' + (e.message || 'Could not update alert settings.') + '</div>';
+    }
+    renderPushButton();
+  };
 
   function renderProfile() {
     const p = currentProfile;

@@ -652,7 +652,7 @@
   };
 
   window.addDrug = function () {
-    drugs.push({ name: '', route: '', frequency: '', action: '', duration: '' });
+    drugs.push({ name: '', route: '', frequency: '', action: '', duration: '', createdAt: new Date().toISOString() });
     editingDrugRows.add(drugs.length - 1); // a freshly added row opens straight into edit mode
     renderDrugsTable();
     refreshDrugSnoList();
@@ -746,7 +746,7 @@
     }
 
     const fullName = (name + (dosage ? ' ' + dosage : '')).trim();
-    return { name: fullName, route, frequency, action: '', duration };
+    return { name: fullName, route, frequency, action: '', duration, createdAt: new Date().toISOString() };
   }
 
   function parseBulkText(text) {

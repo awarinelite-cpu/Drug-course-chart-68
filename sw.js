@@ -3,6 +3,44 @@
 // queues writes made while offline and syncs them automatically on reconnect.
 // This service worker's only job is making sure the pages/scripts themselves
 // still load with no network at all (e.g. a ward with dead wifi).
+//
+// It also handles background FCM push messages (drug-due alerts, see
+// js/push.js and functions/index.js) — that's the compat-SDK block below.
+// Kept in this same file, rather than a separate firebase-messaging-sw.js,
+// so there's only one service worker registered for the whole site.
+
+importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+  apiKey: "AIzaSyBLEzC5MusezdNS8RnDQQA8xoI7XbXEqiM",
+  authDomain: "gen-lang-client-0406053716.firebaseapp.com",
+  projectId: "gen-lang-client-0406053716",
+  storageBucket: "gen-lang-client-0406053716.firebasestorage.app",
+  messagingSenderId: "922657172970",
+  appId: "1:922657172970:web:f7a5c8f6ce8bb536d0d693"
+});
+
+// Fires only when no page on this origin is in the foreground — foreground
+// delivery is handled instead by onMessage() in js/push.js.
+firebase.messaging().onBackgroundMessage((payload) => {
+  const title = payload.notification?.title || 'Drug due';
+  const body = payload.notification?.body || '';
+  const link = payload.data?.link || './index.html';
+  self.registration.showNotification(title, {
+    body,
+    icon: './icons/icon-192.png',
+    badge: './icons/icon-192.png',
+    data: { link },
+    tag: payload.data?.tag || undefined // same tag replaces an older, now-stale alert instead of stacking
+  });
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const link = event.notification.data?.link || './index.html';
+  event.waitUntil(clients.openWindow(link));
+});
 
 const CACHE_NAME = 'narhy-app-shell-v1';
 
