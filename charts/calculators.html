@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="../icons/icon-192.png">
+<title>Clinical Calculators</title>
+<link rel="stylesheet" href="../js/styles.css">
+</head>
+<body>
+<script type="module" src="../js/nav.js"></script>
+<div class="topbar no-print">
+  <div class="brand">Clinical Calculators</div>
+  <div class="right">
+    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="gnavGoBack('../index.html')">Back</button>
+  </div>
+</div>
+<div class="container">
+  <div class="patient-banner" id="patientBanner" style="display:none;">
+    <div><div class="pname" id="pb_name"></div><div class="pmeta" id="pb_meta"></div></div>
+  </div>
+
+  <div class="card-box">
+    <div id="calcRoot"></div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from "../js/auth-guard.js";
+  import { initCalculators } from "../js/calculators.js";
+  import { db } from "../js/firebase.js";
+  import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+  requireAuth(async () => {
+    // Calculators are general-purpose reference tools, independent of any
+    // single patient. If we arrived here with a patient in context (e.g. a
+    // future direct link from a patient's chart grid), show their banner for
+    // orientation, but never block access to the calculators themselves.
+    const params = new URLSearchParams(window.location.search);
+    const patientId = params.get('patient');
+    if (patientId) {
+      try {
+        const snap = await getDoc(doc(db, 'patients', patientId));
+        if (snap.exists()) {
+          const p = snap.data();
+          document.getElementById('pb_name').textContent = p.name || '';
+          document.getElementById('pb_meta').textContent = 'EMR: ' + (p.emr || '—') + (p.diagnosis ? ' | Diagnosis: ' + p.diagnosis : '');
+          document.getElementById('patientBanner').style.display = '';
+        }
+      } catch (e) { /* non-critical — calculators still work without patient context */ }
+    }
+
+    initCalculators(document.getElementById('calcRoot'));
+  });
+</script>
+</body>
+</html>

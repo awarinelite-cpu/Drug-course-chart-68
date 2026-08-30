@@ -77,6 +77,84 @@ table.entries th { background: #f3f4f6; text-transform: uppercase; font-size: 11
   .card-box { box-shadow: none; border: 1px solid #ccc; }
 }
 
+/* ── Clinical Calculators ── */
+.calc-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.calc-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.calc-card {
+  display: flex; align-items: center; gap: 12px; text-align: left; background: #fff;
+  border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; cursor: pointer; font-family: inherit;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06); transition: border-color .15s, box-shadow .15s;
+}
+.calc-card:hover { border-color: #2563eb; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.calc-card-icon { font-size: 26px; flex-shrink: 0; width: 40px; text-align: center; }
+.calc-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.calc-card-title { font-weight: bold; font-size: 14px; color: #111; }
+.calc-card-desc { font-size: 12px; color: #6b7280; margin-top: 2px; }
+.calc-card-chev { color: #9ca3af; font-size: 18px; }
+
+.calc-back {
+  background: none; border: none; color: #2563eb; font-weight: bold; font-size: 14px;
+  cursor: pointer; padding: 8px 0; margin-bottom: 10px; font-family: inherit;
+}
+.calc-back-sm { margin-bottom: 14px; }
+.calc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.calc-header-icon { font-size: 26px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: #eff6ff; border-radius: 12px; }
+.calc-header-title { font-weight: bold; font-size: 17px; }
+.calc-header-desc { font-size: 12px; color: #6b7280; }
+
+.calc-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.calc-panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 18px; }
+.calc-result { background: #111827; color: #fff; border-radius: 12px; padding: 18px; position: sticky; top: 12px; }
+.calc-result-title { font-weight: bold; font-size: 15px; margin-bottom: 12px; }
+.calc-row { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; font-size: 13px; color: #d1d5db; }
+.calc-row-hi { border-top: 1px solid rgba(255,255,255,0.15); margin-top: 4px; padding-top: 12px; }
+.calc-row-value { font-weight: bold; font-size: 15px; color: #eff6ff; }
+.calc-row-value-hi { font-size: 22px; color: #fff; }
+.calc-row-unit { font-size: 11px; font-weight: 600; color: #93c5fd; }
+.calc-note { font-size: 10.5px; color: #93c5fd; margin: 14px 0 0; line-height: 1.5; }
+.calc-empty { font-size: 13px; color: #bfdbfe; margin: 0; }
+.calc-warning { display: flex; gap: 8px; background: rgba(220,38,38,0.2); border: 1px solid rgba(248,113,113,0.4); border-radius: 8px; padding: 10px; margin-top: 8px; font-size: 12px; color: #fecaca; }
+
+.calc-seg { display: flex; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+.calc-seg-btn { flex: 1; padding: 8px 10px; font-size: 13px; font-weight: bold; background: #fff; border: none; cursor: pointer; color: #6b7280; font-family: inherit; }
+.calc-seg-btn.active { background: #2563eb; color: #fff; }
+.calc-seg-btn + .calc-seg-btn { border-left: 1px solid #e5e7eb; }
+
+.calc-inline { display: flex; gap: 8px; }
+.calc-inline-end { align-items: flex-end; }
+.calc-inline input, .calc-inline select { flex: 1; }
+.calc-sub, .calc-sublabel { font-weight: normal; color: #6b7280; font-size: 12px; }
+.calc-sublabel { display: block; font-weight: bold; margin-bottom: 4px; }
+.calc-hint { font-size: 11px; color: #6b7280; margin: 4px 0 0; }
+.calc-reset { background: none; border: none; color: #6b7280; font-weight: bold; font-size: 13px; cursor: pointer; padding: 4px 0; font-family: inherit; }
+.calc-swap { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; cursor: pointer; padding: 8px 10px; font-size: 15px; color: #6b7280; margin-bottom: 1px; }
+.calc-arrow-divider { text-align: center; color: #9ca3af; font-size: 16px; margin: -6px 0; }
+.calc-max-xl { max-width: 480px; }
+
+.calc-bmi-card { max-width: 420px; margin: 0 auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 20px; overflow: hidden; }
+.calc-bmi-header { padding: 18px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.calc-bmi-title { font-weight: bold; font-size: 16px; }
+.calc-bmi-header .calc-seg { width: 150px; }
+.calc-bmi-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.calc-bmi-body > label { font-weight: bold; font-size: 13px; margin-bottom: -6px; }
+.calc-bmi-bignum { position: relative; max-width: 260px; margin: 0 auto; }
+.calc-bmi-bignum input {
+  width: 100%; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px 46px 20px 14px;
+  text-align: center; font-size: 28px; font-weight: bold; color: #2563eb;
+}
+.calc-bmi-unit { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); font-weight: bold; color: #6b7280; }
+.calc-bmi-medium { flex: 1; position: relative; }
+.calc-bmi-medlabel { display: block; font-size: 11px; color: #6b7280; margin-bottom: 4px; }
+.calc-bmi-medium input { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; text-align: center; font-size: 16px; font-weight: bold; color: #2563eb; }
+.calc-bmi-gauge-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+.calc-bmi-gauge { width: 190px; height: 105px; }
+.calc-bmi-score { font-size: 34px; font-weight: 800; margin-top: 2px; }
+.calc-bmi-badge { margin-top: 8px; padding: 5px 14px; border-radius: 999px; font-size: 12px; font-weight: bold; border: 1px solid; }
+.calc-bmi-under { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+.calc-bmi-normal { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
+.calc-bmi-over { background: #fffbeb; border-color: #fde68a; color: #b45309; }
+.calc-bmi-obese { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+
 @media (max-width: 700px) {
   .topbar { padding: 10px; }
   .container { padding: 14px 10px; }
@@ -86,4 +164,9 @@ table.entries th { background: #f3f4f6; text-transform: uppercase; font-size: 11
      Reset it to a normal single-line, full-width input on mobile. */
   .search-row input { flex: none; width: 100%; }
   .patient-banner { flex-direction: column; align-items: flex-start; }
+  .calc-grid, .calc-grid-3 { grid-template-columns: 1fr; }
+  .calc-two-col { grid-template-columns: 1fr; }
+  .calc-result { position: static; }
+  .calc-bmi-header { flex-direction: column; align-items: flex-start; }
+  .calc-bmi-header .calc-seg { width: 100%; }
 }
