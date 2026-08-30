@@ -7,10 +7,9 @@
 // every nurse who has opted in on this screen — regardless of which page (or
 // whether the app) is open on their phone at that moment.
 //
-// TODO before this works: paste your Web Push "VAPID key pair" public key
-// below. Firebase Console → Project Settings → Cloud Messaging → Web
-// configuration → Web Push certificates → Generate key pair.
-const VAPID_KEY = "REPLACE_WITH_YOUR_VAPID_PUBLIC_KEY";
+// Web Push VAPID public key — Firebase Console → Project Settings → Cloud
+// Messaging → Web configuration → Web Push certificates.
+const VAPID_KEY = "BDV2tyIpcpEof_9MBzU5Kzw8ZiAeOBHqDQXcUq9sPI-m-l0oG7QqGkfYeb4PxuFi4z2O2XFcOxOVeVcA_zvFXfQ";
 
 import { app, db } from "./firebase.js";
 import {
