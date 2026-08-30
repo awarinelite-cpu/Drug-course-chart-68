@@ -220,6 +220,23 @@
   </div>
 </div>
 
+<div class="modal-overlay no-print" id="freqCustomModalOverlay" onclick="if(event.target===this) cancelFreqCustomModal();">
+  <div class="modal-box" style="max-width:560px;">
+    <div class="modal-header">
+      <h3>Custom Frequency</h3>
+      <button class="modal-close" onclick="cancelFreqCustomModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px; color:#555; margin:0 0 8px;">Type the exact dosing schedule, e.g. <i>STAT, then 40mg 12hrly</i> or <i>0, 12, 24hr</i>.</p>
+      <textarea id="freqCustomInput" rows="4" style="width:100%; font-size:14px; padding:8px; box-sizing:border-box; resize:vertical;" placeholder="e.g. STAT, then 40mg 12hrly"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cancelFreqCustomModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="applyFreqCustom()">Apply</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
   import { requireAuth } from "../js/auth-guard.js";
   import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
@@ -345,6 +362,88 @@
     return sel;
   }
 
+  // --- Frequency dropdown + "Other" free-text popup ---
+  // A drug's frequency is either one of FREQ_OPTIONS, or, when a nurse types
+  // a custom schedule (e.g. "STAT, then 40mg 12hrly"), the exact text they
+  // entered. The dropdown shows "Other" whenever the stored value isn't one
+  // of the fixed options, and the italic line underneath shows what it is.
+  function makeFreqControl(d, afterChange) {
+    const isCustom = !!d.frequency && !FREQ_OPTIONS.includes(d.frequency);
+
+    const label = document.createElement('div');
+    label.style.cssText = 'font-size:10px; color:#555; font-style:italic; margin-top:2px; word-break:break-word; text-align:left;';
+    label.textContent = isCustom ? d.frequency : '';
+    label.style.cursor = isCustom ? 'pointer' : '';
+    label.title = isCustom ? 'Click to edit this custom frequency' : '';
+
+    const sel = makeSelect(FREQ_OPTIONS, isCustom ? 'Other' : (d.frequency || ''));
+
+    function openCustom() {
+      const prevCustom = (d.frequency && !FREQ_OPTIONS.includes(d.frequency)) ? d.frequency : '';
+      openFreqCustomModal(prevCustom, (text) => {
+        d.frequency = text;
+        if (!text) {
+          sel.value = '';
+          label.textContent = '';
+          label.style.cursor = '';
+          label.title = '';
+        } else {
+          sel.value = 'Other';
+          label.textContent = text;
+          label.style.cursor = 'pointer';
+          label.title = 'Click to edit this custom frequency';
+        }
+        if (afterChange) afterChange();
+      }, () => {
+        // Cancelled — leave the stored value untouched, just put the dropdown back.
+        sel.value = prevCustom ? 'Other' : (d.frequency || '');
+      });
+    }
+
+    sel.addEventListener('change', () => {
+      if (sel.value === 'Other') {
+        openCustom();
+      } else {
+        d.frequency = sel.value;
+        label.textContent = '';
+        label.style.cursor = '';
+        label.title = '';
+        if (afterChange) afterChange();
+      }
+    });
+    label.addEventListener('click', () => { if (sel.value === 'Other') openCustom(); });
+
+    return { sel, label };
+  }
+
+  let freqCustomOnApply = null;
+  let freqCustomOnCancel = null;
+
+  function openFreqCustomModal(currentText, onApply, onCancel) {
+    freqCustomOnApply = onApply;
+    freqCustomOnCancel = onCancel;
+    document.getElementById('freqCustomInput').value = currentText || '';
+    document.getElementById('freqCustomModalOverlay').style.display = 'flex';
+    setTimeout(() => document.getElementById('freqCustomInput').focus(), 0);
+  }
+
+  window.cancelFreqCustomModal = function () {
+    document.getElementById('freqCustomModalOverlay').style.display = 'none';
+    if (freqCustomOnCancel) freqCustomOnCancel();
+    freqCustomOnApply = null;
+    freqCustomOnCancel = null;
+  };
+
+  window.applyFreqCustom = function () {
+    const text = document.getElementById('freqCustomInput').value.trim();
+    document.getElementById('freqCustomModalOverlay').style.display = 'none';
+    const apply = freqCustomOnApply;
+    freqCustomOnApply = null;
+    freqCustomOnCancel = null;
+    if (apply) apply(text);
+  };
+
+
   function renderDrugsTable() {
     if (drugsEditMode) renderDrugsTableEdit();
     else renderDrugsTableView();
@@ -407,9 +506,9 @@
       tr.appendChild(tdRoute);
 
       const tdFreq = document.createElement('td');
-      const freqSel = makeSelect(FREQ_OPTIONS, d.frequency || '');
-      freqSel.addEventListener('change', () => { drugs[i].frequency = freqSel.value; scheduleSave(); });
-      tdFreq.appendChild(freqSel);
+      const freqControl = makeFreqControl(d, () => scheduleSave());
+      tdFreq.appendChild(freqControl.sel);
+      tdFreq.appendChild(freqControl.label);
       tr.appendChild(tdFreq);
 
       const tdAction = document.createElement('td');
@@ -563,11 +662,10 @@
     if (freqKey && FREQ_ALIASES[freqKey]) {
       frequency = FREQ_ALIASES[freqKey];
     } else if (freqRaw) {
-      // Irregular schedule (e.g. "0, 12, 24hr") — keep it visible on the name
-      // instead of silently dropping it, and flag the dropdown as "Other".
-      frequency = 'Other';
-      name = name + (dosage ? ' ' + dosage : '') + ' (' + freqRaw + ')';
-      dosage = '';
+      // Irregular schedule (e.g. "0, 12, 24hr") — no dropdown value fits, so
+      // keep the raw text as the frequency itself; the drug row will show it
+      // as a custom "Other" frequency with the exact wording underneath.
+      frequency = freqRaw;
     }
 
     const fullName = (name + (dosage ? ' ' + dosage : '')).trim();
@@ -606,10 +704,10 @@
 
       const tdFreq = document.createElement('td');
       tdFreq.style.cssText = 'border:1px solid #000; padding:3px;';
-      const freqSel = makeSelect(FREQ_OPTIONS, d.frequency || '');
-      freqSel.style.fontSize = '12px';
-      freqSel.addEventListener('change', () => { d.frequency = freqSel.value; });
-      tdFreq.appendChild(freqSel);
+      const freqControl = makeFreqControl(d, null);
+      freqControl.sel.style.fontSize = '12px';
+      tdFreq.appendChild(freqControl.sel);
+      tdFreq.appendChild(freqControl.label);
       tr.appendChild(tdFreq);
 
       const tdDuration = document.createElement('td');
