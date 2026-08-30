@@ -1,4 +1,7 @@
-// js/push.js — Web Push (FCM) registration for "drug due" alerts.
+// js/push.js — Push (FCM) registration for "drug due" alerts, for both the
+// plain web app (Web Push via service worker) and the Capacitor-wrapped
+// Android app (native FCM via @capacitor/push-notifications). Which path
+// runs is decided at the top of each function by isNativePlatform().
 //
 // One nurse's phone is only open briefly and only ever shows one patient at
 // a time, so an in-page timer can't cover the whole ward. Instead: a Cloud
@@ -24,6 +27,21 @@ function tokenDocId(token) {
   return token.replace(/\//g, "_");
 }
 
+// Capacitor injects window.Capacitor at runtime in the wrapped Android app
+// (see the APK build — android/app/src/main/java/.../MainActivity.java) but
+// this file also still runs unmodified in a plain mobile/desktop browser
+// tab, where window.Capacitor doesn't exist at all. Everything below
+// branches on this once, rather than duplicating the check everywhere.
+function isNativePlatform() {
+  return typeof window !== "undefined" &&
+    !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+}
+
+// Only used on the native branch, to remember which FCM token this device
+// registered so disablePushForThisDevice() can delete the right Firestore
+// doc later without needing to ask the native layer again.
+const LAST_TOKEN_KEY = "narhy_lastPushToken";
+
 // Notification.permission, once granted, can never be un-granted by JS —
 // only the user can revoke it from browser/OS settings. So it can't be used
 // on its own to tell whether THIS APP currently has an active subscription:
@@ -33,6 +51,13 @@ function tokenDocId(token) {
 const LOCAL_FLAG = "narhy_dosePushEnabled";
 
 export function pushIsEnabled() {
+  if (isNativePlatform()) {
+    // Permission state lives with the native OS/plugin here, not
+    // window.Notification (which a WebView may not even implement). The
+    // local flag is set only after a real successful native registration
+    // below, so it's a safe stand-in.
+    return localStorage.getItem(LOCAL_FLAG) === "1";
+  }
   return typeof Notification !== "undefined" &&
     Notification.permission === "granted" &&
     localStorage.getItem(LOCAL_FLAG) === "1";
@@ -86,6 +111,10 @@ async function getActiveRegistration() {
 export async function enablePushForThisDevice(uid, onProgress) {
   const note = (label) => { if (onProgress) onProgress(label); };
 
+  if (isNativePlatform()) {
+    return enablePushNative(uid, note);
+  }
+
   if (!("Notification" in window) || !("serviceWorker" in navigator)) {
     throw new Error("This browser doesn't support push notifications.");
   }
@@ -132,6 +161,67 @@ export async function enablePushForThisDevice(uid, onProgress) {
   return token;
 }
 
+// Native path: uses @capacitor/push-notifications (window.Capacitor.Plugins
+// .PushNotifications, injected at runtime — no bundler needed to call it
+// from a plain script) instead of the Firebase Web SDK's getToken()/
+// getMessaging(), which talks to the browser's Push API and isn't the
+// mechanism a wrapped native WebView actually uses. The plugin talks
+// straight to Android's own FCM registration, which is also what makes
+// alerts work while the app is fully backgrounded or closed — not just
+// foregrounded like the web service-worker path.
+async function enablePushNative(uid, note) {
+  const PushNotifications = window.Capacitor?.Plugins?.PushNotifications;
+  if (!PushNotifications) {
+    throw new Error("Push notifications plugin isn't available in this build.");
+  }
+
+  note("Requesting notification permission…");
+  const permStatus = await withStepTimeout(
+    PushNotifications.requestPermissions(), 8000, "requesting notification permission"
+  );
+  if (permStatus.receive !== "granted") {
+    throw new Error("Notification permission was not granted.");
+  }
+
+  note("Registering with Google (FCM)…");
+  const token = await withStepTimeout(
+    new Promise((resolve, reject) => {
+      // register() itself resolves with nothing — the actual token arrives
+      // asynchronously via the 'registration' event, so the real "wait for
+      // this" promise is built around that listener, not the call below.
+      let regListener, errListener;
+      const cleanup = () => { regListener?.remove(); errListener?.remove(); };
+      PushNotifications.addListener("registration", (token) => {
+        cleanup();
+        resolve(token.value);
+      }).then((l) => { regListener = l; });
+      PushNotifications.addListener("registrationError", (err) => {
+        cleanup();
+        reject(new Error(err?.error || "Native push registration failed."));
+      }).then((l) => { errListener = l; });
+      PushNotifications.register();
+    }),
+    15000,
+    "registering for push with FCM"
+  );
+
+  note("Saving the push token…");
+  await withStepTimeout(
+    setDoc(doc(db, "users", uid, "pushTokens", tokenDocId(token)), {
+      token,
+      userAgent: navigator.userAgent + " (Android app)",
+      createdAt: serverTimestamp()
+    }),
+    8000,
+    "saving the push token to your account"
+  );
+  localStorage.setItem(LOCAL_FLAG, "1");
+  localStorage.setItem(LAST_TOKEN_KEY, token);
+  registerForegroundHandlerNative(PushNotifications);
+
+  return token;
+}
+
 // Wires up the in-page alarm+banner for messages that arrive while this tab
 // is open and focused. Firebase only auto-shows the OS notification tray for
 // BACKGROUND messages (handled by sw.js) — a foreground tab has to catch the
@@ -153,12 +243,35 @@ function registerForegroundHandler(messaging) {
   });
 }
 
+// Native counterpart to registerForegroundHandler() above. Deliberately NOT
+// built on the Firebase Web SDK's onMessage — that talks to the browser
+// Push API, which may not initialize the same way (or at all) inside a
+// WebView. PushNotifications.addListener('pushNotificationReceived', ...)
+// is Capacitor's own bridge from native FCM straight to JS, independent of
+// whether the Web SDK's isSupported() checks pass in this environment.
+let nativeForegroundHandlerAttached = false;
+function registerForegroundHandlerNative(PushNotifications) {
+  if (nativeForegroundHandlerAttached) return;
+  nativeForegroundHandlerAttached = true;
+  PushNotifications.addListener("pushNotificationReceived", (notification) => {
+    const d = notification.data || {};
+    showForegroundBanner(notification.title, notification.body, d.link);
+  });
+}
+
 // Call on every page load (regardless of whether push was just enabled here
 // or on a totally different device/session previously) so a tab that's open
 // and in the foreground always has a live alarm handler, not just the tab
 // that happened to be open when the nurse first tapped "Alerts On".
 export async function initForegroundAlertsIfEnabled() {
   if (!pushIsEnabled()) return;
+
+  if (isNativePlatform()) {
+    const PushNotifications = window.Capacitor?.Plugins?.PushNotifications;
+    if (PushNotifications) registerForegroundHandlerNative(PushNotifications);
+    return;
+  }
+
   if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
   try {
     if (!(await isSupported())) return;
@@ -171,6 +284,20 @@ export async function initForegroundAlertsIfEnabled() {
 
 export async function disablePushForThisDevice(uid) {
   localStorage.removeItem(LOCAL_FLAG);
+
+  if (isNativePlatform()) {
+    const token = localStorage.getItem(LAST_TOKEN_KEY);
+    localStorage.removeItem(LAST_TOKEN_KEY);
+    if (token) {
+      await deleteDoc(doc(db, "users", uid, "pushTokens", tokenDocId(token))).catch(() => {});
+    }
+    // Deliberately not calling any native "unregister" — the plugin has no
+    // real equivalent, and leaving the OS-level FCM registration in place
+    // is harmless once its Firestore token doc is gone: the Cloud Function
+    // has nothing left to send to.
+    return;
+  }
+
   if (!(await isSupported())) return;
   const messaging = getMessaging(app);
   let token;
