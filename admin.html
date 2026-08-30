@@ -8,6 +8,11 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>Admin · Ward Charts</title>
 <link rel="stylesheet" href="js/styles.css">
+<style>
+  #patientTableWrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  #patientsTable { width:max-content; min-width:100%; }
+  #patientsTable th, #patientsTable td { white-space:nowrap; }
+</style>
 </head>
 <body>
 <script type="module" src="js/nav.js"></script>
@@ -39,10 +44,12 @@
       <input type="text" id="patientFilter" placeholder="Filter by name, EMR, or ward" oninput="renderPatientTable()">
     </div>
     <div id="patientCount" style="font-size:12px; color:#666; margin-top:6px;"></div>
-    <table class="entries">
+    <div id="patientTableWrap">
+    <table class="entries" id="patientsTable">
       <thead><tr><th>Name</th><th>EMR</th><th>Ward</th><th>Diagnosis</th><th>Admission Date</th><th></th></tr></thead>
       <tbody id="patientTableBody"></tbody>
     </table>
+    </div>
   </div>
 
   <div class="card-box">
