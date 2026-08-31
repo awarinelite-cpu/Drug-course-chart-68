@@ -20,6 +20,14 @@ import {
 //                                           Add Entry is pressed, every other column sharing that
 //                                           `group` is cleared before saving, even if something
 //                                           was typed into it.
+//                                           Grouped columns are also rendered together inside their
+//                                           own visually distinct box in the entry form (instead of
+//                                           being interleaved with other fields), so fields that
+//                                           belong to different groups can't be mixed up at data
+//                                           entry time. Set `groupColor` (any CSS color/background
+//                                           value) and/or `groupLabel` (a heading shown above the
+//                                           box) on any one column in the group — typically the
+//                                           groupGate column — to style/label that group's box.
 //   { key, label, computed: true }       — value is filled in by deriveRows(), no input is rendered for it
 //   { ..., formOnly: true }              — opposite of computed: rendered as a form input but
 //                                           skipped in the table header/body (e.g. a single
@@ -217,8 +225,29 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
       return;
     }
 
-    // Build the entry form fields (skip computed columns — those are auto-filled)
+    // Build the entry form fields (skip computed columns — those are auto-filled).
+    // Columns sharing a `group` get placed together inside their own colored box
+    // instead of being interleaved with other fields — see the columns comment above.
     const formDiv = document.getElementById('entryForm');
+    const groupBoxes = {};
+    function groupBoxFor(col) {
+      if (groupBoxes[col.group]) return groupBoxes[col.group];
+      const sameGroup = columns.filter(c => c.group === col.group);
+      const styled = sameGroup.find(c => c.groupColor || c.groupLabel) || col;
+      const box = document.createElement('div');
+      box.className = 'field-group';
+      box.style.cssText = 'flex:1 1 240px; display:flex; flex-direction:column; gap:10px; padding:10px; border-radius:8px;' +
+        (styled.groupColor ? ' background:' + styled.groupColor + ';' : '');
+      if (styled.groupLabel) {
+        const heading = document.createElement('div');
+        heading.textContent = styled.groupLabel;
+        heading.style.cssText = 'font-weight:600;';
+        box.appendChild(heading);
+      }
+      formDiv.appendChild(box);
+      groupBoxes[col.group] = box;
+      return box;
+    }
     columns.filter(col => !col.computed).forEach(col => {
       const wrap = document.createElement('div');
       wrap.className = 'field';
@@ -258,7 +287,7 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
         input.id = 'in_' + col.key;
         wrap.appendChild(input);
       }
-      formDiv.appendChild(wrap);
+      (col.group ? groupBoxFor(col) : formDiv).appendChild(wrap);
     });
 
     const timeInput = document.getElementById('in_time');

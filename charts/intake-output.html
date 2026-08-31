@@ -107,7 +107,8 @@
         key: 'intakeType', label: 'Route of Intake', type: 'select',
         options: ['Oral', 'NG/PEG', 'OTHERS'], placeholder: 'SELECT',
         otherOption: 'OTHERS', otherPlaceholder: 'Specify the route',
-        group: 'intake', groupGate: true
+        group: 'intake', groupGate: true,
+        groupLabel: 'Intake', groupColor: 'rgba(46, 204, 113, 0.12)'
       },
       {
         // Free text (fluid names vary too much for a fixed dropdown). In the
@@ -123,7 +124,8 @@
         // even if Output Vol. was filled in.
         key: 'outputType', label: 'Type of Output', type: 'select',
         options: ['URINE', 'VOMITING', 'DRAINAGE', 'DRAIN/OTHER'], placeholder: 'SELECT',
-        group: 'output', groupGate: true
+        group: 'output', groupGate: true,
+        groupLabel: 'Output', groupColor: 'rgba(255, 152, 0, 0.12)'
       },
       { key: 'outputAmount', label: 'Output Vol. (ml)', type: 'text', group: 'output' },
       { key: 'balance', label: 'Balance (ml)', computed: true, abnormal: v => parseFloat(v) < 0, deficitShade: true },
