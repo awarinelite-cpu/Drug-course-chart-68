@@ -19,13 +19,8 @@ import {
 //            archivedKey names the field on a closed admission doc holding the totals that were
 //            preserved at archive time (compute() re-derives "today", which is meaningless for a
 //            historical record, so archived views prefer the preserved snapshot when present).
-//   orderField — the field entries are chronologically ordered/queried by. Defaults to 'time'.
-//   sortKeyFrom — optional array of column keys (e.g. ['date','clockTime']) whose values are
-//                 joined with 'T' and saved into orderField automatically. Use this when the
-//                 chart has separate Date/Time inputs instead of a single datetime-local field.
-//                 The first key in the list is treated as required (instead of orderField).
 
-export function initEntryChart({ collectionName, columns, deriveRows, summary, orderField = 'time', sortKeyFrom }) {
+export function initEntryChart({ collectionName, columns, deriveRows, summary }) {
   const patientId = getPatientIdFromUrl();
   if (!patientId) { window.location.href = '../index.html'; return; }
   lockBackTo('../index.html');
@@ -52,9 +47,9 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary, o
   // Sorts oldest→newest, runs deriveRows() to attach computed fields (e.g. balance),
   // then returns newest→oldest for display.
   function withDerivedRows(rawRows) {
-    const asc = rawRows.slice().sort((a, b) => (a[orderField] || '').localeCompare(b[orderField] || ''));
+    const asc = rawRows.slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
     const derived = typeof deriveRows === 'function' ? deriveRows(asc) : asc;
-    return derived.slice().sort((a, b) => (b[orderField] || '').localeCompare(a[orderField] || ''));
+    return derived.slice().sort((a, b) => (b.time || '').localeCompare(a.time || ''));
   }
 
   function cellValue(row, col) {
@@ -173,39 +168,21 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary, o
       formDiv.appendChild(wrap);
     });
 
-    // Default the initial value(s) for whichever field(s) drive chronological order
-    // to "now" — a single datetime-local field, or separate date + time fields.
-    if (sortKeyFrom) {
+    const timeInput = document.getElementById('in_time');
+    if (timeInput) {
       const now = new Date();
       now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-      const iso = now.toISOString(); // YYYY-MM-DDTHH:MM:SS.sssZ (already local after the offset shift)
-      sortKeyFrom.forEach(key => {
-        const el = document.getElementById('in_' + key);
-        if (!el) return;
-        if (el.type === 'date') el.value = iso.slice(0, 10);
-        else if (el.type === 'time') el.value = iso.slice(11, 16);
-      });
-    } else {
-      const timeInput = document.getElementById('in_' + orderField);
-      if (timeInput) {
-        const now = new Date();
-        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-        timeInput.value = now.toISOString().slice(0, 16);
-      }
+      timeInput.value = now.toISOString().slice(0, 16);
     }
-
-    const requiredKey = sortKeyFrom ? sortKeyFrom[0] : orderField;
-    const preservedKeys = sortKeyFrom || [orderField];
 
     document.getElementById('addEntryBtn').onclick = async () => {
       const data = {};
       columns.filter(col => !col.computed).forEach(col => { data[col.key] = document.getElementById('in_' + col.key).value; });
-      if (sortKeyFrom) data[orderField] = sortKeyFrom.map(k => data[k] || '').join('T');
-      if (!data[requiredKey]) { alert('Please set the ' + requiredKey + '.'); return; }
+      if (!data.time) { alert('Please set the time.'); return; }
       data.createdAt = serverTimestamp();
       data.enteredBy = profile.name;
       await addDoc(collection(db, 'patients', patientId, collectionName), data);
-      columns.filter(col => !col.computed).forEach(col => { if (!preservedKeys.includes(col.key)) document.getElementById('in_' + col.key).value = ''; });
+      columns.filter(col => !col.computed).forEach(col => { if (col.key !== 'time') document.getElementById('in_' + col.key).value = ''; });
     };
 
     // Build the results table header
@@ -214,7 +191,7 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary, o
     // Live-updating table body
     const tbody = document.getElementById('entryBody');
     let latestRawRows = [];
-    const q = query(collection(db, 'patients', patientId, collectionName), orderBy(orderField, 'desc'));
+    const q = query(collection(db, 'patients', patientId, collectionName), orderBy('time', 'desc'));
     onSnapshot(q, (snap) => {
       latestRawRows = [];
       snap.forEach(d => latestRawRows.push({ id: d.id, ...d.data() }));
