@@ -70,7 +70,11 @@ function openFieldPopup(label, value) {
 //
 // Optional top-level options:
 //   deriveRows(ascRows) — given entries sorted oldest→newest, return the same rows with any
-//                         computed fields (e.g. a running balance) attached.
+//                         computed fields (e.g. a running balance) attached. It may also insert
+//                         extra rows shaped { isPeriodSummary: true, summaryText, deficit } at any
+//                         point in the returned array — these render as a single bold row spanning
+//                         every column (maroon when deficit is true) instead of normal per-column
+//                         cells, e.g. to show a closed 24-hour period's totals inline in the table.
 //   summary: { label, storeAt: [collName, docId], archivedKey, compute(rawRows) => {intake, output, balance} }
 //          — renders a small auto-updating, auto-saved 24-hour totals card above the table.
 //            archivedKey names the field on a closed admission doc holding the totals that were
@@ -137,6 +141,44 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary, s
         td.classList.add(col.deficitShade ? 'flag-deficit' : 'flag-abnormal');
       }
     }
+  }
+
+  // Renders one row of the entries table. Handles both normal data rows and a
+  // synthetic period-summary row — { isPeriodSummary: true, summaryText, deficit } —
+  // that deriveRows() can insert to show a closed period's totals inline in the
+  // table itself, spanning every column, bold, in maroon when it's a deficit.
+  function renderDataRow(tbody, row, withDelete) {
+    const tr = document.createElement('tr');
+    if (row.isPeriodSummary) {
+      const td = document.createElement('td');
+      td.colSpan = displayColumns.length + (withDelete ? 1 : 0);
+      td.style.cssText = 'font-weight:bold; padding:8px 10px; background:#f3f4f6;' + (row.deficit ? ' color:maroon;' : '');
+      td.textContent = row.summaryText;
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+    displayColumns.forEach(col => {
+      const td = document.createElement('td');
+      fillCell(td, col, row);
+      applyCellShading(td, col, row);
+      tr.appendChild(td);
+    });
+    if (withDelete) {
+      const tdAction = document.createElement('td');
+      tdAction.className = 'no-print';
+      const delBtn = document.createElement('button');
+      delBtn.textContent = 'Delete';
+      delBtn.className = 'btn btn-danger';
+      delBtn.style.padding = '4px 8px';
+      delBtn.style.fontSize = '11px';
+      delBtn.onclick = () => {
+        if (confirm('Delete this entry?')) deleteDoc(doc(db, 'patients', patientId, collectionName, row.id));
+      };
+      tdAction.appendChild(delBtn);
+      tr.appendChild(tdAction);
+    }
+    tbody.appendChild(tr);
   }
 
   function renderSummaryCard(rawRows, presetTotals) {
@@ -213,16 +255,7 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary, s
         tbody.appendChild(tr);
         return;
       }
-      entries.forEach(row => {
-        const tr = document.createElement('tr');
-        displayColumns.forEach(col => {
-          const td = document.createElement('td');
-          fillCell(td, col, row);
-          applyCellShading(td, col, row);
-          tr.appendChild(td);
-        });
-        tbody.appendChild(tr);
-      });
+      entries.forEach(row => renderDataRow(tbody, row, false));
       return;
     }
 
@@ -347,15 +380,12 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary, s
     // Live-updating table body
     const tbody = document.getElementById('entryBody');
     let latestRawRows = [];
-    const q = query(collection(db, 'patients', patientId, collectionName), orderBy('time', 'desc'));
-    onSnapshot(q, (snap) => {
-      latestRawRows = [];
-      snap.forEach(d => latestRawRows.push({ id: d.id, ...d.data() }));
 
-      if (summary) { renderSummaryCard(latestRawRows); saveSummary(latestRawRows); }
+    function renderTable(rawRows) {
+      if (summary) { renderSummaryCard(rawRows); saveSummary(rawRows); }
 
       tbody.innerHTML = '';
-      if (snap.empty) {
+      if (!rawRows.length) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
         td.colSpan = displayColumns.length + 1;
@@ -365,38 +395,23 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary, s
         tbody.appendChild(tr);
         return;
       }
-      const rows = withDerivedRows(latestRawRows);
-      rows.forEach(row => {
-        const tr = document.createElement('tr');
-        displayColumns.forEach(col => {
-          const td = document.createElement('td');
-          fillCell(td, col, row);
-          applyCellShading(td, col, row);
-          tr.appendChild(td);
-        });
-        const tdAction = document.createElement('td');
-        tdAction.className = 'no-print';
-        const delBtn = document.createElement('button');
-        delBtn.textContent = 'Delete';
-        delBtn.className = 'btn btn-danger';
-        delBtn.style.padding = '4px 8px';
-        delBtn.style.fontSize = '11px';
-        delBtn.onclick = () => {
-          if (confirm('Delete this entry?')) deleteDoc(doc(db, 'patients', patientId, collectionName, row.id));
-        };
-        tdAction.appendChild(delBtn);
-        tr.appendChild(tdAction);
-        tbody.appendChild(tr);
-      });
+      const rows = withDerivedRows(rawRows);
+      rows.forEach(row => renderDataRow(tbody, row, true));
+    }
+
+    const q = query(collection(db, 'patients', patientId, collectionName), orderBy('time', 'desc'));
+    onSnapshot(q, (snap) => {
+      latestRawRows = [];
+      snap.forEach(d => latestRawRows.push({ id: d.id, ...d.data() }));
+      renderTable(latestRawRows);
     });
 
-    // Keep the 24-hour summary current even with no new entries (e.g. rolling
-    // past midnight into a new period) by recomputing + re-saving periodically.
-    if (summary) {
-      setInterval(() => {
-        renderSummaryCard(latestRawRows);
-        saveSummary(latestRawRows);
-      }, 15 * 60 * 1000);
-    }
+    // Re-render (and re-save the summary) periodically even with no new entries —
+    // this is what makes a closed 24-hour period's totals appear on schedule
+    // (e.g. a period-summary row in the table) rather than only when a nurse
+    // happens to add the next entry.
+    setInterval(() => {
+      renderTable(latestRawRows);
+    }, 15 * 60 * 1000);
   });
 }
