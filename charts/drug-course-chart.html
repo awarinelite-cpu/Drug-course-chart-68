@@ -149,7 +149,7 @@
     <div class="info-row"><label>AGE:</label><span class="val" id="print_age"></span></div>
     <div class="info-row"><label>Date of Admission:</label><input type="date" id="f_admission"></div>
     <div class="info-row"><label>Diagnosis:</label><input type="text" id="f_diagnosis" placeholder="Enter diagnosis for this chart" readonly onclick="openDiagnosisModal()"></div>
-    <div class="info-row"><label>Discharge Date:</label><input type="date" id="f_discharge"></div>
+    <div class="info-row"><label>Discharge Date:</label><input type="date" id="f_discharge" readonly title="Auto-filled when the patient is discharged — cannot be entered manually" style="background:#f3f4f6; cursor:not-allowed; pointer-events:none;"></div>
   </div>
 
   <div class="no-print" style="margin:-4px 0 14px;">
@@ -1783,10 +1783,10 @@
       }
       label = 'Transferred to ' + transferWard;
     }
-    // Auto-fill today's date on discharge so the printed sheet and the
-    // archived record always carry a discharge date, rather than depending
-    // on the nurse remembering to pick one on the info-grid field herself.
-    // Doesn't override a date she's already entered (e.g. backdating).
+    // Discharge Date is locked (readonly) so it can only ever be set here,
+    // automatically, the moment the patient is actually discharged — never
+    // typed in manually. Guard against re-setting it if it's already been
+    // filled (e.g. a nurse re-opening the confirm dialog after a first pass).
     if (reason === 'discharged') {
       const dischargeInput = document.getElementById('f_discharge');
       if (dischargeInput && !dischargeInput.value) {
