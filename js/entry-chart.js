@@ -77,7 +77,7 @@ function openFieldPopup(label, value) {
 //            preserved at archive time (compute() re-derives "today", which is meaningless for a
 //            historical record, so archived views prefer the preserved snapshot when present).
 
-export function initEntryChart({ collectionName, columns, deriveRows, summary }) {
+export function initEntryChart({ collectionName, columns, deriveRows, summary, sortOrder }) {
   const patientId = getPatientIdFromUrl();
   if (!patientId) { window.location.href = '../index.html'; return; }
   lockBackTo('../index.html');
@@ -104,11 +104,12 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
   }
 
   // Sorts oldest→newest, runs deriveRows() to attach computed fields (e.g. balance),
-  // then returns newest→oldest for display.
+  // then returns for display in `sortOrder` ('desc' = newest-on-top, the default;
+  // 'asc' = oldest-on-top, so rows read top-to-bottom in the order they happened).
   function withDerivedRows(rawRows) {
     const asc = rawRows.slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
     const derived = typeof deriveRows === 'function' ? deriveRows(asc) : asc;
-    return derived.slice().sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+    return sortOrder === 'asc' ? derived : derived.slice().sort((a, b) => (b.time || '').localeCompare(a.time || ''));
   }
 
   function cellValue(row, col) {
