@@ -70,7 +70,7 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(clients.openWindow(link));
 });
 
-const CACHE_NAME = 'narhy-app-shell-v4';
+const CACHE_NAME = 'narhy-app-shell-v5';
 
 const PRECACHE_URLS = [
   './',

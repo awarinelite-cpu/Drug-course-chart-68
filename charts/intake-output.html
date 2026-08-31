@@ -42,9 +42,23 @@
 </div>
 
 <script type="module">
-  import { initEntryChart } from "../js/entry-chart.js?v=4";
+  import { initEntryChart } from "../js/entry-chart.js?v=5";
 
   function dayKeyOf(row) { return (row.time || '').slice(0, 10); }
+
+  // row.time is stored as a naive local "YYYY-MM-DDTHH:MM" string (see the
+  // time-input default below), so `new Date(row.time)` reconstructs the same
+  // local date/time it was entered as — safe to format directly.
+  function dateDisplayOf(row) {
+    if (!row.time) return '';
+    const d = new Date(row.time);
+    return isNaN(d) ? row.time.slice(0, 10) : d.toLocaleDateString();
+  }
+  function timeDisplayOf(row) {
+    if (!row.time) return '';
+    const d = new Date(row.time);
+    return isNaN(d) ? row.time.slice(11, 16) : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
 
   // Running balance for each entry, resetting at the start of each calendar
   // day (the standard 24-hour I&O period). Rows come in oldest→newest.
@@ -57,7 +71,7 @@
       const intake = parseFloat(row.intakeAmount) || 0;
       const output = parseFloat(row.outputAmount) || 0;
       running += intake - output;
-      return { ...row, balance: running };
+      return { ...row, balance: running, dateDisplay: dateDisplayOf(row), timeDisplay: timeDisplayOf(row) };
     });
   }
 
@@ -78,7 +92,12 @@
   initEntryChart({
     collectionName: 'intakeOutput',
     columns: [
-      { key: 'time', label: 'Time', type: 'datetime-local' },
+      // Single datetime input drives entry (and sorting/day-boundary logic),
+      // but the table shows it as separate Date and Time columns below —
+      // see dateDisplayOf/timeDisplayOf and deriveIOBalance.
+      { key: 'time', label: 'Time', type: 'datetime-local', formOnly: true },
+      { key: 'dateDisplay', label: 'Date', computed: true },
+      { key: 'timeDisplay', label: 'Time', computed: true },
       {
         // Dropdown (not free text) for route of intake, with an "OTHERS" option
         // that reveals a small textarea to specify the custom route. Starts on

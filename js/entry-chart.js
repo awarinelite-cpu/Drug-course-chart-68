@@ -21,6 +21,10 @@ import {
 //                                           `group` is cleared before saving, even if something
 //                                           was typed into it.
 //   { key, label, computed: true }       — value is filled in by deriveRows(), no input is rendered for it
+//   { ..., formOnly: true }              — opposite of computed: rendered as a form input but
+//                                           skipped in the table header/body (e.g. a single
+//                                           datetime input that's split into separate Date/Time
+//                                           display columns via deriveRows)
 //   { ..., abnormal: (value, row) => bool, deficitShade?: true } — shades the cell for quick visual flagging
 //   { ..., popup: true }                 — table cell shows a truncated one-line preview; tapping it
 //                                           opens a small popup with the full text (same pattern as the
@@ -77,10 +81,12 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
 
   const STATUS_LABELS = { referred: 'Referred to another hospital', transferred: 'Transferred to another ward', discharged: 'Discharged' };
 
+  const displayColumns = columns.filter(col => !col.formOnly);
+
   function buildHeadRow() {
     const thead = document.getElementById('entryHead');
     const trh = document.createElement('tr');
-    columns.forEach(col => { const th = document.createElement('th'); th.textContent = col.label; trh.appendChild(th); });
+    displayColumns.forEach(col => { const th = document.createElement('th'); th.textContent = col.label; trh.appendChild(th); });
     if (!isArchived) {
       const thAction = document.createElement('th');
       thAction.className = 'no-print';
@@ -191,7 +197,7 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
       if (!entries.length) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
-        td.colSpan = columns.length;
+        td.colSpan = displayColumns.length;
         td.textContent = 'No entries recorded for this admission.';
         td.style.color = '#777';
         tr.appendChild(td);
@@ -200,7 +206,7 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
       }
       entries.forEach(row => {
         const tr = document.createElement('tr');
-        columns.forEach(col => {
+        displayColumns.forEach(col => {
           const td = document.createElement('td');
           fillCell(td, col, row);
           applyCellShading(td, col, row);
@@ -322,7 +328,7 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
       if (snap.empty) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
-        td.colSpan = columns.length + 1;
+        td.colSpan = displayColumns.length + 1;
         td.textContent = 'No entries yet.';
         td.style.color = '#777';
         tr.appendChild(td);
@@ -332,7 +338,7 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
       const rows = withDerivedRows(latestRawRows);
       rows.forEach(row => {
         const tr = document.createElement('tr');
-        columns.forEach(col => {
+        displayColumns.forEach(col => {
           const td = document.createElement('td');
           fillCell(td, col, row);
           applyCellShading(td, col, row);
