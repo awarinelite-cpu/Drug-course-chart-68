@@ -69,12 +69,17 @@ function openFieldPopup(label, value) {
 }
 //
 // Optional top-level options:
-//   deriveRows(ascRows) — given entries sorted oldest→newest, return the same rows with any
-//                         computed fields (e.g. a running balance) attached. It may also insert
-//                         extra rows shaped { isPeriodSummary: true, summaryText, deficit } at any
-//                         point in the returned array — these render as a single bold row spanning
-//                         every column (maroon when deficit is true) instead of normal per-column
-//                         cells, e.g. to show a closed 24-hour period's totals inline in the table.
+//   deriveRows(ascRows, closeContext) — given entries sorted oldest→newest, return the same rows
+//                         with any computed fields (e.g. a running balance) attached. It may also
+//                         insert extra rows shaped { isPeriodSummary: true, summaryText, deficit }
+//                         at any point in the returned array — these render as a single bold row
+//                         spanning every column (maroon when deficit is true) instead of normal
+//                         per-column cells, e.g. to show a closed 24-hour period's totals inline in
+//                         the table. `closeContext` is null for a live/active chart, or
+//                         { closedAt: Date|null, closedAtDisplay: string|null } when viewing an
+//                         admission that's been discharged/referred/transferred — letting deriveRows
+//                         force its final period closed at that moment rather than waiting for the
+//                         period's normal boundary, which would otherwise never come for a closed record.
 //   summary: { label, storeAt: [collName, docId], archivedKey, compute(rawRows) => {intake, output, balance} }
 //          — renders a small auto-updating, auto-saved 24-hour totals card above the table.
 //            archivedKey names the field on a closed admission doc holding the totals that were
@@ -110,9 +115,14 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary, s
   // Sorts oldest→newest, runs deriveRows() to attach computed fields (e.g. balance),
   // then returns for display in `sortOrder` ('desc' = newest-on-top, the default;
   // 'asc' = oldest-on-top, so rows read top-to-bottom in the order they happened).
+  // `closeContext`, when set (viewing a closed/archived admission), is passed through
+  // to deriveRows as a second argument — { closedAt, closedAtDisplay } — so a chart
+  // like Intake & Output can force its final period to close at the moment the
+  // admission ended, instead of waiting for that period's normal boundary.
+  let closeContext = null;
   function withDerivedRows(rawRows) {
     const asc = rawRows.slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-    const derived = typeof deriveRows === 'function' ? deriveRows(asc) : asc;
+    const derived = typeof deriveRows === 'function' ? deriveRows(asc, closeContext) : asc;
     return sortOrder === 'asc' ? derived : derived.slice().sort((a, b) => (b.time || '').localeCompare(a.time || ''));
   }
 
@@ -227,6 +237,10 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary, s
 
       const admSnap = await getDoc(doc(db, 'patients', patientId, 'admissions', admissionId));
       const admData = admSnap.exists() ? admSnap.data() : {};
+      closeContext = {
+        closedAt: admData.archivedAt && typeof admData.archivedAt.toDate === 'function' ? admData.archivedAt.toDate() : null,
+        closedAtDisplay: admData.archivedAtDisplay || null
+      };
 
       const container = document.querySelector('.container');
       const allergyBox = document.getElementById('pb_allergy');
