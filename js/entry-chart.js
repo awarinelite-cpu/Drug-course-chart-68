@@ -8,10 +8,18 @@ import {
 
 // columns entries support:
 //   { key, label, type }                 — normal entered field
-//   { key, label, type: 'select', options: [...], otherOption?, otherPlaceholder? }
-//                                         — dropdown; when otherOption is set and selected,
-//                                           an extra textarea appears and its text is folded
-//                                           into the saved value as "<otherOption>: <text>"
+//   { key, label, type: 'select', options: [...], placeholder?, otherOption?, otherPlaceholder? }
+//                                         — dropdown; placeholder (if set) adds a blank first
+//                                           option with that text, selected by default. When
+//                                           otherOption is set and selected, an extra textarea
+//                                           appears and its text is folded into the saved value
+//                                           as "<otherOption>: <text>"
+//   { ..., group, groupGate: true }      — groups columns together (e.g. all the "output" fields).
+//                                           The one column with groupGate:true acts as an on/off
+//                                           switch: if it's left on its placeholder (blank) when
+//                                           Add Entry is pressed, every other column sharing that
+//                                           `group` is cleared before saving, even if something
+//                                           was typed into it.
 //   { key, label, computed: true }       — value is filled in by deriveRows(), no input is rendered for it
 //   { ..., abnormal: (value, row) => bool, deficitShade?: true } — shades the cell for quick visual flagging
 //   { ..., popup: true }                 — table cell shows a truncated one-line preview; tapping it
@@ -216,6 +224,11 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
       if (col.type === 'select') {
         const select = document.createElement('select');
         select.id = 'in_' + col.key;
+        if (col.placeholder) {
+          const ph = document.createElement('option');
+          ph.value = ''; ph.textContent = col.placeholder;
+          select.appendChild(ph);
+        }
         (col.options || []).forEach(opt => {
           const o = document.createElement('option');
           o.value = opt; o.textContent = opt;
@@ -265,6 +278,16 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
     document.getElementById('addEntryBtn').onclick = async () => {
       const data = {};
       columns.filter(col => !col.computed).forEach(col => { data[col.key] = readInputValue(col); });
+      // Group gating: a column marked groupGate acts as an on/off switch for every
+      // other column sharing its `group`. If the gate's dropdown is left on its
+      // placeholder (blank), every other field in that group is cleared before
+      // saving — even if something was typed into it — so e.g. leaving "Type of
+      // Output" unselected means no output data is recorded on that entry at all.
+      const groupGateValue = {};
+      columns.forEach(col => { if (col.groupGate) groupGateValue[col.group] = data[col.key]; });
+      columns.forEach(col => {
+        if (col.group && !col.groupGate && groupGateValue[col.group] === '') data[col.key] = '';
+      });
       if (!data.time) { alert('Please set the time.'); return; }
       data.createdAt = serverTimestamp();
       data.enteredBy = profile.name;

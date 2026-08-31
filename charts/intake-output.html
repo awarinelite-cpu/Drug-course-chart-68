@@ -42,7 +42,7 @@
 </div>
 
 <script type="module">
-  import { initEntryChart } from "../js/entry-chart.js?v=3";
+  import { initEntryChart } from "../js/entry-chart.js?v=4";
 
   function dayKeyOf(row) { return (row.time || '').slice(0, 10); }
 
@@ -81,24 +81,32 @@
       { key: 'time', label: 'Time', type: 'datetime-local' },
       {
         // Dropdown (not free text) for route of intake, with an "OTHERS" option
-        // that reveals a small textarea to specify the custom route.
+        // that reveals a small textarea to specify the custom route. Starts on
+        // "SELECT" (placeholder) — this is the on/off switch for the whole
+        // intake group: leaving it on SELECT means nothing gets recorded for
+        // intake on this entry, even if Nature of Fluid / Intake Vol. were filled in.
         key: 'intakeType', label: 'Route of Intake', type: 'select',
-        options: ['Oral', 'NG/PEG', 'OTHERS'],
-        otherOption: 'OTHERS', otherPlaceholder: 'Specify the route'
+        options: ['Oral', 'NG/PEG', 'OTHERS'], placeholder: 'SELECT',
+        otherOption: 'OTHERS', otherPlaceholder: 'Specify the route',
+        group: 'intake', groupGate: true
       },
       {
         // Free text (fluid names vary too much for a fixed dropdown). In the
         // Entries table this shows as a truncated, tappable cell that opens
         // a popup with the full name — same pattern as the Diagnosis field
         // on the Drug Course Chart — so long fluid names don't break the layout.
-        key: 'natureOfFluid', label: 'Nature of Fluid', type: 'text', popup: true
+        key: 'natureOfFluid', label: 'Nature of Fluid', type: 'text', popup: true, group: 'intake'
       },
-      { key: 'intakeAmount', label: 'Intake Vol. (ml)', type: 'text' },
+      { key: 'intakeAmount', label: 'Intake Vol. (ml)', type: 'text', group: 'intake' },
       {
+        // Starts on "SELECT" — the on/off switch for the output group: leaving
+        // it on SELECT means nothing gets recorded for output on this entry,
+        // even if Output Vol. was filled in.
         key: 'outputType', label: 'Type of Output', type: 'select',
-        options: ['URINE', 'VOMITING', 'DRAINAGE', 'DRAIN/OTHER']
+        options: ['URINE', 'VOMITING', 'DRAINAGE', 'DRAIN/OTHER'], placeholder: 'SELECT',
+        group: 'output', groupGate: true
       },
-      { key: 'outputAmount', label: 'Output Vol. (ml)', type: 'text' },
+      { key: 'outputAmount', label: 'Output Vol. (ml)', type: 'text', group: 'output' },
       { key: 'balance', label: 'Balance (ml)', computed: true, abnormal: v => parseFloat(v) < 0, deficitShade: true },
       { key: 'notes', label: 'Notes', type: 'text' }
     ],
