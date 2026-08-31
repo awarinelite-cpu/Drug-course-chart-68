@@ -40,18 +40,9 @@
 
   <div class="card-box" style="margin-top:16px;">
     <div class="pname" id="adm_diagnosis" style="font-size:17px;">—<span class="badge" id="adm_badge"></span></div>
+    <button class="badge no-print" id="readmitBtn" style="display:none; border:none; cursor:pointer; background:#2563eb; margin-top:6px;" onclick="readmitPatient()">↺ Readmit</button>
     <div class="pmeta" id="adm_meta" style="margin-top:4px;"></div>
-  </div>
-
-  <div class="card-box no-print" id="readmitBox" style="display:none;">
-    <h3 style="margin-top:0;">Readmit Patient</h3>
-    <p style="font-size:12px; color:#555; margin-top:-6px;">
-      For an immediate readmission right after this discharge — not a new, separate admission later on. This
-      cancels the discharge and restores this admission's drug chart, vitals, glycemic chart, intake &amp; output,
-      and seizure chart back to active, so care continues from exactly where it left off.
-    </p>
-    <button class="btn btn-primary" id="readmitBtn" style="padding:8px 14px;" onclick="readmitPatient()">Readmit — Continue Care</button>
-    <div id="readmitStatus" style="font-size:12px; margin-top:8px;"></div>
+    <div id="readmitStatus" class="no-print" style="font-size:12px; margin-top:6px;"></div>
   </div>
 
   <div class="chart-grid" id="chartGrid"></div>
@@ -237,7 +228,7 @@
       badgeText = data.archiveReasonLabel || STATUS_LABELS[data.archiveReason] || 'Closed';
       badgeClass = BADGE_CLASS[data.archiveReason] || 'badge-discharged';
       if (data.archiveReason === 'discharged') {
-        document.getElementById('readmitBox').style.display = 'block';
+        document.getElementById('readmitBtn').style.display = 'inline-block';
       }
     } else {
       const drugSnap = await getDoc(doc(db, 'patients', patientId, 'drugCourseChart', 'main'));
