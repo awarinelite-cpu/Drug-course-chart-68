@@ -69,9 +69,16 @@ table.entries th { background: #f3f4f6; text-transform: uppercase; font-size: 11
 
 /* Lets any wide table (more columns than fit a phone screen) scroll
    horizontally within its own box instead of being clipped. Swipe left/right
-   over the table to see columns that run off-screen. */
+   over the table to see columns that run off-screen.
+   white-space:nowrap is what actually matters here: without it the browser
+   just squeezes every column to fit width:100% and nothing ever overflows,
+   so the scroll never engages. table.chart on the glycemic/drug charts uses
+   this same pattern already. */
 .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.table-wrap table { min-width: max-content; }
+@media screen {
+  .table-wrap table { width: max-content; min-width: 100%; table-layout: auto; }
+  .table-wrap table th, .table-wrap table td { white-space: nowrap; }
+}
 
 /* Abnormal-value flagging shared across vitals, glycemic and intake/output charts */
 .flag-abnormal { background: #fee2e2 !important; color: #7f1d1d; font-weight: bold; }

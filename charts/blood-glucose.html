@@ -18,7 +18,17 @@
   table.chart th, table.chart td { border:1px solid #000; padding:6px 4px; font-size:12px; text-align:center; }
   table.chart th { background:#f2f2f2; text-transform:uppercase; }
   table.chart td input { width:100%; border:none; background:transparent; text-align:center; font-size:12px; font-family:inherit; }
-  .table-wrap { overflow-x:auto; }
+  .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  /* On screen, let the table keep its natural (wider-than-phone) column
+     widths and scroll horizontally, instead of squeezing 9 columns to fit —
+     that squeeze is why the table never actually scrolled before: without
+     white-space:nowrap / an explicit input min-width, width:100% just wins
+     and nothing overflows. */
+  @media screen {
+    table.chart { width:max-content; min-width:100%; table-layout:auto; }
+    table.chart th { white-space:nowrap; }
+    table.chart td input { width:auto; min-width:90px; }
+  }
   .unit-note { text-align:center; font-size:11px; color:#666; margin-bottom:10px; }
   @media print {
     .no-print { display:none !important; }
