@@ -71,6 +71,12 @@
   table.chart td input[readonly] { background:#f8f8f8; color:#333; }
   .table-wrap { overflow-x:auto; }
   #verbalOrderBtn { padding:6px 12px; font-size:12px; }
+  #careInstructionsBtn { padding:6px 12px; font-size:12px; }
+  .care-bullet { background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:8px 10px; }
+  .care-bullet-row { display:flex; align-items:flex-start; gap:6px; }
+  .care-bullet-row .care-dot { font-size:15px; line-height:1.4; color:#b45309; }
+  .care-text { font-size:13px; white-space:pre-wrap; flex:1; }
+  .care-meta { font-size:10px; color:#8a6d3b; margin-top:3px; }
   .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:1000; padding:16px; }
   .modal-box { background:#fff; border-radius:10px; width:100%; max-width:480px; max-height:82vh; display:flex; flex-direction:column; overflow:hidden; }
   .modal-header { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid #e5e7eb; }
@@ -140,6 +146,10 @@
     <div class="info-row"><label>Date of Admission:</label><input type="date" id="f_admission"></div>
     <div class="info-row"><label>Diagnosis:</label><input type="text" id="f_diagnosis" placeholder="Enter diagnosis for this chart" readonly onclick="openDiagnosisModal()"></div>
     <div class="info-row"><label>Discharge Date:</label><input type="date" id="f_discharge"></div>
+  </div>
+
+  <div class="no-print" style="margin:-4px 0 14px;">
+    <button class="btn btn-secondary" id="careInstructionsBtn" onclick="openCareModal()">+ Care Instructions</button>
   </div>
 
   <div class="drugs-block">
@@ -226,6 +236,21 @@
     </div>
   </div>
 </div>
+
+<div class="modal-overlay no-print" id="careModalOverlay" onclick="if(event.target===this) closeCareModal();">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>💬 Care Instructions (Vitals / Standing Orders)</h3>
+      <button class="modal-close" onclick="closeCareModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="careInstructionsList"></div>
+    <div class="modal-footer">
+      <textarea id="careInstructionInput" rows="2" placeholder="e.g. Nurse bed 30° head up&#10;Give IV Labetalol if BP &gt;200mmHg"></textarea>
+      <button class="btn btn-primary" onclick="submitCareInstruction()">Add</button>
+    </div>
+  </div>
+</div>
+
 
 <div class="modal-overlay no-print" id="bulkModalOverlay" onclick="if(event.target===this) closeBulkUploadModal();">
   <div class="modal-box" style="max-width:640px;">
@@ -340,6 +365,7 @@
   let editingChartRows = new Set(); // indices of chart rows currently unlocked for editing
   let currentNurseName = '';
   let verbalOrders = []; // { text, nurse, at }
+  let careInstructions = []; // { text, nurse, at, editedAt } — vitals/standing-order bullets from the doctor
 
   // Colors so a drug's action state (ongoing/completed/etc.) is easy to spot at a glance.
   const ACTION_COLORS = {
@@ -1242,6 +1268,150 @@
     await saveChart();
   };
 
+  // --- Care Instructions (vitals / standing orders conversation box) ---
+  // Doctor's standing instructions for nurses to follow at any time — bed
+  // positioning, when to give a PRN drug based on a vital sign, etc. Shown
+  // as a plain bullet list (not a timestamped chat log like Verbal Orders)
+  // since a nurse should be able to glance at the whole set of instructions
+  // at once. Each bullet still remembers who added/last edited it.
+  function renderCareBtn() {
+    const btn = document.getElementById('careInstructionsBtn');
+    if (careInstructions.length > 0) {
+      btn.textContent = '💬 Care Instructions (' + careInstructions.length + ')';
+      btn.className = 'btn btn-purple no-print';
+    } else {
+      btn.textContent = '+ Care Instructions';
+      btn.className = 'btn btn-secondary no-print';
+    }
+  }
+
+  let editingCareIndex = -1;
+
+  function renderCareList() {
+    const box = document.getElementById('careInstructionsList');
+    box.innerHTML = '';
+    if (!careInstructions.length) {
+      box.innerHTML = '<p style="color:#777; font-size:13px; margin:0;">No care instructions recorded yet.</p>';
+      return;
+    }
+    careInstructions.forEach((o, i) => {
+      const bullet = document.createElement('div');
+      bullet.className = 'care-bullet';
+
+      if (editingCareIndex === i) {
+        const editArea = document.createElement('textarea');
+        editArea.rows = 2;
+        editArea.value = o.text;
+        editArea.style.marginBottom = '6px';
+        bullet.appendChild(editArea);
+
+        const btnRow = document.createElement('div');
+        btnRow.style.display = 'flex';
+        btnRow.style.gap = '6px';
+
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'btn btn-success';
+        saveBtn.style.padding = '5px 10px';
+        saveBtn.style.fontSize = '12px';
+        saveBtn.textContent = 'Save';
+        saveBtn.onclick = () => saveCareEdit(i, editArea.value);
+        btnRow.appendChild(saveBtn);
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-secondary';
+        cancelBtn.style.padding = '5px 10px';
+        cancelBtn.style.fontSize = '12px';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.onclick = () => { editingCareIndex = -1; renderCareList(); };
+        btnRow.appendChild(cancelBtn);
+
+        bullet.appendChild(btnRow);
+      } else {
+        const row = document.createElement('div');
+        row.className = 'care-bullet-row';
+        const dot = document.createElement('span');
+        dot.className = 'care-dot';
+        dot.textContent = '•';
+        const text = document.createElement('div');
+        text.className = 'care-text';
+        text.textContent = o.text;
+        row.appendChild(dot);
+        row.appendChild(text);
+        bullet.appendChild(row);
+
+        const meta = document.createElement('div');
+        meta.className = 'care-meta';
+        meta.textContent = (o.nurse || 'Unknown') + ' · ' + (o.at ? new Date(o.at).toLocaleString() : '') + (o.editedAt ? ' (edited)' : '');
+        bullet.appendChild(meta);
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-secondary';
+        editBtn.style.padding = '3px 9px';
+        editBtn.style.fontSize = '11px';
+        editBtn.style.marginTop = '6px';
+        editBtn.textContent = 'Edit';
+        editBtn.onclick = () => { editingCareIndex = i; renderCareList(); };
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-danger';
+        deleteBtn.style.padding = '3px 9px';
+        deleteBtn.style.fontSize = '11px';
+        deleteBtn.style.marginTop = '6px';
+        deleteBtn.style.marginLeft = '6px';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.onclick = () => deleteCareInstruction(i);
+
+        bullet.appendChild(editBtn);
+        bullet.appendChild(deleteBtn);
+      }
+      box.appendChild(bullet);
+    });
+  }
+
+  async function deleteCareInstruction(i) {
+    if (!confirm('Delete this care instruction? This cannot be undone.')) return;
+    careInstructions.splice(i, 1);
+    if (editingCareIndex === i) editingCareIndex = -1;
+    renderCareList();
+    renderCareBtn();
+    await saveChart();
+  }
+
+  async function saveCareEdit(i, newText) {
+    const trimmed = newText.trim();
+    if (!trimmed) return;
+    careInstructions[i].text = trimmed;
+    careInstructions[i].editedAt = new Date().toISOString();
+    editingCareIndex = -1;
+    renderCareList();
+    renderCareBtn();
+    await saveChart();
+  }
+
+  window.openCareModal = function () {
+    renderCareList();
+    document.getElementById('careModalOverlay').style.display = 'flex';
+    document.getElementById('careInstructionInput').focus();
+  };
+
+  window.closeCareModal = function () {
+    editingCareIndex = -1;
+    document.getElementById('careModalOverlay').style.display = 'none';
+  };
+
+  window.submitCareInstruction = async function () {
+    const input = document.getElementById('careInstructionInput');
+    // A nurse may paste/type several lines at once (one instruction per
+    // line) — split those into separate bullets rather than one blob.
+    const lines = input.value.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return;
+    lines.forEach(text => careInstructions.push({ text, nurse: currentNurseName, at: new Date().toISOString() }));
+    input.value = '';
+    renderCareList();
+    renderCareBtn();
+    await saveChart();
+  };
+
   function renderChartTable() {
     if (chartEditMode) renderChartSession(); else renderChartView();
     document.getElementById('editChartBtn').style.display = chartEditMode ? 'none' : 'inline-block';
@@ -1451,6 +1621,7 @@
     data.rows = chartRows;
     data.drugs = drugs;
     data.verbalOrders = verbalOrders;
+    data.careInstructions = careInstructions;
     data.updatedAt = serverTimestamp();
     try {
       await setDoc(chartRef, data, { merge: true });
@@ -1538,6 +1709,7 @@
     drugChartData.rows = chartRows;
     drugChartData.drugs = drugs;
     drugChartData.verbalOrders = verbalOrders;
+    drugChartData.careInstructions = careInstructions;
 
     const admissionDoc = {
       diagnosis: document.getElementById('f_diagnosis').value,
@@ -1581,6 +1753,7 @@
     blankDrugChart.rows = Array(18).fill(null).map(() => defaultRow());
     blankDrugChart.drugs = Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '', duration: '' }));
     blankDrugChart.verbalOrders = [];
+    blankDrugChart.careInstructions = [];
     blankDrugChart.updatedAt = serverTimestamp();
 
     try {
@@ -1653,6 +1826,7 @@
       chartRows.forEach(row => { if (row.sno && !row.route) row.route = computeRouteFromSno(row.sno); });
       renderDrugsTable();
       verbalOrders = data.verbalOrders || [];
+      careInstructions = data.careInstructions || [];
       if (isArchived && admissionMeta) {
         const when = admissionMeta.archivedAtDisplay || '';
         const banner = document.getElementById('archiveBanner');
@@ -1664,8 +1838,10 @@
       renderDrugsTable();
       chartRows = Array(18).fill(null).map(() => defaultRow());
       verbalOrders = [];
+      careInstructions = [];
     }
     renderVerbalOrderBtn();
+    renderCareBtn();
     renderChartTable();
     checkDrugCompletion();
     fieldIds.forEach(id => document.getElementById(id).addEventListener('input', scheduleSave));
@@ -1674,7 +1850,7 @@
       // Lock the page down to a read-only view: no editing, no status changes.
       document.getElementById('saveStatus').textContent = 'Viewing archived chart (read-only)';
       fieldIds.forEach(id => { const el = document.getElementById(id); if (el) el.readOnly = true; });
-      ['editDrugsBtn', 'verbalOrderBtn', 'bulkUploadBtn', 'editChartBtn', 'statusActionBox'].forEach(id => {
+      ['editDrugsBtn', 'verbalOrderBtn', 'careInstructionsBtn', 'bulkUploadBtn', 'editChartBtn', 'statusActionBox'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
       });
