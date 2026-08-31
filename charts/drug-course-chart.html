@@ -1196,6 +1196,31 @@
     return { date: '', sno: '', time: '', dose: 'AP', route: '', nurse: '', remark: '' };
   }
 
+  // Looks at every drug number referenced in a Drug S/N entry (e.g. "1" or
+  // "1/2") and returns the ones whose Action is flagged (anything other than
+  // blank or "Ongoing"). Used to stop a nurse from charting a dose against a
+  // drug that's Completed/Discontinued/Withheld/Other.
+  function flaggedDrugRefs(snoText) {
+    const nums = (snoText || '').match(/\d+/g) || [];
+    const seen = new Set();
+    const blocked = [];
+    nums.forEach(n => {
+      if (seen.has(n)) return;
+      seen.add(n);
+      const d = drugs[parseInt(n, 10) - 1];
+      if (d && d.action && d.action !== 'Ongoing') {
+        blocked.push({ num: n, name: d.name || '', action: d.action });
+      }
+    });
+    return blocked;
+  }
+
+  function flaggedDrugMessage(blocked) {
+    return blocked.map(b =>
+      'Drug ' + b.num + (b.name ? ' (' + b.name + ')' : '') + ' has been marked "' + b.action + '" and cannot be added as served medication.'
+    ).join('\n');
+  }
+
   // --- Verbal / emergency orders (conversation box) ---
   function renderVerbalOrderBtn() {
     const btn = document.getElementById('verbalOrderBtn');
@@ -1593,6 +1618,11 @@
       lockBtn.textContent = '✓';
       lockBtn.title = 'Done editing this row';
       lockBtn.onclick = () => {
+        const blockedNow = flaggedDrugRefs(row.sno);
+        if (blockedNow.length) {
+          alert(flaggedDrugMessage(blockedNow) + '\n\nPlease correct the Drug S/N before continuing.');
+          return;
+        }
         const before = JSON.parse(chartRowSnapshots[i] || '{}');
         const wasBlank = !before.sno && !before.date && !before.time;
         const changes = diffFields(before, row, { date: 'Date', sno: 'Drug S/N', time: 'Time', dose: 'Dose', route: 'Route', remark: 'Remark' });
@@ -1633,6 +1663,17 @@
         checkDrugCompletion();
         renderDrugsTable();
         nurseCell.value = row.nurse || '';
+      });
+      snoInput.addEventListener('blur', () => {
+        const blocked = flaggedDrugRefs(snoInput.value);
+        if (!blocked.length) return;
+        alert(flaggedDrugMessage(blocked));
+        const snapshot = JSON.parse(chartRowSnapshots[i] || '{}');
+        row.sno = snapshot.sno || '';
+        snoInput.value = row.sno;
+        row.route = computeRouteFromSno(row.sno);
+        routeInput.value = row.route;
+        scheduleSave();
       });
       tdSno.appendChild(snoInput);
       tr.appendChild(tdSno);
