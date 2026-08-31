@@ -43,6 +43,17 @@
     <div class="pmeta" id="adm_meta" style="margin-top:4px;"></div>
   </div>
 
+  <div class="card-box no-print" id="readmitBox" style="display:none;">
+    <h3 style="margin-top:0;">Readmit Patient</h3>
+    <p style="font-size:12px; color:#555; margin-top:-6px;">
+      For an immediate readmission right after this discharge — not a new, separate admission later on. This
+      cancels the discharge and restores this admission's drug chart, vitals, glycemic chart, intake &amp; output,
+      and seizure chart back to active, so care continues from exactly where it left off.
+    </p>
+    <button class="btn btn-primary" id="readmitBtn" style="padding:8px 14px;" onclick="readmitPatient()">Readmit — Continue Care</button>
+    <div id="readmitStatus" style="font-size:12px; margin-top:8px;"></div>
+  </div>
+
   <div class="chart-grid" id="chartGrid"></div>
 
   <div class="card-box no-print" style="margin-top:16px;">
@@ -60,7 +71,9 @@
   import { requireAuth } from "../js/auth-guard.js";
   import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
   import { db } from "../js/firebase.js";
-  import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import {
+    doc, getDoc, setDoc, deleteDoc, addDoc, collection, getDocs, serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
   import { buildExportRecord, downloadRecordAsPdf, downloadRecordAsJson, sharePdf } from "../js/export.js";
 
   const patientId = getPatientIdFromUrl();
@@ -91,6 +104,90 @@
     return key + '.html?patient=' + patientId + (isArchived ? '&admission=' + admissionId : '');
   }
 
+  // Set while loading an archived, discharged admission — readmitPatient()
+  // below restores this back onto the live charts.
+  let archivedAdmissionData = null;
+  let admissionRef = null;
+  let currentProfileName = '';
+
+  // Mirrors overview.html's own hasActiveData check — used here to make sure
+  // readmitting doesn't silently overwrite a newer admission that's already
+  // in progress on the live charts.
+  async function hasActiveData() {
+    const [drugSnap, bgSnap, vitalsSnap, ioSnap, seizureSnap] = await Promise.all([
+      getDoc(doc(db, 'patients', patientId, 'drugCourseChart', 'main')),
+      getDoc(doc(db, 'patients', patientId, 'bloodGlucose', 'main')),
+      getDocs(collection(db, 'patients', patientId, 'vitals')),
+      getDocs(collection(db, 'patients', patientId, 'intakeOutput')),
+      getDocs(collection(db, 'patients', patientId, 'seizure'))
+    ]);
+    const drugData = drugSnap.exists() ? drugSnap.data() : null;
+    const bgData = bgSnap.exists() ? bgSnap.data() : null;
+    const hasDrugData = !!(drugData && ((drugData.f_diagnosis || '') || (drugData.drugs || []).some(d => d && d.name) || (drugData.rows || []).some(r => r && (r.date || r.sno))));
+    const hasBgData = !!(bgData && (bgData.rows || []).some(r => Array.isArray(r) && r.some(cell => cell)));
+    return hasDrugData || hasBgData || !vitalsSnap.empty || !ioSnap.empty || !seizureSnap.empty;
+  }
+
+  window.readmitPatient = async function () {
+    const btn = document.getElementById('readmitBtn');
+    const status = document.getElementById('readmitStatus');
+    const patientName = document.getElementById('pb_name').textContent.trim() || 'this patient';
+    if (!confirm('Readmit ' + patientName + '?\n\nThis cancels the discharge and restores the drug chart, vitals, glycemic chart, intake & output, and seizure chart from this admission back to active. Care continues from exactly where it left off.')) return;
+
+    btn.disabled = true;
+    status.style.color = '#555';
+    status.textContent = 'Checking for a newer admission already in progress\u2026';
+
+    try {
+      if (await hasActiveData()) {
+        status.style.color = '#b91c1c';
+        status.textContent = 'This patient already has an active admission in progress — readmitting this record would overwrite it. Close out or resolve the current admission first, or contact an admin.';
+        btn.disabled = false;
+        return;
+      }
+
+      status.textContent = 'Restoring charts\u2026';
+      const admData = archivedAdmissionData || {};
+      const dc = admData.drugCourseChart || {};
+      const restoredAuditLog = Array.isArray(dc.auditLog) ? dc.auditLog.slice() : [];
+      restoredAuditLog.push({
+        action: 'Patient readmitted — discharge on ' + (admData.archivedAtDisplay || 'an earlier date') + ' cancelled; care continues.',
+        by: currentProfileName || 'Unknown',
+        at: new Date().toISOString()
+      });
+      const restoredDrugChart = {
+        ...dc,
+        f_discharge: '', // no longer discharged
+        auditLog: restoredAuditLog,
+        updatedAt: serverTimestamp()
+      };
+      const bg = admData.bloodGlucose || { chartType: '6point', rows: [] };
+      const ioSummary = admData.intakeOutputSummary || { intake: 0, output: 0, balance: 0, periodDate: new Date().toISOString().slice(0, 10) };
+
+      await Promise.all([
+        setDoc(doc(db, 'patients', patientId, 'drugCourseChart', 'main'), restoredDrugChart),
+        setDoc(doc(db, 'patients', patientId, 'bloodGlucose', 'main'), { chartType: bg.chartType || '6point', rows: bg.rows || [], updatedAt: serverTimestamp() }),
+        setDoc(doc(db, 'patients', patientId, 'intakeOutputSummary', 'current'), { ...ioSummary, updatedAt: serverTimestamp() }),
+        ...(admData.vitals || []).map(entry => addDoc(collection(db, 'patients', patientId, 'vitals'), entry)),
+        ...(admData.intakeOutput || []).map(entry => addDoc(collection(db, 'patients', patientId, 'intakeOutput'), entry)),
+        ...(admData.seizure || []).map(entry => addDoc(collection(db, 'patients', patientId, 'seizure'), entry))
+      ]);
+
+      // The discharge is cancelled, not just superseded — remove the
+      // archived record so it doesn't keep showing as a closed admission
+      // alongside the now-active one it was restored into.
+      await deleteDoc(admissionRef);
+
+      status.style.color = '#16a34a';
+      status.textContent = 'Readmitted \u2014 redirecting to the active chart\u2026';
+      setTimeout(() => window.location.href = 'drug-course-chart.html?patient=' + patientId, 900);
+    } catch (e) {
+      status.style.color = '#b91c1c';
+      status.textContent = 'Readmit failed: ' + (e.code || e.message || 'unknown error');
+      btn.disabled = false;
+    }
+  };
+
   window.shareAdmission = async function () {
     const btn = document.getElementById('shareBtn');
     const status = document.getElementById('shareStatus');
@@ -116,6 +213,7 @@
   };
 
   requireAuth(async (user, profile) => {
+    currentProfileName = (profile && profile.name) || user.email || 'Unknown';
     const patient = await loadPatientHeader(patientId, { name: 'pb_name', meta: 'pb_meta', allergy: 'pb_allergy' });
     if (!patient) return;
 
@@ -125,17 +223,22 @@
     let badgeClass = 'badge-active';
 
     if (isArchived) {
-      const snap = await getDoc(doc(db, 'patients', patientId, 'admissions', admissionId));
+      admissionRef = doc(db, 'patients', patientId, 'admissions', admissionId);
+      const snap = await getDoc(admissionRef);
       if (!snap.exists()) {
         alert('Admission record not found.');
         window.location.href = 'overview.html?patient=' + patientId;
         return;
       }
       const data = snap.data();
+      archivedAdmissionData = data;
       diagnosis = data.diagnosis || diagnosis;
       metaLabel = data.archivedAtDisplay ? 'Closed on ' + data.archivedAtDisplay : '';
       badgeText = data.archiveReasonLabel || STATUS_LABELS[data.archiveReason] || 'Closed';
       badgeClass = BADGE_CLASS[data.archiveReason] || 'badge-discharged';
+      if (data.archiveReason === 'discharged') {
+        document.getElementById('readmitBox').style.display = 'block';
+      }
     } else {
       const drugSnap = await getDoc(doc(db, 'patients', patientId, 'drugCourseChart', 'main'));
       diagnosis = (drugSnap.exists() && drugSnap.data().f_diagnosis) || 'No diagnosis entered yet';

@@ -1783,6 +1783,16 @@
       }
       label = 'Transferred to ' + transferWard;
     }
+    // Auto-fill today's date on discharge so the printed sheet and the
+    // archived record always carry a discharge date, rather than depending
+    // on the nurse remembering to pick one on the info-grid field herself.
+    // Doesn't override a date she's already entered (e.g. backdating).
+    if (reason === 'discharged') {
+      const dischargeInput = document.getElementById('f_discharge');
+      if (dischargeInput && !dischargeInput.value) {
+        dischargeInput.value = new Date().toISOString().slice(0, 10);
+      }
+    }
     if (!confirm('Confirm: ' + label + '?\n\nAll care records for this admission (drug chart, vitals, glycemic chart, intake & output, seizure chart) will be saved together to Overview, and fresh charts will open for this patient.')) return;
 
     logAudit('Patient status set: ' + label);
