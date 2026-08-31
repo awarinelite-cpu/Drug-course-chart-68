@@ -44,22 +44,19 @@
 <script type="module">
   import { initEntryChart } from "../js/entry-chart.js";
 
-  function dayKeyOf(row) { return (row.time || '').slice(0, 10); }
+  function num(v) { return parseFloat(v) || 0; }
+  function dayKeyOf(row) { return row.date || ''; }
 
-  // Running balance for each entry, resetting at the start of each calendar
-  // day (the standard 24-hour I&O period). Rows come in oldest→newest.
-  function deriveIOBalance(ascRows) {
-    let currentDay = null;
-    let running = 0;
-    return ascRows.map(row => {
-      const day = dayKeyOf(row);
-      if (day !== currentDay) { currentDay = day; running = 0; }
-      const intake = parseFloat(row.intakeAmount) || 0;
-      const output = parseFloat(row.outputAmount) || 0;
-      running += intake - output;
-      return { ...row, balance: running };
-    });
+  // Each row's own Total Intake / Total Output / Balance (mirrors the paper
+  // I&O chart, where the Balance column is the net for that reading, not a
+  // running total). The 24-Hour Total row at the bottom of the paper chart
+  // is represented here by the summary card above the table.
+  function deriveIORow(row) {
+    const intake = num(row.oral) + num(row.iv) + num(row.ngPeg) + num(row.other);
+    const output = num(row.urine) + num(row.vomit) + num(row.ngDrainage) + num(row.drainOther);
+    return { ...row, totalIntake: intake, totalOutput: output, balance: intake - output };
   }
+  function deriveIOBalance(ascRows) { return ascRows.map(deriveIORow); }
 
   // Totals for the current 24-hour period (today), used by the summary card
   // and the auto-saved 24-hour summary document.
@@ -68,8 +65,8 @@
     let intake = 0, output = 0;
     rawRows.forEach(row => {
       if (dayKeyOf(row) === today) {
-        intake += parseFloat(row.intakeAmount) || 0;
-        output += parseFloat(row.outputAmount) || 0;
+        intake += num(row.oral) + num(row.iv) + num(row.ngPeg) + num(row.other);
+        output += num(row.urine) + num(row.vomit) + num(row.ngDrainage) + num(row.drainOther);
       }
     });
     return { intake, output, balance: intake - output };
@@ -77,18 +74,26 @@
 
   initEntryChart({
     collectionName: 'intakeOutput',
+    orderField: 'time',
+    sortKeyFrom: ['date', 'clockTime'],
     columns: [
-      { key: 'time', label: 'Time', type: 'datetime-local' },
-      { key: 'intakeType', label: 'Intake Type', type: 'text' },
-      { key: 'intakeAmount', label: 'Intake (ml)', type: 'text' },
-      { key: 'outputType', label: 'Output Type', type: 'text' },
-      { key: 'outputAmount', label: 'Output (ml)', type: 'text' },
-      { key: 'balance', label: 'Balance (ml)', computed: true, abnormal: v => parseFloat(v) < 0, deficitShade: true },
-      { key: 'notes', label: 'Notes', type: 'text' }
+      { key: 'date', label: 'Date', type: 'date' },
+      { key: 'clockTime', label: 'Time', type: 'time' },
+      { key: 'oral', label: 'ORAL (mL)', type: 'text' },
+      { key: 'iv', label: 'IV (mL)', type: 'text' },
+      { key: 'ngPeg', label: 'NG/PEG (mL)', type: 'text' },
+      { key: 'other', label: 'OTHER (mL)', type: 'text' },
+      { key: 'totalIntake', label: 'TOTAL INTAKE (mL)', computed: true },
+      { key: 'urine', label: 'URINE (mL)', type: 'text' },
+      { key: 'vomit', label: 'VOMIT (mL)', type: 'text' },
+      { key: 'ngDrainage', label: 'NG DRAINAGE (mL)', type: 'text' },
+      { key: 'drainOther', label: 'DRAIN/OTHER (mL)', type: 'text' },
+      { key: 'totalOutput', label: 'TOTAL OUTPUT (mL)', computed: true },
+      { key: 'balance', label: 'BALANCE (mL)', computed: true, abnormal: v => parseFloat(v) < 0, deficitShade: true }
     ],
     deriveRows: deriveIOBalance,
     summary: {
-      label: '24-Hour Balance (Today)',
+      label: '24-Hour Total (Today)',
       archivedLabel: 'Balance at Close (Last 24-Hour Period)',
       storeAt: ['intakeOutputSummary', 'current'],
       archivedKey: 'intakeOutputSummary',

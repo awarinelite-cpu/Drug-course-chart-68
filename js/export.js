@@ -353,12 +353,12 @@ function addGlucoseSection(pdf, y, bg) {
 
 function withIOBalance(io) {
   const asc = io.slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-  let day = null, running = 0;
+  const num = v => parseFloat(v) || 0;
+  // Each row's own net for that reading (mirrors the paper I&O chart) — not a running total.
   return asc.map(r => {
-    const d = (r.time || '').slice(0, 10);
-    if (d !== day) { day = d; running = 0; }
-    running += (parseFloat(r.intakeAmount) || 0) - (parseFloat(r.outputAmount) || 0);
-    return { ...r, balance: running };
+    const intake = num(r.oral) + num(r.iv) + num(r.ngPeg) + num(r.other);
+    const output = num(r.urine) + num(r.vomit) + num(r.ngDrainage) + num(r.drainOther);
+    return { ...r, totalIntake: intake, totalOutput: output, balance: intake - output };
   }).sort((a, b) => (b.time || '').localeCompare(a.time || ''));
 }
 
@@ -366,11 +366,18 @@ function addIOSection(pdf, y, io, ioSummary) {
   if (!io.length) return y;
   y = sectionTitle(pdf, y, 'Intake & Output');
   const rows = withIOBalance(io);
-  const body = rows.map(r => [r.time || '', r.intakeType || '', r.intakeAmount || '', r.outputType || '', r.outputAmount || '', r.balance]);
-  y = addTable(pdf, y, ['Time', 'Intake Type', 'Intake (ml)', 'Output Type', 'Output (ml)', 'Balance (ml)'], body, {
+  const body = rows.map(r => [
+    r.date || '', r.clockTime || '',
+    r.oral || '', r.iv || '', r.ngPeg || '', r.other || '', r.totalIntake,
+    r.urine || '', r.vomit || '', r.ngDrainage || '', r.drainOther || '', r.totalOutput,
+    r.balance
+  ]);
+  y = addTable(pdf, y, ['Date', 'Time', 'Oral (ml)', 'IV (ml)', 'NG/PEG (ml)', 'Other (ml)', 'Total Intake (ml)', 'Urine (ml)', 'Vomit (ml)', 'NG Drainage (ml)', 'Drain/Other (ml)', 'Total Output (ml)', 'Balance (ml)'], body, {
+    styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak' },
+    headStyles: { fillColor: [17, 24, 39], fontSize: 6.5 },
     didParseCell(data) {
       if (data.section !== 'body') return;
-      if (data.column.index === 5 && parseFloat(data.cell.raw) < 0) {
+      if (data.column.index === 12 && parseFloat(data.cell.raw) < 0) {
         data.cell.styles.fillColor = [254, 243, 199]; data.cell.styles.textColor = [120, 53, 15]; data.cell.styles.fontStyle = 'bold';
       }
     }
