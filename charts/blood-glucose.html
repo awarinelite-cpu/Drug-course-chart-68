@@ -65,6 +65,7 @@
   <div class="no-print" id="rowControls" style="margin-top:10px;">
     <button class="btn btn-success" onclick="addRow(1)">+ Add Row</button>
     <button class="btn btn-secondary" onclick="removeRow()">− Remove Row</button>
+    <button class="btn btn-primary" id="saveBtn" onclick="manualSave()">Save</button>
   </div>
 </div>
 
@@ -202,6 +203,12 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveChart, 600);
   }
+
+  window.manualSave = function () {
+    clearTimeout(saveTimer);
+    document.getElementById('saveStatus').textContent = 'Saving…';
+    saveChart();
+  };
 
   async function saveChart() {
     if (isArchived) return; // archived charts are read-only
