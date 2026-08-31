@@ -23,10 +23,23 @@
      The print override below undoes the truncation so the full text still
      prints on the paper chart, exactly as before this change. */
   #f_diagnosis[readonly] { cursor:pointer; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; }
-  .diag-edit-btn { border:none; background:none; font-size:14px; padding:2px 6px; cursor:pointer; line-height:1; }
   @media print {
     #f_diagnosis { overflow:visible; white-space:normal; text-overflow:unset; }
   }
+  /* Compact diagnosis popup — deliberately smaller than the other modals
+     (verbal order / bulk upload) since it only ever holds a few lines of
+     text, not a form or a table. */
+  .diag-modal-box { max-width:300px; border-radius:16px; box-shadow:0 12px 32px rgba(0,0,0,.25); }
+  .diag-modal-box .modal-header { padding:12px 14px 8px; border-bottom:none; }
+  .diag-modal-box .modal-header h3 { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#6b7280; }
+  .diag-header-actions { display:flex; align-items:center; gap:2px; }
+  .diag-edit-btn { border:none; background:none; font-size:15px; padding:4px 7px; cursor:pointer; line-height:1; border-radius:8px; color:#374151; }
+  .diag-edit-btn:hover, .diag-edit-btn:active { background:#f3f4f6; }
+  .diag-modal-body { padding:2px 16px 16px; }
+  .diag-full-text { font-size:16px; line-height:1.5; white-space:pre-wrap; margin:0; color:#111827; word-break:break-word; }
+  .diag-edit-textarea { width:100%; font-size:14px; padding:8px 10px; box-sizing:border-box; resize:vertical; border:1px solid #d1d5db; border-radius:10px; font-family:inherit; }
+  .diag-edit-textarea:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.15); }
+  .diag-modal-footer { padding:0 14px 14px; border-top:none; }
 
   .drugs-block { margin-bottom:18px; }
   .drugs-block h3 { font-size:15px; margin:0 0 8px; text-transform:uppercase; }
@@ -125,7 +138,7 @@
     <div class="info-row"><label>Hospital No:</label><span class="val" id="print_hospno"></span></div>
     <div class="info-row"><label>AGE:</label><span class="val" id="print_age"></span></div>
     <div class="info-row"><label>Date of Admission:</label><input type="date" id="f_admission"></div>
-    <div class="info-row"><label>Diagnosis:</label><input type="text" id="f_diagnosis" placeholder="Enter diagnosis for this chart" readonly onclick="openDiagnosisModal()"><button type="button" class="diag-edit-btn no-print" id="diagEditBtn" onclick="openDiagnosisModal(true)" title="Edit diagnosis" aria-label="Edit diagnosis">✏️</button></div>
+    <div class="info-row"><label>Diagnosis:</label><input type="text" id="f_diagnosis" placeholder="Enter diagnosis for this chart" readonly onclick="openDiagnosisModal()"></div>
     <div class="info-row"><label>Discharge Date:</label><input type="date" id="f_discharge"></div>
   </div>
 
@@ -273,21 +286,21 @@
 </div>
 
 <div class="modal-overlay no-print" id="diagModalOverlay" onclick="if(event.target===this) closeDiagnosisModal();">
-  <div class="modal-box" style="max-width:480px;">
+  <div class="modal-box diag-modal-box">
     <div class="modal-header">
       <h3>Diagnosis</h3>
-      <button class="modal-close" onclick="closeDiagnosisModal()">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div id="diagViewMode">
-        <p id="diagFullText" style="font-size:15px; white-space:pre-wrap; margin:0;"></p>
+      <div class="diag-header-actions">
+        <button class="diag-edit-btn" id="diagEditPenBtn" onclick="enterDiagnosisEditMode()" title="Edit diagnosis" aria-label="Edit diagnosis">✏️</button>
+        <button class="diag-edit-btn" onclick="closeDiagnosisModal()" title="Close" aria-label="Close">&times;</button>
       </div>
-      <textarea id="diagEditInput" rows="4" style="width:100%; font-size:14px; padding:8px; box-sizing:border-box; resize:vertical; display:none;" placeholder="Enter diagnosis for this chart"></textarea>
     </div>
-    <div class="modal-footer" id="diagFooterView">
-      <button class="btn btn-secondary" id="diagEditPenBtn" onclick="enterDiagnosisEditMode()">✏️ Edit</button>
+    <div class="modal-body diag-modal-body">
+      <div id="diagViewMode">
+        <p id="diagFullText" class="diag-full-text"></p>
+      </div>
+      <textarea id="diagEditInput" class="diag-edit-textarea" rows="3" style="display:none;" placeholder="Enter diagnosis for this chart"></textarea>
     </div>
-    <div class="modal-footer" id="diagFooterEdit" style="display:none;">
+    <div class="modal-footer diag-modal-footer" id="diagFooterEdit" style="display:none;">
       <button class="btn btn-secondary" onclick="cancelDiagnosisEdit()">Cancel</button>
       <button class="btn btn-primary" onclick="saveDiagnosisEdit()">Save</button>
     </div>
@@ -559,8 +572,10 @@
   };
 
   // Diagnosis field is a readonly, truncated input on the banner (see CSS
-  // above) — tapping it, or the pen icon next to it, opens this modal with
-  // the full text. #f_diagnosis itself stays the source of truth: saveDiagnosisEdit()
+  // above) — tapping it opens this modal with the full text. The pen icon
+  // only lives inside the modal header (not on the banner itself) so the
+  // chart stays uncluttered; tapping it swaps the modal into edit mode.
+  // #f_diagnosis itself stays the source of truth: saveDiagnosisEdit()
   // writes back to it and dispatches an 'input' event so the existing
   // fieldIds/scheduleSave autosave wiring (set up where the chart loads)
   // picks it up exactly as if the user had typed into the input directly.
@@ -568,7 +583,6 @@
     const val = document.getElementById('f_diagnosis').value || '';
     document.getElementById('diagFullText').textContent = val || '(No diagnosis entered)';
     document.getElementById('diagEditInput').value = val;
-    document.getElementById('diagEditPenBtn').style.display = isArchived ? 'none' : '';
     document.getElementById('diagModalOverlay').style.display = 'flex';
     if (startInEdit && !isArchived) window.enterDiagnosisEditMode();
     else showDiagnosisViewMode();
@@ -577,15 +591,16 @@
   function showDiagnosisViewMode() {
     document.getElementById('diagViewMode').style.display = '';
     document.getElementById('diagEditInput').style.display = 'none';
-    document.getElementById('diagFooterView').style.display = 'flex';
     document.getElementById('diagFooterEdit').style.display = 'none';
+    // Archived charts are read-only: hide the edit affordance entirely.
+    document.getElementById('diagEditPenBtn').style.display = isArchived ? 'none' : '';
   }
 
   window.enterDiagnosisEditMode = function () {
     if (isArchived) return; // archived charts are read-only, never written to
     document.getElementById('diagViewMode').style.display = 'none';
     document.getElementById('diagEditInput').style.display = '';
-    document.getElementById('diagFooterView').style.display = 'none';
+    document.getElementById('diagEditPenBtn').style.display = 'none';
     document.getElementById('diagFooterEdit').style.display = 'flex';
     const ta = document.getElementById('diagEditInput');
     setTimeout(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }, 0);
@@ -1585,7 +1600,7 @@
       // Lock the page down to a read-only view: no editing, no status changes.
       document.getElementById('saveStatus').textContent = 'Viewing archived chart (read-only)';
       fieldIds.forEach(id => { const el = document.getElementById(id); if (el) el.readOnly = true; });
-      ['editDrugsBtn', 'verbalOrderBtn', 'bulkUploadBtn', 'editChartBtn', 'statusActionBox', 'diagEditBtn'].forEach(id => {
+      ['editDrugsBtn', 'verbalOrderBtn', 'bulkUploadBtn', 'editChartBtn', 'statusActionBox'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
       });
