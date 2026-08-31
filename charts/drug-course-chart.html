@@ -1903,12 +1903,15 @@
       await Promise.all(deletions);
     }
 
-    let bgData = { chartType: '6point', rows: [] };
+    let bgData = { chartType: '6point', rows6: [], rows3: [] };
     try {
       const bgSnap = await getDoc(doc(db, 'patients', patientId, 'bloodGlucose', 'main'));
       if (bgSnap.exists()) {
         const d = bgSnap.data();
-        bgData = { chartType: d.chartType || '6point', rows: d.rows || [] };
+        // Each chart type (6-point / 3-point) keeps its own saved rows (see
+        // blood-glucose.html) — both must be archived, not just whichever was
+        // on screen last, or switching chart type before discharge would lose data.
+        bgData = { chartType: d.chartType || '6point', rows6: d.rows6 || [], rows3: d.rows3 || [] };
       }
     } catch (e) { /* fine to archive with blank glycemic data if this fails */ }
 

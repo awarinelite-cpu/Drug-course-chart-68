@@ -39,11 +39,24 @@ async function gatherActiveAdmission(patientId) {
   };
 }
 
+// Reads glycemic rows for whichever chart type is active, handling both the
+// current per-type schema (rows6/rows3) and older archived docs that only
+// have a single 'rows' field (which belonged to whichever chartType was
+// active when it was saved).
+function pickGlucoseRows(bg) {
+  const unwrap = arr => (arr || []).map(r => r.cells || r);
+  const chartType = bg.chartType === '3point' ? '3point' : '6point';
+  if (bg.rows6 || bg.rows3) {
+    return { chartType, rows: unwrap(chartType === '6point' ? bg.rows6 : bg.rows3) };
+  }
+  return { chartType, rows: unwrap(bg.rows) };
+}
+
 function hasActiveData(a) {
   const dc = a.drugCourseChart;
   const hasDrug = !!(dc && ((dc.f_diagnosis || '') || (dc.drugs || []).some(d => d && d.name) || (dc.rows || []).some(r => r && (r.date || r.sno))));
   const bg = a.bloodGlucose;
-  const hasBg = !!(bg && (bg.rows || []).some(r => Array.isArray(r) && r.some(cell => cell)));
+  const hasBg = !!(bg && pickGlucoseRows(bg).rows.some(r => Array.isArray(r) && r.some(cell => cell)));
   return hasDrug || hasBg || a.vitals.length > 0 || a.intakeOutput.length > 0 || a.seizure.length > 0;
 }
 
@@ -305,12 +318,28 @@ function addVitalsSection(pdf, y, vitals) {
   });
 }
 
+// A saved row that predates the Time column (added after Date) is one cell
+// short for its chart type — insert a blank Time cell so old values still
+// land under the correct headers instead of shifting one column left.
+const PRE_TIME_COLUMN_COUNT = { '6point': 8, '3point': 5 };
+function migrateGlucoseRow(chartType, row) {
+  if (Array.isArray(row) && row.length === PRE_TIME_COLUMN_COUNT[chartType]) {
+    return [row[0], '', ...row.slice(1)];
+  }
+  return row;
+}
+
 function addGlucoseSection(pdf, y, bg) {
-  if (!bg || !(bg.rows || []).some(r => Array.isArray(r) && r.some(c => c))) return y;
-  const is6 = bg.chartType !== '3point';
-  const head = is6 ? ['Date', 'FBS', '2h PP', 'Pre-Lunch', '2h PL', 'Pre-Dinner', '2h PD', 'Remark'] : ['Date', 'FBS', 'RBS', 'RBS', 'Remark'];
-  const valueCols = is6 ? [1, 2, 3, 4, 5, 6] : [1, 2, 3];
-  const body = bg.rows.filter(r => Array.isArray(r) && r.some(c => c)).map(r => head.map((_, i) => r[i] || ''));
+  if (!bg) return y;
+  const { chartType, rows: rawRows } = pickGlucoseRows(bg);
+  const rows = rawRows.map(r => migrateGlucoseRow(chartType, r));
+  if (!rows.some(r => Array.isArray(r) && r.some(c => c))) return y;
+  const is6 = chartType !== '3point';
+  const head = is6
+    ? ['Date', 'Time', 'FBS', '2h PP', 'Pre-Lunch', '2h PL', 'Pre-Dinner', '2h PD', 'Remark']
+    : ['Date', 'Time', 'FBS', 'RBS', 'RBS', 'Remark'];
+  const valueCols = is6 ? [2, 3, 4, 5, 6, 7] : [2, 3, 4];
+  const body = rows.filter(r => Array.isArray(r) && r.some(c => c)).map(r => head.map((_, i) => r[i] || ''));
   y = sectionTitle(pdf, y, 'Glycemic Chart (' + (is6 ? '6 Points' : '3 Points') + ')');
   return addTable(pdf, y, head, body, {
     didParseCell(data) {

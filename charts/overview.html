@@ -125,7 +125,8 @@
     const drugData = drugSnap.exists() ? drugSnap.data() : null;
     const bgData = bgSnap.exists() ? bgSnap.data() : null;
     const hasDrugData = !!(drugData && ((drugData.f_diagnosis || '') || (drugData.drugs || []).some(d => d && d.name) || (drugData.rows || []).some(r => r && (r.date || r.sno))));
-    const hasBgData = !!(bgData && (bgData.rows || []).some(r => Array.isArray(r) && r.some(cell => cell)));
+    const hasBgCells = arr => (arr || []).some(r => (r.cells || r || []).some(cell => cell));
+    const hasBgData = !!(bgData && (hasBgCells(bgData.rows6) || hasBgCells(bgData.rows3) || hasBgCells(bgData.rows)));
     const hasActiveData = hasDrugData || hasBgData || !vitalsSnap.empty || !ioSnap.empty || !seizureSnap.empty;
 
     if (hasActiveData) {
