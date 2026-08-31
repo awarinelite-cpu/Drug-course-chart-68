@@ -67,6 +67,12 @@ table.entries { width: 100%; border-collapse: collapse; margin-top: 14px; }
 table.entries th, table.entries td { border: 1px solid #d1d5db; padding: 8px 6px; font-size: 13px; text-align: center; }
 table.entries th { background: #f3f4f6; text-transform: uppercase; font-size: 11px; }
 
+/* Lets any wide table (more columns than fit a phone screen) scroll
+   horizontally within its own box instead of being clipped. Swipe left/right
+   over the table to see columns that run off-screen. */
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-wrap table { min-width: max-content; }
+
 /* Abnormal-value flagging shared across vitals, glycemic and intake/output charts */
 .flag-abnormal { background: #fee2e2 !important; color: #7f1d1d; font-weight: bold; }
 .flag-deficit { background: #fef3c7 !important; color: #78350f; font-weight: bold; }
