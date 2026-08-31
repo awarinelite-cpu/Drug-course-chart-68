@@ -1,8 +1,6 @@
 import { auth, db } from "./firebase.js";
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-
-const SEED_ADMIN_EMAIL = "awarinelite@gmail.com";
+import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 // Every page calls requireAuth() twice: once from its own script, once from
 // nav.js (for the hamburger menu's name/role display). Without this cache
@@ -43,26 +41,10 @@ export function requireAuth(onReady) {
     }
 
     if (!snap.exists()) {
-      if (user.email === SEED_ADMIN_EMAIL) {
-        try {
-          await setDoc(userRef, {
-            name: "Admin",
-            email: user.email,
-            role: "admin",
-            createdAt: serverTimestamp()
-          });
-          snap = await getDoc(userRef);
-        } catch (e) {
-          alert("Couldn't create your admin profile: " + (e.code || e.message || 'unknown error') +
-            "\n\nCheck that Firestore security rules have been published for this project.");
-          return;
-        }
-      } else {
-        alert("Your account isn't set up yet. Please contact your admin.");
-        await signOut(auth);
-        window.location.href = loginPath();
-        return;
-      }
+      alert("Your account isn't set up yet. Please contact your admin.");
+      await signOut(auth);
+      window.location.href = loginPath();
+      return;
     }
 
     const profile = snap.data();

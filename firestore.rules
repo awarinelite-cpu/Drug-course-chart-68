@@ -17,12 +17,7 @@ service cloud.firestore {
     // User profiles / roles
     match /users/{uid} {
       allow read: if isKnownUser();
-      allow create: if isSignedIn() && (
-        isAdmin() ||
-        (request.auth.uid == uid
-          && request.auth.token.email == 'awarinelite@gmail.com'
-          && !exists(/databases/$(database)/documents/users/$(uid)))
-      );
+      allow create: if isSignedIn() && isAdmin();
       // Admins can update anything. A signed-in user may also edit their own
       // profile (name, phone, department, etc.) but may not change their own
       // role or email through this path.
