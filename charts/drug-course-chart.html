@@ -249,7 +249,7 @@
       <button class="modal-close" onclick="closeCareModal()">&times;</button>
     </div>
     <div class="modal-body" id="careInstructionsList"></div>
-    <div class="modal-footer">
+    <div class="modal-footer" id="careModalFooter">
       <textarea id="careInstructionInput" rows="2" placeholder="e.g. Nurse bed 30° head up&#10;Give IV Labetalol if BP &gt;200mmHg"></textarea>
       <button class="btn btn-primary" onclick="submitCareInstruction()">Add</button>
     </div>
@@ -1358,7 +1358,7 @@
       const bullet = document.createElement('div');
       bullet.className = 'care-bullet';
 
-      if (editingCareIndex === i) {
+      if (!isArchived && editingCareIndex === i) {
         const editArea = document.createElement('textarea');
         editArea.rows = 2;
         editArea.value = o.text;
@@ -1404,25 +1404,27 @@
         meta.textContent = (o.nurse || 'Unknown') + ' · ' + (o.at ? new Date(o.at).toLocaleString() : '') + (o.editedAt ? ' (edited)' : '');
         bullet.appendChild(meta);
 
-        const editBtn = document.createElement('button');
-        editBtn.className = 'btn btn-secondary';
-        editBtn.style.padding = '3px 9px';
-        editBtn.style.fontSize = '11px';
-        editBtn.style.marginTop = '6px';
-        editBtn.textContent = 'Edit';
-        editBtn.onclick = () => { editingCareIndex = i; renderCareList(); };
+        if (!isArchived) {
+          const editBtn = document.createElement('button');
+          editBtn.className = 'btn btn-secondary';
+          editBtn.style.padding = '3px 9px';
+          editBtn.style.fontSize = '11px';
+          editBtn.style.marginTop = '6px';
+          editBtn.textContent = 'Edit';
+          editBtn.onclick = () => { editingCareIndex = i; renderCareList(); };
 
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'btn btn-danger';
-        deleteBtn.style.padding = '3px 9px';
-        deleteBtn.style.fontSize = '11px';
-        deleteBtn.style.marginTop = '6px';
-        deleteBtn.style.marginLeft = '6px';
-        deleteBtn.textContent = 'Delete';
-        deleteBtn.onclick = () => deleteCareInstruction(i);
+          const deleteBtn = document.createElement('button');
+          deleteBtn.className = 'btn btn-danger';
+          deleteBtn.style.padding = '3px 9px';
+          deleteBtn.style.fontSize = '11px';
+          deleteBtn.style.marginTop = '6px';
+          deleteBtn.style.marginLeft = '6px';
+          deleteBtn.textContent = 'Delete';
+          deleteBtn.onclick = () => deleteCareInstruction(i);
 
-        bullet.appendChild(editBtn);
-        bullet.appendChild(deleteBtn);
+          bullet.appendChild(editBtn);
+          bullet.appendChild(deleteBtn);
+        }
       }
       box.appendChild(bullet);
     });
@@ -1452,8 +1454,9 @@
 
   window.openCareModal = function () {
     renderCareList();
+    document.getElementById('careModalFooter').style.display = isArchived ? 'none' : '';
     document.getElementById('careModalOverlay').style.display = 'flex';
-    document.getElementById('careInstructionInput').focus();
+    if (!isArchived) document.getElementById('careInstructionInput').focus();
   };
 
   window.closeCareModal = function () {
@@ -1974,7 +1977,7 @@
       // Lock the page down to a read-only view: no editing, no status changes.
       document.getElementById('saveStatus').textContent = 'Viewing archived chart (read-only)';
       fieldIds.forEach(id => { const el = document.getElementById(id); if (el) el.readOnly = true; });
-      ['editDrugsBtn', 'verbalOrderBtn', 'careInstructionsBtn', 'bulkUploadBtn', 'editChartBtn', 'statusActionBox'].forEach(id => {
+      ['editDrugsBtn', 'verbalOrderBtn', 'bulkUploadBtn', 'editChartBtn', 'statusActionBox'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
       });
