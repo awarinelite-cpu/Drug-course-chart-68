@@ -67,6 +67,7 @@
     <button class="btn btn-secondary" onclick="removeRow()">− Remove Row</button>
     <button class="btn btn-primary" id="saveBtn" onclick="manualSave()">Save</button>
   </div>
+  <div id="saveStatusBottom" class="no-print" style="font-size:13px; color:#555; margin-top:10px; text-align:center; font-weight:bold;">—</div>
 </div>
 
 <script type="module">
@@ -198,15 +199,21 @@
     if (tbody.rows.length > 0) { tbody.deleteRow(tbody.rows.length - 1); scheduleSave(); }
   };
 
+  function setSaveStatus(text) {
+    document.getElementById('saveStatus').textContent = text;
+    const bottom = document.getElementById('saveStatusBottom');
+    if (bottom) bottom.textContent = text;
+  }
+
   function scheduleSave() {
-    document.getElementById('saveStatus').textContent = 'Saving…';
+    setSaveStatus('Saving…');
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveChart, 600);
   }
 
   window.manualSave = function () {
     clearTimeout(saveTimer);
-    document.getElementById('saveStatus').textContent = 'Saving…';
+    setSaveStatus('Saving…');
     saveChart();
   };
 
@@ -220,9 +227,9 @@
     });
     try {
       await setDoc(chartRef, { chartType: currentType, rows, updatedAt: serverTimestamp() }, { merge: true });
-      document.getElementById('saveStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
+      setSaveStatus('Saved ' + new Date().toLocaleTimeString());
     } catch (e) {
-      document.getElementById('saveStatus').textContent = 'Save failed: ' + (e.code || e.message);
+      setSaveStatus('Save failed: ' + (e.code || e.message));
     }
   }
 
@@ -260,7 +267,7 @@
     }
 
     if (isArchived) {
-      document.getElementById('saveStatus').textContent = 'Viewing archived chart (read-only)';
+      setSaveStatus('Viewing archived chart (read-only)');
       document.querySelector('.toggle-row').style.display = 'none';
       document.getElementById('rowControls').style.display = 'none';
       if (admissionMeta) {
@@ -270,7 +277,7 @@
         banner.style.display = 'block';
       }
     } else {
-      document.getElementById('saveStatus').textContent = 'Changes save automatically';
+      setSaveStatus('Changes save automatically — tap Save to confirm');
     }
   });
 </script>
