@@ -77,6 +77,10 @@
   .care-bullet-row .care-dot { font-size:15px; line-height:1.4; color:#b45309; }
   .care-text { font-size:13px; white-space:pre-wrap; flex:1; }
   .care-meta { font-size:10px; color:#8a6d3b; margin-top:3px; }
+  .audit-entry { border-bottom:1px solid #f0f0f0; padding:6px 0; }
+  .audit-entry:last-child { border-bottom:none; }
+  .audit-entry .audit-meta { font-size:11px; color:#555; font-weight:bold; margin-bottom:2px; }
+  .audit-entry .audit-text { font-size:13px; white-space:pre-wrap; word-break:break-word; }
   .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:1000; padding:16px; }
   .modal-box { background:#fff; border-radius:10px; width:100%; max-width:480px; max-height:82vh; display:flex; flex-direction:column; overflow:hidden; }
   .modal-header { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid #e5e7eb; }
@@ -150,6 +154,7 @@
 
   <div class="no-print" style="margin:-4px 0 14px;">
     <button class="btn btn-secondary" id="careInstructionsBtn" onclick="openCareModal()">+ Care Instructions</button>
+    <button class="btn btn-secondary" id="auditLogBtn" onclick="openAuditModal()">🕓 Audit Log</button>
   </div>
 
   <div class="drugs-block">
@@ -248,6 +253,16 @@
       <textarea id="careInstructionInput" rows="2" placeholder="e.g. Nurse bed 30° head up&#10;Give IV Labetalol if BP &gt;200mmHg"></textarea>
       <button class="btn btn-primary" onclick="submitCareInstruction()">Add</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay no-print" id="auditModalOverlay" onclick="if(event.target===this) closeAuditModal();">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>🕓 Audit Log</h3>
+      <button class="modal-close" onclick="closeAuditModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="auditLogList"></div>
   </div>
 </div>
 
@@ -360,12 +375,39 @@
   let drugs = []; // { name, route, frequency, action, duration }
   let drugsEditMode = false;
   let editingDrugRows = new Set(); // indices of drug rows currently unlocked for editing
+  let drugRowSnapshots = {}; // index -> JSON snapshot of the drug row taken when its edit opened, for audit diffing
   let chartRows = []; // { date, sno, time, dose, route, nurse, remark }
   let chartEditMode = false;
   let editingChartRows = new Set(); // indices of chart rows currently unlocked for editing
+  let chartRowSnapshots = {}; // index -> JSON snapshot of the chart row taken when its edit opened, for audit diffing
   let currentNurseName = '';
   let verbalOrders = []; // { text, nurse, at }
   let careInstructions = []; // { text, nurse, at, editedAt } — vitals/standing-order bullets from the doctor
+  let auditLog = []; // { at, nurse, text } — lightweight change log; append-only, never edited or deleted from the UI
+
+  function logAudit(text) {
+    auditLog.push({ at: new Date().toISOString(), nurse: currentNurseName, text });
+    renderAuditBtn();
+  }
+
+  function renderAuditBtn() {
+    const btn = document.getElementById('auditLogBtn');
+    if (btn) btn.textContent = '🕓 Audit Log' + (auditLog.length ? ' (' + auditLog.length + ')' : '');
+  }
+
+  // Compares `before` and `after` on the given fields (a { field: label } map)
+  // and returns one human-readable "Label: "old" → "new"" line per changed
+  // field. Used to build a single audit-log entry per edit session instead
+  // of one per keystroke.
+  function diffFields(before, after, fieldLabels) {
+    const changes = [];
+    Object.keys(fieldLabels).forEach(f => {
+      const a = (before[f] || '').toString();
+      const b = (after[f] || '').toString();
+      if (a !== b) changes.push(fieldLabels[f] + ': "' + (a || '—') + '" \u2192 "' + (b || '—') + '"');
+    });
+    return changes;
+  }
 
   // Colors so a drug's action state (ongoing/completed/etc.) is easy to spot at a glance.
   const ACTION_COLORS = {
@@ -757,7 +799,7 @@
       pencilBtn.className = 'row-edit-btn';
       pencilBtn.textContent = '🖊️';
       pencilBtn.title = 'Edit this row';
-      pencilBtn.onclick = () => { editingDrugRows.add(i); renderDrugsTable(); };
+      pencilBtn.onclick = () => { drugRowSnapshots[i] = JSON.stringify(d); editingDrugRows.add(i); renderDrugsTable(); };
       tdEdit.appendChild(pencilBtn);
       tr.appendChild(tdEdit);
     }
@@ -805,7 +847,18 @@
     lockBtn.className = 'row-lock-btn';
     lockBtn.textContent = '✓';
     lockBtn.title = 'Done editing this row';
-    lockBtn.onclick = () => { editingDrugRows.delete(i); renderDrugsTable(); };
+    lockBtn.onclick = () => {
+      const before = JSON.parse(drugRowSnapshots[i] || '{}');
+      const wasBlank = !before.name && !before.route && !before.frequency && !before.action && !before.duration;
+      const changes = diffFields(before, d, { name: 'Name', route: 'Route', frequency: 'Frequency', action: 'Action', duration: 'Duration' });
+      if (changes.length) {
+        const prefix = wasBlank ? ('Drug added (#' + (i + 1) + '): ') : ('Drug #' + (i + 1) + ' edited: ');
+        logAudit(prefix + changes.join(', '));
+      }
+      delete drugRowSnapshots[i];
+      editingDrugRows.delete(i);
+      renderDrugsTable();
+    };
     tdLock.appendChild(lockBtn);
     tr.appendChild(tdLock);
 
@@ -870,6 +923,8 @@
     removeBtn.textContent = 'x';
     removeBtn.onclick = () => {
       if (confirm('Remove this drug from the list?')) {
+        logAudit('Drug removed (#' + (i + 1) + '): ' + (d.name || '(unnamed)'));
+        delete drugRowSnapshots[i];
         drugs.splice(i, 1);
         editingDrugRows.delete(i);
         renderDrugsTable();
@@ -908,7 +963,9 @@
 
   window.addDrug = function () {
     drugs.push({ name: '', route: '', frequency: '', action: '', duration: '', createdAt: new Date().toISOString() });
-    editingDrugRows.add(drugs.length - 1); // a freshly added row opens straight into edit mode
+    const newIndex = drugs.length - 1;
+    drugRowSnapshots[newIndex] = JSON.stringify({ name: '', route: '', frequency: '', action: '', duration: '' });
+    editingDrugRows.add(newIndex); // a freshly added row opens straight into edit mode
     renderDrugsTable();
     refreshDrugSnoList();
     scheduleSave();
@@ -1228,6 +1285,7 @@
 
   async function deleteVerbalOrder(i) {
     if (!confirm('Delete this verbal order? This cannot be undone.')) return;
+    logAudit('Verbal order deleted: ' + (verbalOrders[i].text || '').slice(0, 80));
     verbalOrders.splice(i, 1);
     if (editingVerbalIndex === i) editingVerbalIndex = -1;
     renderVerbalOrderList();
@@ -1240,6 +1298,7 @@
     if (!trimmed) return;
     verbalOrders[i].text = trimmed;
     verbalOrders[i].editedAt = new Date().toISOString();
+    logAudit('Verbal order edited: ' + trimmed.slice(0, 80));
     editingVerbalIndex = -1;
     renderVerbalOrderList();
     await saveChart();
@@ -1261,6 +1320,7 @@
     const text = input.value.trim();
     if (!text) return;
     verbalOrders.push({ text, nurse: currentNurseName, at: new Date().toISOString() });
+    logAudit('Verbal order added: ' + text.slice(0, 80));
     input.value = '';
     renderVerbalOrderList();
     renderVerbalOrderBtn();
@@ -1370,6 +1430,7 @@
 
   async function deleteCareInstruction(i) {
     if (!confirm('Delete this care instruction? This cannot be undone.')) return;
+    logAudit('Care instruction deleted: ' + (careInstructions[i].text || '').slice(0, 80));
     careInstructions.splice(i, 1);
     if (editingCareIndex === i) editingCareIndex = -1;
     renderCareList();
@@ -1382,6 +1443,7 @@
     if (!trimmed) return;
     careInstructions[i].text = trimmed;
     careInstructions[i].editedAt = new Date().toISOString();
+    logAudit('Care instruction edited: ' + trimmed.slice(0, 80));
     editingCareIndex = -1;
     renderCareList();
     renderCareBtn();
@@ -1406,10 +1468,47 @@
     const lines = input.value.split('\n').map(l => l.trim()).filter(Boolean);
     if (!lines.length) return;
     lines.forEach(text => careInstructions.push({ text, nurse: currentNurseName, at: new Date().toISOString() }));
+    lines.forEach(text => logAudit('Care instruction added: ' + text.slice(0, 80)));
     input.value = '';
     renderCareList();
     renderCareBtn();
     await saveChart();
+  };
+
+  // --- Audit Log — read-only, append-only change history --------------
+  // Deliberately no Edit/Delete here: the whole point is that once
+  // something is logged, nobody (including the nurse who caused it) can
+  // quietly make it disappear. Newest entries first, since that's what
+  // matters when a dose gets questioned.
+  function renderAuditList() {
+    const box = document.getElementById('auditLogList');
+    box.innerHTML = '';
+    if (!auditLog.length) {
+      box.innerHTML = '<p style="color:#777; font-size:13px; margin:0;">No changes logged yet.</p>';
+      return;
+    }
+    auditLog.slice().reverse().forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'audit-entry';
+      const meta = document.createElement('div');
+      meta.className = 'audit-meta';
+      meta.textContent = (entry.nurse || 'Unknown') + ' · ' + (entry.at ? new Date(entry.at).toLocaleString() : '');
+      const text = document.createElement('div');
+      text.className = 'audit-text';
+      text.textContent = entry.text;
+      row.appendChild(meta);
+      row.appendChild(text);
+      box.appendChild(row);
+    });
+  }
+
+  window.openAuditModal = function () {
+    renderAuditList();
+    document.getElementById('auditModalOverlay').style.display = 'flex';
+  };
+
+  window.closeAuditModal = function () {
+    document.getElementById('auditModalOverlay').style.display = 'none';
   };
 
   function renderChartTable() {
@@ -1455,6 +1554,7 @@
       pencilBtn.title = 'Edit this row';
       pencilBtn.onclick = () => {
         const i = chartRows.indexOf(row);
+        chartRowSnapshots[i] = JSON.stringify(row);
         editingChartRows.add(i);
         renderChartTable();
       };
@@ -1489,7 +1589,17 @@
       lockBtn.className = 'row-lock-btn';
       lockBtn.textContent = '✓';
       lockBtn.title = 'Done editing this row';
-      lockBtn.onclick = () => { editingChartRows.delete(i); renderChartTable(); renderDrugsTable(); };
+      lockBtn.onclick = () => {
+        const before = JSON.parse(chartRowSnapshots[i] || '{}');
+        const wasBlank = !before.sno && !before.date && !before.time;
+        const changes = diffFields(before, row, { date: 'Date', sno: 'Drug S/N', time: 'Time', dose: 'Dose', route: 'Route', remark: 'Remark' });
+        if (changes.length) {
+          const prefix = wasBlank ? ('Dose recorded (row ' + (i + 1) + '): ') : ('Chart entry edited (row ' + (i + 1) + '): ');
+          logAudit(prefix + changes.join(', '));
+        }
+        delete chartRowSnapshots[i];
+        editingChartRows.delete(i); renderChartTable(); renderDrugsTable();
+      };
       tdLock.appendChild(lockBtn);
       tr.appendChild(tdLock);
 
@@ -1594,13 +1704,20 @@
   window.addRow = function (count) {
     for (let i = 0; i < count; i++) {
       chartRows.push(defaultRow());
-      editingChartRows.add(chartRows.length - 1); // a freshly added row opens straight into edit mode
+      const newIndex = chartRows.length - 1;
+      chartRowSnapshots[newIndex] = JSON.stringify(defaultRow());
+      editingChartRows.add(newIndex); // a freshly added row opens straight into edit mode
     }
     renderChartTable();
     scheduleSave();
   };
   window.removeRow = function () {
     if (chartRows.length > 0) {
+      const last = chartRows[chartRows.length - 1];
+      if (last && (last.sno || last.date || last.time)) {
+        logAudit('Chart row removed (row ' + chartRows.length + '): Drug S/N="' + (last.sno || '') + '", Date=' + (last.date || '—') + ', Time=' + (last.time || '—'));
+      }
+      delete chartRowSnapshots[chartRows.length - 1];
       chartRows.pop();
       editingChartRows.delete(chartRows.length);
       renderChartTable();
@@ -1622,6 +1739,7 @@
     data.drugs = drugs;
     data.verbalOrders = verbalOrders;
     data.careInstructions = careInstructions;
+    data.auditLog = auditLog;
     data.updatedAt = serverTimestamp();
     try {
       await setDoc(chartRef, data, { merge: true });
@@ -1664,6 +1782,7 @@
     }
     if (!confirm('Confirm: ' + label + '?\n\nAll care records for this admission (drug chart, vitals, glycemic chart, intake & output, seizure chart) will be saved together to Overview, and fresh charts will open for this patient.')) return;
 
+    logAudit('Patient status set: ' + label);
     msg.innerHTML = 'Saving all charts for this admission…';
     await saveChart(); // flush latest drug-chart edits first
 
@@ -1710,6 +1829,7 @@
     drugChartData.drugs = drugs;
     drugChartData.verbalOrders = verbalOrders;
     drugChartData.careInstructions = careInstructions;
+    drugChartData.auditLog = auditLog;
 
     const admissionDoc = {
       diagnosis: document.getElementById('f_diagnosis').value,
@@ -1754,6 +1874,7 @@
     blankDrugChart.drugs = Array(8).fill(null).map(() => ({ name: '', route: '', frequency: '', action: '', duration: '' }));
     blankDrugChart.verbalOrders = [];
     blankDrugChart.careInstructions = [];
+    blankDrugChart.auditLog = [];
     blankDrugChart.updatedAt = serverTimestamp();
 
     try {
@@ -1827,6 +1948,7 @@
       renderDrugsTable();
       verbalOrders = data.verbalOrders || [];
       careInstructions = data.careInstructions || [];
+      auditLog = data.auditLog || [];
       if (isArchived && admissionMeta) {
         const when = admissionMeta.archivedAtDisplay || '';
         const banner = document.getElementById('archiveBanner');
@@ -1839,9 +1961,11 @@
       chartRows = Array(18).fill(null).map(() => defaultRow());
       verbalOrders = [];
       careInstructions = [];
+      auditLog = [];
     }
     renderVerbalOrderBtn();
     renderCareBtn();
+    renderAuditBtn();
     renderChartTable();
     checkDrugCompletion();
     fieldIds.forEach(id => document.getElementById(id).addEventListener('input', scheduleSave));
