@@ -49,6 +49,7 @@
 <div class="sheet" id="sheet">
   <div class="sheet-title" id="chartTitle">6 Points Glycemic Chart</div>
   <div class="unit-note">All glucose readings in mg/dL</div>
+  <div class="unit-note" id="rangeNote">Normal: Fasting/Pre-meal 70–99 &nbsp;•&nbsp; 2hrs Post-meal &lt;140 &nbsp;•&nbsp; readings outside these ranges are flagged red</div>
 
   <div class="toggle-row no-print">
     <button class="toggle-btn" id="btn6" onclick="switchType('6point')">6-Point</button>
@@ -90,12 +91,12 @@
       columns: [
         { label: 'Date', type: 'date' },
         { label: 'Time', type: 'time' },
-        { label: 'FBS', type: 'text', glucose: true },
-        { label: '2hrs Post Prandial', type: 'text', glucose: true },
-        { label: 'Pre-Lunch', type: 'text', glucose: true },
-        { label: '2hrs Post Lunch', type: 'text', glucose: true },
-        { label: 'Pre-Dinner', type: 'text', glucose: true },
-        { label: '2hrs Post Dinner', type: 'text', glucose: true },
+        { label: 'FBS', type: 'text', glucose: true, glucoseType: 'fasting' },
+        { label: '2hrs Post Prandial', type: 'text', glucose: true, glucoseType: 'post' },
+        { label: 'Pre-Lunch', type: 'text', glucose: true, glucoseType: 'fasting' },
+        { label: '2hrs Post Lunch', type: 'text', glucose: true, glucoseType: 'post' },
+        { label: 'Pre-Dinner', type: 'text', glucose: true, glucoseType: 'fasting' },
+        { label: '2hrs Post Dinner', type: 'text', glucose: true, glucoseType: 'post' },
         { label: 'Remark', type: 'text' }
       ]
     },
@@ -104,9 +105,9 @@
       columns: [
         { label: 'Date', type: 'date' },
         { label: 'Time', type: 'time' },
-        { label: 'FBS', type: 'text', glucose: true },
-        { label: 'RBS', type: 'text', glucose: true },
-        { label: 'RBS', type: 'text', glucose: true },
+        { label: 'FBS', type: 'text', glucose: true, glucoseType: 'fasting' },
+        { label: 'RBS', type: 'text', glucose: true, glucoseType: 'random' },
+        { label: 'RBS', type: 'text', glucose: true, glucoseType: 'random' },
         { label: 'Remark', type: 'text' }
       ]
     }
@@ -124,10 +125,17 @@
     return row;
   }
 
-  // Inpatient glycemic flags: hypoglycemia below 70 mg/dL, hyperglycemia above 180 mg/dL.
-  function isAbnormalGlucose(v) {
+  // 6-point glycemic chart normal ranges:
+  //   Fasting / pre-meal (before breakfast, lunch, dinner): 70–99 mg/dL
+  //   2 hrs post-prandial (after breakfast, lunch, dinner): under 140 mg/dL
+  // Anything outside these ranges is flagged red. Random (3-point RBS) readings
+  // fall back to a general hypo/hyperglycemia flag since no fixed target applies.
+  function isAbnormalGlucose(v, glucoseType) {
     const n = parseFloat(v);
-    return !isNaN(n) && (n < 70 || n > 180);
+    if (isNaN(n)) return false;
+    if (glucoseType === 'fasting') return n < 70 || n > 99;
+    if (glucoseType === 'post') return n < 70 || n >= 140;
+    return n < 70 || n > 180;
   }
 
   let chartRef;
@@ -171,7 +179,7 @@
         const input = document.createElement('input');
         input.type = col.type;
         if (dataRow && dataRow[c] !== undefined) input.value = dataRow[c];
-        const refreshShading = () => td.classList.toggle('flag-abnormal', col.glucose && isAbnormalGlucose(input.value));
+        const refreshShading = () => td.classList.toggle('flag-abnormal', col.glucose && isAbnormalGlucose(input.value, col.glucoseType));
         if (isArchived) {
           input.readOnly = true;
         } else {
