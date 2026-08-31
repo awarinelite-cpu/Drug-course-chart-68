@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="../icons/icon-192.png">
+<title>Overall Nurse</title>
+<link rel="stylesheet" href="../js/styles.css">
+<style>
+  .period-label { font-size: 13px; font-weight: bold; color: #111827; }
+  .who-label { font-size: 12px; color: #555; margin-top: 4px; }
+  table.report th, table.report td { border: 1px solid #d1d5db; padding: 5px 4px; font-size: 12px; text-align: center; }
+  table.report th { background: #f3f4f6; text-transform: uppercase; font-size: 10px; white-space: normal !important; }
+  table.report td.ward-name { font-weight: bold; text-align: left; white-space: nowrap; }
+  table.report input {
+    width: 56px; padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; text-align: center;
+  }
+  table.report input.duty-input { width: 100px; text-align: left; }
+  table.report tr.totals-row td { font-weight: bold; background: #eff6ff; }
+  .lock-btn {
+    border: none; border-radius: 6px; padding: 5px 8px; font-size: 11px; font-weight: bold; cursor: pointer; white-space: nowrap;
+  }
+  .lock-btn.locked { background: #fee2e2; color: #7f1d1d; }
+  .lock-btn.open { background: #dcfce7; color: #14532d; }
+  .save-status { font-size: 11px; color: #6b7280; min-height: 14px; }
+</style>
+</head>
+<body>
+<script type="module" src="../js/nav.js"></script>
+<div class="topbar">
+  <div class="brand">Overall Nurse</div>
+  <div class="right">
+    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="gnavGoBack('role-select.html')">Back</button>
+    <button class="btn btn-primary" style="padding:6px 12px;" onclick="window.print()">Print</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="card-box" id="deniedBox" style="display:none; text-align:center;">
+    <h3 style="margin-top:0;">Not the Overall Nurse</h3>
+    <p style="font-size:13px; color:#555;" id="deniedMsg"></p>
+    <button class="btn btn-primary" style="padding:8px 14px;" onclick="window.location.href='role-select.html'">Go to Role Selection</button>
+  </div>
+
+  <div id="reportBox" style="display:none;">
+    <div class="card-box">
+      <div class="period-label" id="periodLabel">Loading…</div>
+      <div class="who-label" id="whoLabel"></div>
+    </div>
+
+    <div class="card-box">
+      <h3 style="margin-top:0;">All Wards — 24-Hour Statistics</h3>
+      <p style="font-size:12px; color:#555; margin-top:-6px;">Figures update live as ward nurses submit their reports. Tap any cell to edit. The 🔒/🔓 button grants a ward permission to re-edit its own submitted report.</p>
+      <div class="table-wrap">
+        <table class="report" id="reportTable"></table>
+      </div>
+      <div class="save-status" id="saveStatus"></div>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+  import { requireAuth } from "../js/auth-guard.js";
+  import { db } from "../js/firebase.js";
+  import {
+    doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, writeBatch
+  } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { WARDS, STAT_FIELDS, reportDateId, reportPeriodLabel, weekId } from "../js/nurses-report-common.js";
+
+  const wk = weekId();
+  const dateId = reportDateId();
+  const roleRef = doc(db, 'nurseReportRoles', wk);
+  const wardsCol = collection(db, 'nurseReports', dateId, 'wards');
+
+  document.getElementById('periodLabel').textContent = reportPeriodLabel(dateId);
+
+  let currentUser = null, currentProfile = null;
+  const wardData = {};       // wardKey -> latest known Firestore data
+  const rowRefs = {};        // wardKey -> { inputs: {field: <input>}, dutyInput, lockBtn }
+  const totalCells = {};     // field -> <td>
+
+  function setSaveStatus(msg, isError) {
+    const el = document.getElementById('saveStatus');
+    el.textContent = msg;
+    el.style.color = isError ? '#dc2626' : '#6b7280';
+  }
+
+  async function saveField(wardKey, field, value) {
+    try {
+      await updateDoc(doc(wardsCol, wardKey), {
+        [field]: value, updatedAt: serverTimestamp(), updatedBy: currentProfile.name || 'Unknown'
+      });
+      setSaveStatus('Saved.', false);
+    } catch (e) {
+      setSaveStatus("Couldn't save: " + (e.code || e.message || 'unknown error'), true);
+    }
+  }
+
+  async function toggleLock(wardKey) {
+    const locked = !!(wardData[wardKey] && wardData[wardKey].locked);
+    try {
+      await updateDoc(doc(wardsCol, wardKey), { locked: !locked });
+    } catch (e) {
+      setSaveStatus("Couldn't change access: " + (e.code || e.message || 'unknown error'), true);
+    }
+  }
+
+  function buildTable() {
+    const table = document.getElementById('reportTable');
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    ['Ward', ...STAT_FIELDS.map(f => f.label), 'Nurses on Duty', 'Access'].forEach(label => {
+      const th = document.createElement('th');
+      th.textContent = label;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    WARDS.forEach(w => {
+      const tr = document.createElement('tr');
+      const nameTd = document.createElement('td');
+      nameTd.className = 'ward-name';
+      nameTd.textContent = w.label;
+      tr.appendChild(nameTd);
+
+      const inputs = {};
+      STAT_FIELDS.forEach(f => {
+        const td = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.inputMode = 'numeric';
+        input.value = f.key === 'beds' ? w.beds : 0;
+        input.addEventListener('change', () => {
+          const num = parseFloat(input.value);
+          const val = isNaN(num) ? 0 : num;
+          input.value = val;
+          wardData[w.key] = wardData[w.key] || {};
+          wardData[w.key][f.key] = val;
+          recomputeTotals();
+          saveField(w.key, f.key, val);
+        });
+        td.appendChild(input);
+        tr.appendChild(td);
+        inputs[f.key] = input;
+      });
+
+      const dutyTd = document.createElement('td');
+      const dutyInput = document.createElement('input');
+      dutyInput.type = 'text';
+      dutyInput.className = 'duty-input';
+      dutyInput.placeholder = 'Nurse name';
+      dutyInput.addEventListener('change', () => {
+        wardData[w.key] = wardData[w.key] || {};
+        wardData[w.key].nurseOnDuty = dutyInput.value;
+        saveField(w.key, 'nurseOnDuty', dutyInput.value);
+      });
+      dutyTd.appendChild(dutyInput);
+      tr.appendChild(dutyTd);
+
+      const accessTd = document.createElement('td');
+      const lockBtn = document.createElement('button');
+      lockBtn.className = 'lock-btn locked';
+      lockBtn.textContent = '🔒 Locked';
+      lockBtn.addEventListener('click', () => toggleLock(w.key));
+      accessTd.appendChild(lockBtn);
+      tr.appendChild(accessTd);
+
+      tbody.appendChild(tr);
+      rowRefs[w.key] = { inputs, dutyInput, lockBtn };
+    });
+    table.appendChild(tbody);
+
+    const totalsTr = document.createElement('tr');
+    totalsTr.className = 'totals-row';
+    const totalsLabelTd = document.createElement('td');
+    totalsLabelTd.className = 'ward-name';
+    totalsLabelTd.textContent = 'TOTAL';
+    totalsTr.appendChild(totalsLabelTd);
+    STAT_FIELDS.forEach(f => {
+      const td = document.createElement('td');
+      td.textContent = '0';
+      totalsTr.appendChild(td);
+      totalCells[f.key] = td;
+    });
+    totalsTr.appendChild(document.createElement('td'));
+    totalsTr.appendChild(document.createElement('td'));
+    tbody.appendChild(totalsTr);
+  }
+
+  function recomputeTotals() {
+    STAT_FIELDS.forEach(f => {
+      let sum = 0;
+      WARDS.forEach(w => {
+        const v = wardData[w.key] ? wardData[w.key][f.key] : undefined;
+        sum += typeof v === 'number' ? v : 0;
+      });
+      totalCells[f.key].textContent = sum;
+    });
+  }
+
+  // Applies a remote data update to the row's inputs, but never overwrites a
+  // field the nurse is actively typing into — otherwise a live sync update
+  // from another device could yank the cursor mid-entry.
+  function applyWardData(wardKey, data) {
+    wardData[wardKey] = data;
+    const refs = rowRefs[wardKey];
+    if (!refs) return;
+    STAT_FIELDS.forEach(f => {
+      const input = refs.inputs[f.key];
+      if (document.activeElement !== input) input.value = (typeof data[f.key] === 'number') ? data[f.key] : 0;
+    });
+    if (document.activeElement !== refs.dutyInput) refs.dutyInput.value = data.nurseOnDuty || '';
+    const locked = !!data.locked;
+    refs.lockBtn.className = 'lock-btn ' + (locked ? 'locked' : 'open');
+    refs.lockBtn.textContent = locked ? '🔒 Locked' : '🔓 Open';
+    recomputeTotals();
+  }
+
+  async function ensureSeeded() {
+    let snap;
+    try {
+      snap = await getDocs(wardsCol);
+    } catch (e) {
+      setSaveStatus("Couldn't load ward data: " + (e.code || e.message || 'unknown error'), true);
+      return;
+    }
+    const existing = new Set(snap.docs.map(d => d.id));
+    const missing = WARDS.filter(w => !existing.has(w.key));
+    if (missing.length === 0) return;
+    const batch = writeBatch(db);
+    missing.forEach(w => {
+      const data = { label: w.label, beds: w.beds, nurseOnDuty: '', locked: false };
+      STAT_FIELDS.forEach(f => { if (f.key !== 'beds') data[f.key] = 0; });
+      batch.set(doc(wardsCol, w.key), data);
+    });
+    try {
+      await batch.commit();
+    } catch (e) {
+      setSaveStatus("Couldn't seed ward list: " + (e.code || e.message || 'unknown error'), true);
+    }
+  }
+
+  function subscribeToWards() {
+    onSnapshot(wardsCol, snap => {
+      snap.docChanges().forEach(change => {
+        if (change.type === 'removed') return;
+        applyWardData(change.doc.id, change.doc.data());
+      });
+    }, err => {
+      setSaveStatus("Live sync error: " + (err.code || err.message || 'unknown error'), true);
+    });
+  }
+
+  requireAuth(async (user, profile) => {
+    currentUser = user;
+    currentProfile = profile;
+
+    let roleSnap;
+    try {
+      roleSnap = await getDoc(roleRef);
+    } catch (e) {
+      document.getElementById('deniedMsg').textContent = "Couldn't check the current Overall Nurse: " + (e.code || e.message || 'unknown error');
+      document.getElementById('deniedBox').style.display = 'block';
+      return;
+    }
+    const overall = roleSnap.exists() ? roleSnap.data().overallNurse : null;
+    const isAdmin = profile.role === 'admin';
+    const isOverall = overall && overall.uid === user.uid;
+
+    if (!isAdmin && !isOverall) {
+      document.getElementById('deniedMsg').textContent = overall
+        ? (overall.name || 'Another nurse') + ' is the Overall Nurse for this week. Ask them to hand off the role, or claim it yourself if it\u2019s free next week.'
+        : "No one has assumed the Overall Nurse role this week yet.";
+      document.getElementById('deniedBox').style.display = 'block';
+      return;
+    }
+
+    document.getElementById('whoLabel').textContent = 'Overall Nurse this week: ' + (overall ? overall.name : profile.name) + (isAdmin && !isOverall ? ' (viewing as admin)' : '');
+    document.getElementById('reportBox').style.display = 'block';
+
+    buildTable();
+    await ensureSeeded();
+    subscribeToWards();
+  });
+</script>
+</body>
+</html>

@@ -46,6 +46,22 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Nurses Report — the weekly Overall Nurse assignment, and each day's
+    // 24-hour ward census. Any known user may claim/hand off the Overall
+    // Nurse role or edit ward figures — the app itself gates who sees the
+    // Overall Nurse page, matching how admin-only UI is gated elsewhere
+    // without every collection needing its own role check here.
+    match /nurseReportRoles/{weekId} {
+      allow read, write: if isKnownUser();
+    }
+    match /nurseReports/{dateId} {
+      allow read, write: if isKnownUser();
+
+      match /wards/{wardKey} {
+        allow read, write: if isKnownUser();
+      }
+    }
+
     // Patients and every chart subcollection under them
     match /patients/{patientId} {
       allow read, create, update: if isKnownUser();

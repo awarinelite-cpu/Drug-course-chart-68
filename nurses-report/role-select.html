@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="../icons/icon-192.png">
+<title>Nurses Report</title>
+<link rel="stylesheet" href="../js/styles.css">
+<style>
+  .role-grid { display: flex; flex-direction: column; gap: 16px; margin-top: 16px; }
+  .role-card {
+    background: #fff; border: 2px solid #e5e7eb; border-radius: 14px; padding: 24px 20px;
+    text-align: center; cursor: pointer; font-family: inherit; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .role-card:hover { border-color: #2563eb; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+  .role-card .icon { font-size: 40px; display: block; margin-bottom: 10px; }
+  .role-card .title { font-size: 18px; font-weight: bold; color: #111827; letter-spacing: .5px; }
+  .role-card .desc { font-size: 13px; color: #6b7280; margin-top: 6px; }
+  .role-card .status { font-size: 12px; margin-top: 10px; font-weight: bold; }
+  .status-open { color: #16a34a; }
+  .status-taken { color: #d97706; }
+  .status-you { color: #2563eb; }
+</style>
+</head>
+<body>
+<script type="module" src="../js/nav.js"></script>
+<div class="topbar">
+  <div class="brand">Nurses Report</div>
+  <div class="right">
+    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="gnavGoBack('../index.html')">Back</button>
+  </div>
+</div>
+
+<div class="container">
+  <p style="font-size:13px; color:#555;">Choose your role for this shift. The Overall Nurse role runs for the whole week.</p>
+
+  <div class="role-grid">
+    <button class="role-card" id="assumeOverallBtn">
+      <span class="icon">🗂️</span>
+      <span class="title">ASSUME OVERALL</span>
+      <span class="desc">Become the Overall Nurse for this week — monitor and manage every ward's 24-hour report.</span>
+      <div class="status" id="overallStatus">Checking…</div>
+    </button>
+
+    <button class="role-card" id="wardNurseBtn">
+      <span class="icon">🏥</span>
+      <span class="title">WARD NURSE</span>
+      <span class="desc">Submit and manage your own ward's 24-hour report.</span>
+    </button>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from "../js/auth-guard.js";
+  import { db } from "../js/firebase.js";
+  import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { weekId } from "../js/nurses-report-common.js";
+
+  let currentUser = null, currentProfile = null;
+  const wk = weekId();
+  const roleRef = doc(db, 'nurseReportRoles', wk);
+
+  const statusEl = document.getElementById('overallStatus');
+
+  async function refreshStatus() {
+    let snap;
+    try {
+      snap = await getDoc(roleRef);
+    } catch (e) {
+      statusEl.textContent = "Couldn't check current status.";
+      statusEl.className = 'status';
+      return null;
+    }
+    const data = snap.exists() ? snap.data() : null;
+    const overall = data && data.overallNurse;
+    if (!overall) {
+      statusEl.textContent = 'Unassigned this week — tap to take the role.';
+      statusEl.className = 'status status-open';
+    } else if (currentUser && overall.uid === currentUser.uid) {
+      statusEl.textContent = "You're the Overall Nurse this week.";
+      statusEl.className = 'status status-you';
+    } else {
+      statusEl.textContent = (overall.name || 'Another nurse') + ' is the Overall Nurse this week.';
+      statusEl.className = 'status status-taken';
+    }
+    return overall;
+  }
+
+  requireAuth((user, profile) => {
+    currentUser = user;
+    currentProfile = profile;
+    refreshStatus();
+  });
+
+  document.getElementById('assumeOverallBtn').addEventListener('click', async () => {
+    if (!currentUser) return;
+    const overall = await refreshStatus();
+    if (overall && overall.uid !== currentUser.uid) {
+      const ok = confirm((overall.name || 'Another nurse') + ' is currently the Overall Nurse for this week. Take over this role?');
+      if (!ok) return;
+    }
+    try {
+      await setDoc(roleRef, {
+        weekId: wk,
+        overallNurse: { uid: currentUser.uid, name: currentProfile.name || 'Unknown', assignedAt: serverTimestamp() }
+      }, { merge: true });
+    } catch (e) {
+      alert("Couldn't assign the role: " + (e.code || e.message || 'unknown error'));
+      return;
+    }
+    window.location.href = 'overall-nurse.html';
+  });
+
+  document.getElementById('wardNurseBtn').addEventListener('click', () => {
+    window.location.href = 'ward-nurse.html';
+  });
+</script>
+</body>
+</html>

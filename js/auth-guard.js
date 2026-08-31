@@ -13,7 +13,8 @@ let cachedProfile = null;
 // Figure out how many folders deep the current page is, so redirects work
 // whether we're at / (index.html, admin.html, login.html) or /charts/*.html
 function loginPath() {
-  return window.location.pathname.includes('/charts/') ? '../login.html' : 'login.html';
+  const inSubfolder = window.location.pathname.includes('/charts/') || window.location.pathname.includes('/nurses-report/');
+  return inSubfolder ? '../login.html' : 'login.html';
 }
 
 export function requireAuth(onReady) {
