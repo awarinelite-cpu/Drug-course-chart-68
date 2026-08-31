@@ -367,7 +367,7 @@ function addIOSection(pdf, y, io, ioSummary) {
   y = sectionTitle(pdf, y, 'Intake & Output');
   const rows = withIOBalance(io);
   const body = rows.map(r => [r.time || '', r.intakeType || '', r.intakeAmount || '', r.outputType || '', r.outputAmount || '', r.balance]);
-  y = addTable(pdf, y, ['Time', 'Intake Type', 'Intake (ml)', 'Output Type', 'Output (ml)', 'Balance (ml)'], body, {
+  y = addTable(pdf, y, ['Time', 'Route of Intake', 'Intake Vol. (ml)', 'Type of Output', 'Output Vol. (ml)', 'Balance (ml)'], body, {
     didParseCell(data) {
       if (data.section !== 'body') return;
       if (data.column.index === 5 && parseFloat(data.cell.raw) < 0) {

@@ -8,6 +8,10 @@ import {
 
 // columns entries support:
 //   { key, label, type }                 — normal entered field
+//   { key, label, type: 'select', options: [...], otherOption?, otherPlaceholder? }
+//                                         — dropdown; when otherOption is set and selected,
+//                                           an extra textarea appears and its text is folded
+//                                           into the saved value as "<otherOption>: <text>"
 //   { key, label, computed: true }       — value is filled in by deriveRows(), no input is rendered for it
 //   { ..., abnormal: (value, row) => bool, deficitShade?: true } — shades the cell for quick visual flagging
 //
@@ -160,11 +164,34 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
       wrap.style.flex = '1 1 140px';
       const label = document.createElement('label');
       label.textContent = col.label;
-      const input = document.createElement('input');
-      input.type = col.type || 'text';
-      input.id = 'in_' + col.key;
       wrap.appendChild(label);
-      wrap.appendChild(input);
+
+      if (col.type === 'select') {
+        const select = document.createElement('select');
+        select.id = 'in_' + col.key;
+        (col.options || []).forEach(opt => {
+          const o = document.createElement('option');
+          o.value = opt; o.textContent = opt;
+          select.appendChild(o);
+        });
+        wrap.appendChild(select);
+        if (col.otherOption) {
+          const otherInput = document.createElement('textarea');
+          otherInput.id = 'in_' + col.key + '_other';
+          otherInput.placeholder = col.otherPlaceholder || 'Please specify';
+          otherInput.rows = 1;
+          otherInput.style.cssText = 'display:none; width:100%; margin-top:4px; font-family:inherit;';
+          select.addEventListener('change', () => {
+            otherInput.style.display = (select.value === col.otherOption) ? 'block' : 'none';
+          });
+          wrap.appendChild(otherInput);
+        }
+      } else {
+        const input = document.createElement('input');
+        input.type = col.type || 'text';
+        input.id = 'in_' + col.key;
+        wrap.appendChild(input);
+      }
       formDiv.appendChild(wrap);
     });
 
@@ -175,14 +202,37 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
       timeInput.value = now.toISOString().slice(0, 16);
     }
 
+    // Reads a form field's value — for a 'select' column with otherOption, folds the
+    // paired textarea's text into the saved value as "<otherOption>: <text>".
+    function readInputValue(col) {
+      const el = document.getElementById('in_' + col.key);
+      if (!el) return '';
+      if (col.type === 'select' && col.otherOption && el.value === col.otherOption) {
+        const otherEl = document.getElementById('in_' + col.key + '_other');
+        const otherText = otherEl ? otherEl.value.trim() : '';
+        return otherText ? (col.otherOption + ': ' + otherText) : col.otherOption;
+      }
+      return el.value;
+    }
+
     document.getElementById('addEntryBtn').onclick = async () => {
       const data = {};
-      columns.filter(col => !col.computed).forEach(col => { data[col.key] = document.getElementById('in_' + col.key).value; });
+      columns.filter(col => !col.computed).forEach(col => { data[col.key] = readInputValue(col); });
       if (!data.time) { alert('Please set the time.'); return; }
       data.createdAt = serverTimestamp();
       data.enteredBy = profile.name;
       await addDoc(collection(db, 'patients', patientId, collectionName), data);
-      columns.filter(col => !col.computed).forEach(col => { if (col.key !== 'time') document.getElementById('in_' + col.key).value = ''; });
+      columns.filter(col => !col.computed).forEach(col => {
+        if (col.key === 'time') return;
+        const el = document.getElementById('in_' + col.key);
+        if (col.type === 'select') {
+          el.selectedIndex = 0;
+          const otherEl = document.getElementById('in_' + col.key + '_other');
+          if (otherEl) { otherEl.value = ''; otherEl.style.display = 'none'; }
+        } else {
+          el.value = '';
+        }
+      });
     };
 
     // Build the results table header

@@ -79,10 +79,17 @@
     collectionName: 'intakeOutput',
     columns: [
       { key: 'time', label: 'Time', type: 'datetime-local' },
-      { key: 'intakeType', label: 'Intake Type', type: 'text' },
-      { key: 'intakeAmount', label: 'Intake (ml)', type: 'text' },
-      { key: 'outputType', label: 'Output Type', type: 'text' },
-      { key: 'outputAmount', label: 'Output (ml)', type: 'text' },
+      {
+        key: 'intakeType', label: 'Route of Intake', type: 'select',
+        options: ['Oral', 'NG/PEG', 'OTHERS'],
+        otherOption: 'OTHERS', otherPlaceholder: 'Specify the route'
+      },
+      { key: 'intakeAmount', label: 'Intake Vol. (ml)', type: 'text' },
+      {
+        key: 'outputType', label: 'Type of Output', type: 'select',
+        options: ['URINE', 'VOMITING', 'DRAINAGE', 'DRAIN/OTHER']
+      },
+      { key: 'outputAmount', label: 'Output Vol. (ml)', type: 'text' },
       { key: 'balance', label: 'Balance (ml)', computed: true, abnormal: v => parseFloat(v) < 0, deficitShade: true },
       { key: 'notes', label: 'Notes', type: 'text' }
     ],
