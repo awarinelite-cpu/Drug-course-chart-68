@@ -14,10 +14,24 @@
 <div class="topbar no-print">
   <div class="brand">Vital Signs Chart</div>
   <div class="right">
-    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="gnavGoBack('../index.html')">Back</button>
+    <button id="backLink" class="btn btn-secondary" style="padding:6px 12px;" onclick="window.location.href=this.dataset.fallback">Back</button>
     <button class="btn btn-primary" style="padding:6px 12px;" onclick="window.print()">Print</button>
   </div>
 </div>
+<script>
+  // Always send Back to this admission's Overview page (not wherever browser
+  // history happens to point, e.g. straight back to the ward list when this
+  // chart was opened directly from index.html rather than via Overview).
+  (function () {
+    const params = new URLSearchParams(window.location.search);
+    const patientId = params.get('patient');
+    const admissionId = params.get('admission');
+    const link = document.getElementById('backLink');
+    link.dataset.fallback = patientId
+      ? 'admission.html?patient=' + patientId + (admissionId ? '&admission=' + admissionId : '')
+      : '../index.html';
+  })();
+</script>
 <div class="container">
   <div class="patient-banner">
     <div><div class="pname" id="pb_name">Loading…</div><div class="pmeta" id="pb_meta"></div></div>
