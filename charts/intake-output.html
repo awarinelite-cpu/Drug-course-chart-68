@@ -80,6 +80,8 @@
     columns: [
       { key: 'time', label: 'Time', type: 'datetime-local' },
       {
+        // Dropdown (not free text) for route of intake, with an "OTHERS" option
+        // that reveals a small textarea to specify the custom route.
         key: 'intakeType', label: 'Route of Intake', type: 'select',
         options: ['Oral', 'NG/PEG', 'OTHERS'],
         otherOption: 'OTHERS', otherPlaceholder: 'Specify the route'
