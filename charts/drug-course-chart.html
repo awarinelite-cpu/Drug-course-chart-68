@@ -170,8 +170,10 @@
     <button class="btn btn-purple no-print" id="editDrugsBtn" style="padding:6px 12px; font-size:12px;" onclick="enterDrugsEditMode()">Edit</button>
     <button class="btn btn-success no-print" id="saveDrugsBtn" style="padding:6px 12px; font-size:12px; display:none;" onclick="exitDrugsEditMode()">Save</button>
     <button class="btn btn-success no-print" id="addDrugBtn" style="padding:6px 12px; font-size:12px; display:none;" onclick="addDrug()">+ Add Drug</button>
-    <button class="btn btn-secondary no-print" id="verbalOrderBtn" style="display:none;" onclick="openVerbalOrderModal()">+ Verbal Order</button>
     <button class="btn btn-secondary no-print" id="bulkUploadBtn" style="display:none;" onclick="openBulkUploadModal()">+ Bulk Upload</button>
+  </div>
+  <div class="no-print" style="margin-top:8px;">
+    <button class="btn btn-secondary no-print" id="verbalOrderBtn" onclick="openVerbalOrderModal()">+ Verbal Order</button>
   </div>
 
   <div class="table-wrap">
@@ -944,7 +946,6 @@
     document.getElementById('editDrugsBtn').style.display = 'none';
     document.getElementById('saveDrugsBtn').style.display = 'inline-block';
     document.getElementById('addDrugBtn').style.display = 'inline-block';
-    document.getElementById('verbalOrderBtn').style.display = 'inline-block';
     document.getElementById('bulkUploadBtn').style.display = 'inline-block';
     renderDrugsTable();
   };
@@ -955,7 +956,6 @@
     document.getElementById('editDrugsBtn').style.display = 'inline-block';
     document.getElementById('saveDrugsBtn').style.display = 'none';
     document.getElementById('addDrugBtn').style.display = 'none';
-    document.getElementById('verbalOrderBtn').style.display = 'none';
     document.getElementById('bulkUploadBtn').style.display = 'none';
     renderDrugsTable();
     scheduleSave();
@@ -1220,6 +1220,58 @@
       'Drug ' + b.num + (b.name ? ' (' + b.name + ')' : '') + ' has been marked "' + b.action + '" and cannot be added as served medication.'
     ).join('\n');
   }
+
+  // --- Cross-device sync polling ---
+  // Firestore was only ever being read once, on page load, so a change made
+  // on another device wouldn't show up here until the page was reloaded.
+  // This polls the doc every 30s and pulls in newer data, as long as nobody
+  // is mid-edit on this device (so we never clobber unsaved typing).
+  let lastAppliedUpdatedAt = null; // Firestore Timestamp of the version currently shown on screen
+
+  function applyRemoteChartData(data) {
+    fieldIds.forEach(id => { const el = document.getElementById(id); if (el && data[id] !== undefined) el.value = data[id]; });
+    drugs = (data.drugs && data.drugs.length) ? data.drugs : drugs;
+    chartRows = (data.rows && data.rows.length)
+      ? data.rows.map(r => Array.isArray(r)
+          ? { date: r[0] || '', sno: r[1] || '', time: r[2] || '', dose: r[3] || 'AP', route: r[4] || '', nurse: r[5] || '', remark: r[6] || '' }
+          : { ...r, dose: r.dose || 'AP' })
+      : chartRows;
+    chartRows.forEach(row => { if (row.sno && !row.route) row.route = computeRouteFromSno(row.sno); });
+    verbalOrders = data.verbalOrders || [];
+    careInstructions = data.careInstructions || [];
+    auditLog = data.auditLog || [];
+    refreshDrugSnoList();
+    renderDrugsTable();
+    renderVerbalOrderBtn();
+    renderCareBtn();
+    renderAuditBtn();
+    renderChartTable();
+    checkDrugCompletion();
+  }
+
+  async function pollForRemoteUpdates() {
+    if (isArchived || !chartRef) return;
+    // Don't pull in remote data while this device has anything open for
+    // editing, or while a field on the page is actively focused.
+    if (chartEditMode || drugsEditMode) return;
+    const active = document.activeElement;
+    if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
+    try {
+      const snap = await getDoc(chartRef);
+      if (!snap.exists()) return;
+      const data = snap.data();
+      const remoteMs = data.updatedAt && data.updatedAt.toMillis ? data.updatedAt.toMillis() : 0;
+      const localMs = lastAppliedUpdatedAt && lastAppliedUpdatedAt.toMillis ? lastAppliedUpdatedAt.toMillis() : 0;
+      if (remoteMs > localMs) {
+        lastAppliedUpdatedAt = data.updatedAt;
+        applyRemoteChartData(data);
+      }
+    } catch (e) {
+      // Silent — just try again on the next cycle.
+    }
+  }
+
+  setInterval(pollForRemoteUpdates, 30000);
 
   // --- Verbal / emergency orders (conversation box) ---
   function renderVerbalOrderBtn() {
@@ -1985,7 +2037,7 @@
       }
     } else {
       const snap = await getDoc(chartRef);
-      if (snap.exists()) data = snap.data();
+      if (snap.exists()) { data = snap.data(); lastAppliedUpdatedAt = data.updatedAt || null; }
     }
 
     if (data) {
