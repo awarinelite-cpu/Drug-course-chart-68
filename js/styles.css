@@ -269,3 +269,16 @@ table.entries th { background: #f3f4f6; text-transform: uppercase; font-size: 11
   .calc-bmi-header .calc-seg { width: 100%; }
   .lab-title-row { flex-direction: column; }
 }
+
+/* Shared "tap to view full text" popup for entry-chart table columns
+   marked popup:true (e.g. Nature of Fluid on the I&O chart) — mirrors the
+   look of the Diagnosis popup on the Drug Course Chart. */
+table.entries td.popup-cell { cursor:pointer; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; max-width:0; color:#1d4ed8; text-decoration:underline dotted; }
+.field-popup-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:1000; align-items:center; justify-content:center; padding:16px; }
+.field-popup-box { background:#fff; width:100%; max-width:300px; border-radius:16px; box-shadow:0 12px 32px rgba(0,0,0,.25); }
+.field-popup-header { display:flex; align-items:center; justify-content:space-between; padding:12px 14px 8px; }
+.field-popup-header h3 { margin:0; font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#6b7280; }
+.field-popup-close { border:none; background:none; font-size:18px; padding:2px 7px; cursor:pointer; line-height:1; border-radius:8px; color:#374151; }
+.field-popup-close:hover, .field-popup-close:active { background:#f3f4f6; }
+.field-popup-body { padding:2px 16px 16px; }
+.field-popup-text { font-size:16px; line-height:1.5; white-space:pre-wrap; margin:0; color:#111827; word-break:break-word; }

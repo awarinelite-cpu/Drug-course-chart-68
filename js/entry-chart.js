@@ -14,6 +14,39 @@ import {
 //                                           into the saved value as "<otherOption>: <text>"
 //   { key, label, computed: true }       — value is filled in by deriveRows(), no input is rendered for it
 //   { ..., abnormal: (value, row) => bool, deficitShade?: true } — shades the cell for quick visual flagging
+//   { ..., popup: true }                 — table cell shows a truncated one-line preview; tapping it
+//                                           opens a small popup with the full text (same pattern as the
+//                                           Diagnosis field on the Drug Course Chart)
+
+// Lazily-built popup used by any 'popup: true' column to show a cell's full text
+// on tap, without cluttering the narrow table cell. Built once and reused.
+let fieldPopupEls = null;
+function ensureFieldPopup() {
+  if (fieldPopupEls) return fieldPopupEls;
+  const overlay = document.createElement('div');
+  overlay.className = 'field-popup-overlay no-print';
+  overlay.innerHTML =
+    '<div class="field-popup-box">' +
+      '<div class="field-popup-header"><h3></h3><button type="button" class="field-popup-close" aria-label="Close">&times;</button></div>' +
+      '<div class="field-popup-body"><p class="field-popup-text"></p></div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  const close = () => { overlay.style.display = 'none'; };
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('.field-popup-close').addEventListener('click', close);
+  fieldPopupEls = {
+    overlay,
+    title: overlay.querySelector('.field-popup-header h3'),
+    text: overlay.querySelector('.field-popup-text')
+  };
+  return fieldPopupEls;
+}
+function openFieldPopup(label, value) {
+  const els = ensureFieldPopup();
+  els.title.textContent = label;
+  els.text.textContent = value || '(Not entered)';
+  els.overlay.style.display = 'flex';
+}
 //
 // Optional top-level options:
 //   deriveRows(ascRows) — given entries sorted oldest→newest, return the same rows with any
@@ -58,6 +91,20 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
 
   function cellValue(row, col) {
     return (row[col.key] !== undefined && row[col.key] !== null && row[col.key] !== '') ? row[col.key] : '';
+  }
+
+  // Fills a <td> for one column/row — a plain text cell, or (for popup:true
+  // columns) a truncated preview that opens the full text on tap.
+  function fillCell(td, col, row) {
+    const value = cellValue(row, col);
+    if (col.popup) {
+      td.textContent = value;
+      td.classList.add('popup-cell');
+      td.title = 'Tap to view full text';
+      td.addEventListener('click', () => openFieldPopup(col.label, value));
+    } else {
+      td.textContent = value;
+    }
   }
 
   function applyCellShading(td, col, row) {
@@ -147,7 +194,7 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
         const tr = document.createElement('tr');
         columns.forEach(col => {
           const td = document.createElement('td');
-          td.textContent = cellValue(row, col);
+          fillCell(td, col, row);
           applyCellShading(td, col, row);
           tr.appendChild(td);
         });
@@ -264,7 +311,7 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary })
         const tr = document.createElement('tr');
         columns.forEach(col => {
           const td = document.createElement('td');
-          td.textContent = cellValue(row, col);
+          fillCell(td, col, row);
           applyCellShading(td, col, row);
           tr.appendChild(td);
         });
