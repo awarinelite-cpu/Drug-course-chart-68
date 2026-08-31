@@ -325,7 +325,7 @@
   const isArchived = !!admissionId;
 
   const ROUTE_OPTIONS = ['', 'Oral', 'IV', 'IM', 'SC', 'Sublingual', 'Topical', 'Rectal', 'Suppository', 'Inhalation', 'NG Tube', 'Other'];
-  const FREQ_OPTIONS = ['', 'OD', 'BD', 'TDS', 'QDS', 'STAT', 'PRN', 'Q4H', 'Q6H', 'Q8H', 'Q12H', 'Weekly', 'Other'];
+  const FREQ_OPTIONS = ['', 'OD', 'BD', 'TDS', 'QDS', 'STAT', 'PRN', 'Q4H', 'Q6H', 'Q8H', 'Q12H', 'Weekly', '0,12,24hr', 'Other'];
   const ACTION_OPTIONS = ['', 'Ongoing', 'Completed', 'Discontinued', 'Withheld', 'Other'];
   const STATUS_LABELS = { referred: 'Referred to another hospital', transferred: 'Transferred to another ward', discharged: 'Discharged' };
   const fieldIds = ['f_admission', 'f_discharge', 'f_diagnosis']; // only fields not sourced from the patient record
@@ -353,6 +353,28 @@
     return ACTION_COLORS[action] || '#9ca3af';
   }
 
+  // Small green/grey pills under the Frequency cell for a fixed dose-sequence
+  // drug (e.g. "0,12,24hr"), one per scheduled offset. A pill turns green
+  // with a tick as soon as that dose has been recorded on the chart below —
+  // 1st administration ticks the 1st offset, 2nd ticks the 2nd, etc.
+  function doseSequenceBadges(d, i) {
+    const seq = parseDoseSequence(d.frequency);
+    if (!seq) return null;
+    const givenCount = administrationTimesFor(i).length;
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex; gap:3px; margin-top:3px; flex-wrap:wrap;';
+    seq.forEach((hr, idx) => {
+      const given = idx < givenCount;
+      const pill = document.createElement('span');
+      pill.textContent = hr + 'h' + (given ? ' \u2713' : '');
+      pill.title = given ? ('Dose given (' + hr + 'h mark)') : ('Not yet given (' + hr + 'h mark)');
+      pill.style.cssText = 'display:inline-block; padding:1px 5px; border-radius:8px; font-size:10px; font-weight:bold; ' +
+        (given ? 'background:#16a34a; color:#fff;' : 'background:#e5e7eb; color:#4b5563;');
+      wrap.appendChild(pill);
+    });
+    return wrap;
+  }
+
   // --- Next dose due time, shown next to each drug ---------------------
   // Same computation as functions/index.js (which is what actually sends the
   // push alert): next due = this drug's own last-administered time + its
@@ -366,15 +388,43 @@
     return isNaN(d) ? null : d;
   }
 
-  function lastGivenFor(drugIndex) {
-    let latest = null;
+  // All recorded administration times for a drug (matched by Drug S/N on the
+  // chart below), oldest first. Used both for "last given" (dose-due calc)
+  // and for counting how many doses of a fixed-sequence/STAT drug have been
+  // given so far.
+  function administrationTimesFor(drugIndex) {
+    const times = [];
     chartRows.forEach(row => {
       const nums = (row.sno || '').match(/\d+/g) || [];
       if (!nums.some(n => parseInt(n, 10) === drugIndex + 1)) return;
       const dt = toLocalDate(row.date, row.time);
-      if (dt && (!latest || dt > latest)) latest = dt;
+      if (dt) times.push(dt);
     });
-    return latest;
+    times.sort((a, b) => a - b);
+    return times;
+  }
+
+  function lastGivenFor(drugIndex) {
+    const times = administrationTimesFor(drugIndex);
+    return times.length ? times[times.length - 1] : null;
+  }
+
+  // --- Fixed dose-sequence frequencies (e.g. "0,12,24hr") ---------------
+  // Some drugs (loading doses, staggered courses) aren't given at a repeating
+  // interval but at a fixed list of hour-offsets from the first dose — e.g.
+  // "Artesunate 120mg 0,12,24hr" means one dose at hour 0, another at hour 12,
+  // and a final one at hour 24. Recognizes this whenever the frequency text
+  // is just a comma-separated list of numbers (optionally suffixed "hr"/"hrs"/
+  // "hours"), whether picked from the dropdown or typed as a custom "Other"
+  // frequency — so it works for any drug with this kind of schedule, not just
+  // the exact "0,12,24hr" option in the list.
+  function parseDoseSequence(freqText) {
+    if (!freqText) return null;
+    const compact = freqText.replace(/\s+/g, '');
+    const m = compact.match(/^(\d+(?:,\d+)+)(hrs?|hours?|h)?$/i);
+    if (!m) return null;
+    const nums = [...new Set(m[1].split(',').map(n => parseInt(n, 10)))].sort((a, b) => a - b);
+    return nums.length >= 2 ? nums : null;
   }
 
   function computeDueAt(d, i) {
@@ -453,9 +503,26 @@
     const today = new Date(); today.setHours(0, 0, 0, 0);
     let changed = false;
     drugs.forEach((d, i) => {
+      const locked = d.action === 'Discontinued' || d.action === 'Withheld' || d.action === 'Other' || d.action === 'Completed';
+
+      // STAT: a single one-off dose. As soon as it's recorded as given on the
+      // chart below, auto-flag the drug Completed.
+      if ((d.frequency || '').trim().toUpperCase() === 'STAT') {
+        if (!locked && administrationTimesFor(i).length >= 1) { d.action = 'Completed'; changed = true; }
+        return;
+      }
+
+      // Fixed dose-sequence (e.g. "0,12,24hr"): auto-complete once every
+      // scheduled dose in the sequence has been recorded as given.
+      const seq = parseDoseSequence(d.frequency);
+      if (seq) {
+        if (!locked && administrationTimesFor(i).length >= seq.length) { d.action = 'Completed'; changed = true; }
+        return;
+      }
+
       const days = parseDurationDays(d.duration);
       if (days == null) return;
-      if (d.action === 'Discontinued' || d.action === 'Withheld' || d.action === 'Other' || d.action === 'Completed') return;
+      if (locked) return;
 
       let start = d.startDate;
       if (!start) start = inferStartDateForDrug(i);
@@ -669,11 +736,17 @@
       tr.appendChild(tdEdit);
     }
 
-    [i + 1, d.name || '—', d.route || '—', d.frequency || '—'].forEach(val => {
+    [i + 1, d.name || '—', d.route || '—'].forEach(val => {
       const td = document.createElement('td');
       td.textContent = val;
       tr.appendChild(td);
     });
+
+    const tdFreq = document.createElement('td');
+    tdFreq.textContent = d.frequency || '—';
+    const badges = doseSequenceBadges(d, i);
+    if (badges) tdFreq.appendChild(badges);
+    tr.appendChild(tdFreq);
 
     const tdAction = document.createElement('td');
     if (d.action) {
@@ -1256,7 +1329,7 @@
       const dateInput = document.createElement('input');
       dateInput.type = 'date';
       dateInput.value = row.date || '';
-      dateInput.addEventListener('input', () => { row.date = dateInput.value; touchRowNurse(row); scheduleSave(); renderDrugsTable(); nurseCell.value = row.nurse || ''; });
+      dateInput.addEventListener('input', () => { row.date = dateInput.value; touchRowNurse(row); scheduleSave(); checkDrugCompletion(); renderDrugsTable(); nurseCell.value = row.nurse || ''; });
       tdDate.appendChild(dateInput);
       tr.appendChild(tdDate);
 
@@ -1274,6 +1347,7 @@
         routeInput.value = row.route;
         touchRowNurse(row);
         scheduleSave();
+        checkDrugCompletion();
         renderDrugsTable();
         nurseCell.value = row.nurse || '';
       });
@@ -1286,7 +1360,7 @@
       const timeInput = document.createElement('input');
       timeInput.type = 'time';
       timeInput.value = row.time || '';
-      timeInput.addEventListener('input', () => { row.time = timeInput.value; touchRowNurse(row); scheduleSave(); renderDrugsTable(); nurseCell.value = row.nurse || ''; });
+      timeInput.addEventListener('input', () => { row.time = timeInput.value; touchRowNurse(row); scheduleSave(); checkDrugCompletion(); renderDrugsTable(); nurseCell.value = row.nurse || ''; });
       tdTime.appendChild(timeInput);
       tr.appendChild(tdTime);
 
