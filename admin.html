@@ -63,23 +63,23 @@
   <div class="card-box">
     <h3 style="margin-top:0;">All Users</h3>
     <table class="entries">
-      <thead><tr><th></th><th>Name</th><th>Email</th><th>Role</th></tr></thead>
+      <thead><tr><th></th><th>Name</th><th>Email</th><th>Role</th><th></th></tr></thead>
       <tbody id="userTableBody"></tbody>
     </table>
   </div>
 
   <div id="deleteModalOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center; padding:16px;">
     <div class="card-box" style="max-width:420px; width:100%; margin:0;">
-      <h3 style="margin-top:0; color:#dc2626;">Delete Patient</h3>
+      <h3 id="deleteModalTitle" style="margin-top:0; color:#dc2626;">Delete Patient</h3>
       <p id="deleteModalText" style="font-size:14px; color:#374151;"></p>
       <div class="field">
         <label id="deleteModalLabel">Type to confirm</label>
-        <input type="text" id="deleteConfirmInput" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" onkeydown="if(event.key==='Enter'){event.preventDefault(); confirmDeletePatient();} else if(event.key==='Escape'){closeDeleteModal();}">
+        <input type="text" id="deleteConfirmInput" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" onkeydown="if(event.key==='Enter'){event.preventDefault(); confirmDelete();} else if(event.key==='Escape'){closeDeleteModal();}">
       </div>
       <div id="deleteModalError" class="error-msg" style="display:none;"></div>
       <div style="display:flex; gap:10px; margin-top:6px;">
         <button class="btn btn-secondary" style="flex:1;" onclick="closeDeleteModal()">Cancel</button>
-        <button class="btn" style="flex:1; background:#dc2626; color:#fff;" onclick="confirmDeletePatient()">Delete</button>
+        <button class="btn" id="deleteModalConfirmBtn" style="flex:1; background:#dc2626; color:#fff;" onclick="confirmDelete()">Delete</button>
       </div>
     </div>
   </div>
@@ -152,10 +152,11 @@
 
 <script type="module">
   import { requireAuth, logout } from "./js/auth-guard.js";
-  import { db, firebaseConfig } from "./js/firebase.js";
+  import { app, db, firebaseConfig } from "./js/firebase.js";
   import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
   import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js";
   import { downloadFullBackup } from "./js/export.js";
   import { avatarMarkup } from "./js/avatar.js";
   import {
@@ -165,6 +166,9 @@
 
   window.logout = logout;
   let currentAdminName = '';
+  let currentAdminUid = '';
+  const functionsInstance = getFunctions(app);
+  const deleteUserAccountFn = httpsCallable(functionsInstance, 'deleteUserAccount');
 
   requireAuth((user, profile) => {
     if (profile.role !== 'admin') {
@@ -173,6 +177,7 @@
       return;
     }
     currentAdminName = profile.name;
+    currentAdminUid = user.uid;
     loadUsers();
     loadPatients();
     initAlarmSettingsForm();
@@ -341,7 +346,11 @@
   // storage and still technically recoverable — not acceptable for a real delete).
   const PATIENT_SUBCOLLECTIONS = ['admissions', 'bloodGlucose', 'drugCourseChart', 'intakeOutput', 'intakeOutputSummary', 'seizure', 'vitals'];
 
+  // The delete modal is shared between patients and users — pendingDeleteType
+  // says which one confirmDelete() below should act on.
+  let pendingDeleteType = null;
   let pendingDeletePatient = null;
+  let pendingDeleteUser = null;
 
   // Normalizes typed confirmation text before comparing: trims edge whitespace,
   // collapses internal whitespace, and lowercases. Mobile keyboards (especially
@@ -353,9 +362,11 @@
   }
 
   window.deletePatientPrompt = function (p) {
+    pendingDeleteType = 'patient';
     pendingDeletePatient = p;
     const label = (p.name || 'Unnamed') + ' (EMR: ' + (p.emr || 'N/A') + ')';
     const hasEmr = !!(p.emr || '').trim();
+    document.getElementById('deleteModalTitle').textContent = 'Delete Patient';
     document.getElementById('deleteModalText').textContent =
       'This permanently deletes ' + label + ' and every chart, drug list, and closed-admission record for this patient. This cannot be undone.';
     document.getElementById('deleteModalLabel').textContent =
@@ -367,25 +378,65 @@
     setTimeout(() => input.focus(), 0);
   };
 
+  window.deleteUserPrompt = function (u) {
+    if (u.id === currentAdminUid) {
+      alert("You can't delete your own account.");
+      return;
+    }
+    pendingDeleteType = 'user';
+    pendingDeleteUser = u;
+    const label = (u.name || 'Unnamed') + ' (' + (u.email || 'no email on file') + ')';
+    const hasEmail = !!(u.email || '').trim();
+    document.getElementById('deleteModalTitle').textContent = 'Delete User';
+    document.getElementById('deleteModalText').textContent =
+      'This permanently removes ' + label + '\u2019s account and sign-in access. This cannot be undone.';
+    document.getElementById('deleteModalLabel').textContent =
+      hasEmail ? ('Type the user\u2019s email to confirm: ' + u.email) : 'No email on file — type DELETE to confirm';
+    const input = document.getElementById('deleteConfirmInput');
+    input.value = '';
+    document.getElementById('deleteModalError').style.display = 'none';
+    document.getElementById('deleteModalOverlay').style.display = 'flex';
+    setTimeout(() => input.focus(), 0);
+  };
+
   window.closeDeleteModal = function () {
+    pendingDeleteType = null;
     pendingDeletePatient = null;
+    pendingDeleteUser = null;
     document.getElementById('deleteModalOverlay').style.display = 'none';
   };
 
-  window.confirmDeletePatient = function () {
-    const p = pendingDeletePatient;
-    if (!p) return;
+  window.confirmDelete = function () {
     const typed = document.getElementById('deleteConfirmInput').value;
-    const expected = (p.emr || '').trim() || 'DELETE';
     const errEl = document.getElementById('deleteModalError');
-    if (normalizeConfirmText(typed) !== normalizeConfirmText(expected)) {
-      errEl.textContent = 'That didn\u2019t match — nothing was deleted. Please re-type it exactly.';
-      errEl.style.display = 'block';
-      return;
+
+    if (pendingDeleteType === 'patient') {
+      const p = pendingDeletePatient;
+      if (!p) return;
+      const expected = (p.emr || '').trim() || 'DELETE';
+      if (normalizeConfirmText(typed) !== normalizeConfirmText(expected)) {
+        errEl.textContent = 'That didn\u2019t match — nothing was deleted. Please re-type it exactly.';
+        errEl.style.display = 'block';
+        return;
+      }
+      document.getElementById('deleteModalOverlay').style.display = 'none';
+      runDeletePatient(p);
+      pendingDeletePatient = null;
+      pendingDeleteType = null;
+    } else if (pendingDeleteType === 'user') {
+      const u = pendingDeleteUser;
+      if (!u) return;
+      const expected = (u.email || '').trim() || 'DELETE';
+      if (normalizeConfirmText(typed) !== normalizeConfirmText(expected)) {
+        errEl.textContent = 'That didn\u2019t match — nothing was deleted. Please re-type it exactly.';
+        errEl.style.display = 'block';
+        return;
+      }
+      document.getElementById('deleteModalOverlay').style.display = 'none';
+      runDeleteUser(u);
+      pendingDeleteUser = null;
+      pendingDeleteType = null;
     }
-    document.getElementById('deleteModalOverlay').style.display = 'none';
-    runDeletePatient(p);
-    pendingDeletePatient = null;
   };
 
   async function runDeletePatient(p) {
@@ -401,6 +452,19 @@
     }
     allPatients = allPatients.filter(x => x.id !== p.id);
     renderPatientTable();
+  }
+
+  async function runDeleteUser(u) {
+    const delBtn = document.querySelector('#userTableBody button[data-uid="' + u.id + '"]');
+    if (delBtn) { delBtn.disabled = true; delBtn.textContent = 'Deleting…'; }
+    try {
+      await deleteUserAccountFn({ uid: u.id });
+    } catch (e) {
+      alert('Delete failed: ' + (e.message || e.code || 'unknown error'));
+      loadUsers();
+      return;
+    }
+    loadUsers();
   }
 
   window.runBackup = async function () {
@@ -424,7 +488,7 @@
     const tbody = document.getElementById('userTableBody');
     tbody.innerHTML = '';
     snap.forEach(d => {
-      const u = d.data();
+      const u = { id: d.id, ...d.data() };
       const tr = document.createElement('tr');
       const tdAvatar = document.createElement('td');
       tdAvatar.innerHTML = avatarMarkup(u, 32);
@@ -434,7 +498,17 @@
       tdEmail.textContent = u.email || '';
       const tdRole = document.createElement('td');
       tdRole.textContent = u.role || '';
-      tr.append(tdAvatar, tdName, tdEmail, tdRole);
+      const tdAction = document.createElement('td');
+      if (u.id !== currentAdminUid) {
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-secondary';
+        delBtn.style.cssText = 'padding:4px 10px; font-size:11px; background:#dc2626; color:#fff; border:none;';
+        delBtn.textContent = 'Delete';
+        delBtn.dataset.uid = u.id;
+        delBtn.onclick = () => deleteUserPrompt(u);
+        tdAction.appendChild(delBtn);
+      }
+      tr.append(tdAvatar, tdName, tdEmail, tdRole, tdAction);
       tbody.appendChild(tr);
     });
   }

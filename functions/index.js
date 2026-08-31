@@ -13,6 +13,7 @@
 // are written.
 
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 
 admin.initializeApp();
@@ -383,3 +384,54 @@ exports.checkDueGlucoseChecks = onSchedule(
     console.log(`Sent glucose-check reminders for ${duePatientIds.length} patient(s) to ${tokens.length} device(s).`);
   }
 );
+
+// Callable from admin.html's "All Users" delete button. Deleting the
+// users/{uid} Firestore doc alone (which the client can already do directly
+// under firestore.rules' isAdmin() check) is enough to lock the account out
+// of the app on next login — see the "account isn't set up yet" branch in
+// js/auth-guard.js — but the underlying Firebase Auth account would still
+// exist and could still authenticate. Removing that requires the Admin SDK,
+// which only runs here, not in the browser, so a real "delete user" has to
+// go through this callable rather than client-side deleteDoc the way patient
+// deletes do.
+exports.deleteUserAccount = onCall({ region: 'us-central1' }, async (request) => {
+  const callerUid = request.auth && request.auth.uid;
+  if (!callerUid) {
+    throw new HttpsError('unauthenticated', 'You must be signed in.');
+  }
+
+  const callerSnap = await db.collection('users').doc(callerUid).get();
+  if (!callerSnap.exists || callerSnap.data().role !== 'admin') {
+    throw new HttpsError('permission-denied', 'Admin access only.');
+  }
+
+  const targetUid = request.data && request.data.uid;
+  if (!targetUid || typeof targetUid !== 'string') {
+    throw new HttpsError('invalid-argument', 'Missing user id.');
+  }
+  if (targetUid === callerUid) {
+    throw new HttpsError('failed-precondition', "You can't delete your own account.");
+  }
+
+  // Firestore doesn't cascade-delete subcollections when the parent doc is
+  // removed (same reasoning as PATIENT_SUBCOLLECTIONS cleanup in admin.html
+  // for patient deletes) — clear the user's registered push-notification
+  // tokens first so they don't sit orphaned.
+  const tokensSnap = await db.collection('users').doc(targetUid).collection('pushTokens').get();
+  await Promise.all(tokensSnap.docs.map((d) => d.ref.delete()));
+
+  await db.collection('users').doc(targetUid).delete();
+
+  try {
+    await admin.auth().deleteUser(targetUid);
+  } catch (e) {
+    // Already gone from Auth (e.g. the account was created but never
+    // completed sign-in) isn't worth surfacing as a failure — the goal, no
+    // more sign-in access, is already achieved.
+    if (e.code !== 'auth/user-not-found') {
+      throw new HttpsError('internal', e.message || 'Failed to delete the account.');
+    }
+  }
+
+  return { success: true };
+});
