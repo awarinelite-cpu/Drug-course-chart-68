@@ -24,6 +24,31 @@ const messaging = admin.messaging();
 // safe to hardcode rather than depending on the function runtime's TZ.
 const WARD_UTC_OFFSET = '+01:00';
 
+// Mirrors WARDS in js/nurses-report-common.js — kept in sync by hand, same
+// as INTERVAL_HOURS below, since that file is an ES module written for the
+// browser and can't be imported into this CommonJS Cloud Function.
+const WARDS = [
+  { key: 'ae',       label: 'A/E',       beds: 20 },
+  { key: 'matbed',   label: 'MATBED',    beds: 20 },
+  { key: 'matcot',   label: 'MAT COT',   beds: 20 },
+  { key: 'officers', label: 'OFFICERS',  beds: 9  },
+  { key: 'fmw1',     label: 'FMW I',     beds: 18 },
+  { key: 'fsw2',     label: 'FSW II',    beds: 20 },
+  { key: 'mmw',      label: 'MMW',       beds: 20 },
+  { key: 'paedbed',  label: 'PAED BED',  beds: 10 },
+  { key: 'paedcot',  label: 'PAED COT',  beds: 18 },
+  { key: 'ortho',    label: 'ORTHO',     beds: 20 },
+  { key: 'gynae',    label: 'GYNAE',     beds: 18 },
+  { key: 'award',    label: 'A WARD',    beds: 44 },
+  { key: 'fswext',   label: 'FSW EXT',   beds: 20 },
+  { key: 'eco1',     label: 'ECO I',     beds: 3  },
+  { key: 'eco2',     label: 'ECO II',    beds: 3  },
+  { key: 'icu',      label: 'ICU',       beds: 6  },
+  { key: 'amenity',  label: 'AMENITY',   beds: 3  },
+  { key: 'msw',      label: 'MSW',       beds: 18 },
+  { key: 'esw',      label: 'ESW',       beds: 20 }
+];
+
 // Only standard, unambiguous frequencies are covered for now. STAT (one-off),
 // PRN (as-needed), and any custom free-text frequency are intentionally
 // skipped — there's no reliable interval to compute a "next due" from.
@@ -382,6 +407,121 @@ exports.checkDueGlucoseChecks = onSchedule(
 
     await Promise.all([...chartUpdates, ...sends]);
     console.log(`Sent glucose-check reminders for ${duePatientIds.length} patient(s) to ${tokens.length} device(s).`);
+  }
+);
+
+// -- Auto-archive stale ward reports ----------------------------------
+//
+// Third way a ward report reaches the permanent archive, alongside (1) a
+// nurse tapping "Move to Archive" on her own ward and (2) the Overall
+// Nurse/admin/subadmin's full-batch "Save to Archive". This is the safety
+// net for a report nobody manually moved: once a ward's report is
+// submitted + locked and its 24-hour period has actually closed, it
+// shouldn't be able to sit there forever blocking that ward's next report.
+//
+// Mirrors archiveOneWard() in js/nurses-report-common.js by hand (same
+// reason INTERVAL_HOURS/WARDS above are hand-mirrored) — files
+// archives/ward_<key>_<dateId>, then resets the live ward doc to blank/
+// unlocked, carrying the closing Occ forward as the new period's starting
+// census. Runs with the Admin SDK, which bypasses firestore.rules
+// entirely, so this never hits the permission-denied a nurse can hit on a
+// second manual attempt.
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+// Same "ward-local calendar date" math as wardLocalParts() in
+// js/nurses-report-common.js.
+function wardLocalParts(d) {
+  const wat = new Date(d.getTime() + 60 * 60 * 1000);
+  return { y: wat.getUTCFullYear(), m: wat.getUTCMonth(), day: wat.getUTCDate(), hour: wat.getUTCHours() };
+}
+
+// Same 6 AM–to–6 AM period convention as reportDateId() in
+// js/nurses-report-common.js.
+function reportDateId(d) {
+  const p = wardLocalParts(d);
+  const base = new Date(Date.UTC(p.y, p.m, p.day - (p.hour < 6 ? 1 : 0)));
+  return base.getUTCFullYear() + '-' + pad2(base.getUTCMonth() + 1) + '-' + pad2(base.getUTCDate());
+}
+
+function dateIdMinusOneDay(dateId) {
+  const [y, m, d] = dateId.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d - 1));
+  return dt.getUTCFullYear() + '-' + pad2(dt.getUTCMonth() + 1) + '-' + pad2(dt.getUTCDate());
+}
+
+// Same Monday-anchored week id as weekId() in js/nurses-report-common.js.
+function weekIdFor(d) {
+  const p = wardLocalParts(d);
+  const date = new Date(Date.UTC(p.y, p.m, p.day));
+  const dow = date.getUTCDay();
+  date.setUTCDate(date.getUTCDate() - ((dow + 6) % 7));
+  return date.getUTCFullYear() + '-' + pad2(date.getUTCMonth() + 1) + '-' + pad2(date.getUTCDate());
+}
+
+function reportPeriodLabel(dateId, kind) {
+  const [y, m, d] = dateId.split('-').map(Number);
+  const start = new Date(Date.UTC(y, m - 1, d));
+  const end = new Date(Date.UTC(y, m - 1, d + 1));
+  const fmt = dt => pad2(dt.getUTCDate()) + '/' + pad2(dt.getUTCMonth() + 1) + '/' + String(dt.getUTCFullYear()).slice(2);
+  return '24 HOURS ' + kind + ' REPORT WEF 0600HRS OF ' + fmt(start) + ' TO 0600HRS OF ' + fmt(end);
+}
+
+// A fresh, unsubmitted ward doc — same shape as defaultWardDoc() in
+// js/nurses-report-common.js.
+function defaultWardDoc(w, startOcc) {
+  const occ = typeof startOcc === 'number' ? startOcc : 0;
+  return {
+    label: w.label, beds: w.beds, startOcc: occ, occ: occ, vac: w.beds - occ,
+    locked: false, submitted: false,
+    shifts: { am: { nurseOnDuty: '' }, pm: { nurseOnDuty: '' } },
+    patients: [], nightUpdate: '', nightUpdateBy: '', nightUpdatedAt: null
+  };
+}
+
+// Runs once a day, shortly after the 0600 ward-day rollover, so it's
+// always looking back at the period that JUST closed (never the one still
+// in progress). 06:05 rather than exactly 06:00 to give any nurse's own
+// last-second manual archive click a moment to land first.
+exports.autoArchiveWardReports = onSchedule(
+  { schedule: '5 6 * * *', timeZone: 'Africa/Lagos', region: 'us-central1' },
+  async () => {
+    const now = new Date();
+    const closedDateId = dateIdMinusOneDay(reportDateId(now));
+    const wid = weekIdFor(now);
+    const fileName = reportPeriodLabel(closedDateId, 'WARD');
+
+    const results = await Promise.all(WARDS.map(async (w) => {
+      const wardRef = db.collection('nurseReports').doc(closedDateId).collection('wards').doc(w.key);
+      const wardSnap = await wardRef.get();
+      if (!wardSnap.exists) return null;
+      const data = wardSnap.data();
+      // Only sweep up reports actually finished and left behind — a draft
+      // that was never submitted/locked is left alone; there's nothing to
+      // archive and nothing worth resetting.
+      if (!data.submitted || !data.locked) return null;
+
+      const archiveRef = db.collection('archives').doc('ward_' + w.key + '_' + closedDateId);
+      const archiveSnap = await archiveRef.get();
+      if (archiveSnap.exists) return null; // already filed manually — nothing to do
+
+      await archiveRef.set({
+        type: 'ward', wardKey: w.key, wardLabel: w.label, dateId: closedDateId, weekId: wid,
+        fileName,
+        data,
+        archivedBy: 'Automatic archive (24hr)', archivedByUid: null,
+        archivedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      const closingOcc = typeof data.occ === 'number' ? data.occ : 0;
+      await wardRef.set(defaultWardDoc(w, closingOcc));
+      return w.key;
+    }));
+
+    const archived = results.filter(Boolean);
+    console.log(archived.length
+      ? `Auto-archived ${archived.length} ward report(s) for ${closedDateId}: ${archived.join(', ')}`
+      : `No leftover submitted+locked ward reports to auto-archive for ${closedDateId}.`);
   }
 );
 
