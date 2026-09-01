@@ -25,6 +25,54 @@ export const WARDS = [
   { key: 'esw',      label: 'ESW',       beds: 20 }
 ];
 
+// Ward keys and bed counts are fixed, but an admin can rename a ward's
+// display label (e.g. if a ward is physically renamed or relabelled).
+// Overrides live in a single Firestore doc so every page/device shows the
+// same names. defaultLabel is captured once here so a rename can always be
+// reverted, and WARDS is mutated in place — every module that imports
+// WARDS shares this one array instance, so applying an override here
+// updates the label everywhere it's used without any extra plumbing.
+WARDS.forEach(w => { w.defaultLabel = w.label; });
+
+export const WARD_NAMES_COLLECTION = 'nurseReportConfig';
+export const WARD_NAMES_DOC = 'wardNames';
+
+// Applies a {wardKey: customLabel} map to WARDS. A missing or blank entry
+// falls back to the ward's original hospital name.
+export function applyWardNameOverrides(overrides) {
+  const map = overrides || {};
+  WARDS.forEach(w => {
+    const custom = map[w.key];
+    w.label = (typeof custom === 'string' && custom.trim()) ? custom.trim() : w.defaultLabel;
+  });
+}
+
+// Fetches the current overrides doc and applies it to WARDS. `fns` is the
+// caller's already-imported Firestore functions object (same pattern as
+// archiveOneWard), so this stays version-agnostic. Safe to call even if no
+// one has renamed a ward yet — falls back to the default hospital names.
+export async function loadWardNameOverrides(db, fns) {
+  const { doc, getDoc } = fns;
+  try {
+    const snap = await getDoc(doc(db, WARD_NAMES_COLLECTION, WARD_NAMES_DOC));
+    applyWardNameOverrides(snap.exists() ? snap.data() : {});
+  } catch (e) {
+    // Non-fatal — page just keeps showing the default hospital ward names.
+  }
+}
+
+// Renames one ward (admin/subadmin action) and keeps WARDS in sync locally
+// so the caller doesn't need to reload. Persists via a merge so other
+// wards' overrides already stored in the same doc aren't clobbered.
+export async function saveWardNameOverride(db, fns, wardKey, newLabel) {
+  const { doc, setDoc } = fns;
+  const trimmed = (newLabel || '').trim();
+  const w = WARDS.find(x => x.key === wardKey);
+  const valueToStore = trimmed && w && trimmed !== w.defaultLabel ? trimmed : null;
+  await setDoc(doc(db, WARD_NAMES_COLLECTION, WARD_NAMES_DOC), { [wardKey]: valueToStore }, { merge: true });
+  if (w) w.label = trimmed || w.defaultLabel;
+}
+
 // Numeric columns, in display order, matching the ward-level "24Hrs Ward
 // Report" paper form. 'beds' is listed separately in the UI (it's capacity,
 // not a daily movement figure) but included here too since it's still

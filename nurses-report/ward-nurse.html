@@ -139,7 +139,7 @@
   import { requireAuth } from "../js/auth-guard.js";
   import { db } from "../js/firebase.js";
   import { doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, reportDateId, weekId, occDelta, blankShift, defaultWardDoc, archiveOneWard } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, reportDateId, weekId, occDelta, blankShift, defaultWardDoc, archiveOneWard, loadWardNameOverrides } from "../js/nurses-report-common.js";
 
   const dateId = reportDateId();
   const movementFields = SHIFT_STAT_FIELDS;
@@ -160,12 +160,18 @@
   let patientCounter = 0;
 
   const wardSelect = document.getElementById('wardSelect');
-  WARDS.forEach(w => {
-    const opt = document.createElement('option');
-    opt.value = w.key;
-    opt.textContent = w.label;
-    wardSelect.appendChild(opt);
-  });
+  // Loads any admin-set ward name renames first, so the selector (and every
+  // w.label used elsewhere on this page) shows the current names rather
+  // than the default hospital list.
+  (async () => {
+    await loadWardNameOverrides(db, { doc, getDoc });
+    WARDS.forEach(w => {
+      const opt = document.createElement('option');
+      opt.value = w.key;
+      opt.textContent = w.label;
+      wardSelect.appendChild(opt);
+    });
+  })();
 
   function setSaveStatus(msg, isError) {
     const el = document.getElementById('saveStatus');

@@ -18,6 +18,10 @@
     width: 56px; padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; text-align: center;
   }
   table.report input.duty-input { width: 100px; text-align: left; }
+  table.report input.ward-name-input {
+    width: 100px; text-align: left; font-weight: bold; padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px;
+  }
+  .ward-report-heading-wrap { display: flex; align-items: center; gap: 8px; }
   table.report tr.totals-row td { font-weight: bold; background: #eff6ff; }
   .lock-btn {
     border: none; border-radius: 6px; padding: 5px 8px; font-size: 11px; font-weight: bold; cursor: pointer; white-space: nowrap;
@@ -133,7 +137,11 @@
     doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, writeBatch,
     addDoc, query, orderBy, limit
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel, wardReportPeriodLabel, weekId, occDelta, defaultWardDoc, archiveOneWard } from "../js/nurses-report-common.js";
+  import {
+    WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel,
+    wardReportPeriodLabel, weekId, occDelta, defaultWardDoc, archiveOneWard,
+    WARD_NAMES_COLLECTION, WARD_NAMES_DOC, applyWardNameOverrides, loadWardNameOverrides, saveWardNameOverride
+  } from "../js/nurses-report-common.js";
 
   const wk = weekId();
   const dateId = reportDateId();
@@ -143,9 +151,33 @@
   document.getElementById('periodLabel').textContent = reportPeriodLabel(dateId);
 
   let currentUser = null, currentProfile = null;
+  let isAdminUser = false;   // only a full admin may rename wards
   const wardData = {};       // wardKey -> latest known Firestore data
-  const rowRefs = {};        // wardKey -> { inputs: {field: <input>}, dutyInput, lockBtn }
+  const rowRefs = {};        // wardKey -> { inputs: {field: <input>}, dutyInput, lockBtn, nameEl }
   const totalCells = {};     // field -> <td>
+
+  // Renames a ward everywhere it's shown on this page (the Overall
+  // Statistics table row and any "Ward Reports" heading for it), and
+  // persists the change so every other page/device picks it up too.
+  async function renameWard(w, newLabelRaw) {
+    const trimmed = (newLabelRaw || '').trim();
+    if (!trimmed || trimmed === w.label) return;
+    const oldLabel = w.label;
+    try {
+      await saveWardNameOverride(db, { doc, setDoc }, w.key, trimmed);
+      const refs = rowRefs[w.key];
+      if (refs && refs.nameEl) {
+        if (refs.nameEl.tagName === 'INPUT') refs.nameEl.value = w.label;
+        else refs.nameEl.textContent = w.label;
+      }
+      renderWardReports();
+      setSaveStatus('Ward renamed to "' + w.label + '".', false);
+    } catch (e) {
+      w.label = oldLabel;
+      setSaveStatus("Couldn't rename ward: " + (e.code || e.message || 'unknown error'), true);
+      throw e;
+    }
+  }
 
   function setSaveStatus(msg, isError) {
     const el = document.getElementById('saveStatus');
@@ -231,7 +263,18 @@
       const tr = document.createElement('tr');
       const nameTd = document.createElement('td');
       nameTd.className = 'ward-name';
-      nameTd.textContent = w.label;
+      let nameEl;
+      if (isAdminUser) {
+        nameEl = document.createElement('input');
+        nameEl.type = 'text';
+        nameEl.className = 'ward-name-input';
+        nameEl.value = w.label;
+        nameEl.addEventListener('change', () => { renameWard(w, nameEl.value); });
+      } else {
+        nameEl = document.createElement('span');
+        nameEl.textContent = w.label;
+      }
+      nameTd.appendChild(nameEl);
       tr.appendChild(nameTd);
 
       const inputs = {};
@@ -278,7 +321,7 @@
       tr.appendChild(accessTd);
 
       tbody.appendChild(tr);
-      rowRefs[w.key] = { inputs, dutyInput, lockBtn };
+      rowRefs[w.key] = { inputs, dutyInput, lockBtn, nameEl };
     });
     table.appendChild(tbody);
 
@@ -550,11 +593,33 @@
       headingRow.style.justifyContent = 'space-between';
       headingRow.style.gap = '10px';
 
+      const headingWrap = document.createElement('div');
+      headingWrap.className = 'ward-report-heading-wrap';
+
       const heading = document.createElement('h2');
       heading.className = 'ward-report-heading';
       heading.style.margin = '0';
       heading.textContent = w.label;
-      headingRow.appendChild(heading);
+      headingWrap.appendChild(heading);
+
+      // Renaming here also updates the Overall Statistics table row for
+      // the same ward (and vice versa) — both stay in sync since they
+      // both read from the one shared WARDS array / Firestore doc.
+      if (isAdminUser) {
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'btn btn-secondary';
+        renameBtn.type = 'button';
+        renameBtn.style.cssText = 'padding:3px 8px; font-size:11px; white-space:nowrap;';
+        renameBtn.textContent = '✏️ Rename';
+        renameBtn.addEventListener('click', async () => {
+          const newLabel = window.prompt('Rename ' + w.label + ' to:', w.label);
+          if (newLabel === null) return;
+          try { await renameWard(w, newLabel); } catch (e) { /* status already shown */ }
+        });
+        headingWrap.appendChild(renameBtn);
+      }
+
+      headingRow.appendChild(headingWrap);
 
       // Lets the Overall Nurse/admin/subadmin file just this one ward's
       // finished report to the archive and free it up for a new report,
@@ -687,10 +752,30 @@
       document.getElementById('historyBtn').style.display = 'inline-block';
     }
 
+    isAdminUser = isAdmin;
+    await loadWardNameOverrides(db, { doc, getDoc });
     buildTable();
     await ensureSeeded();
     subscribeToWards();
+    subscribeToWardNames();
   });
+
+  // Live-syncs ward name renames to every open session (matches the
+  // real-time pattern used for the ward stats above). Never overwrites an
+  // admin's name input while they're actively typing in it.
+  function subscribeToWardNames() {
+    onSnapshot(doc(db, WARD_NAMES_COLLECTION, WARD_NAMES_DOC), snap => {
+      applyWardNameOverrides(snap.exists() ? snap.data() : {});
+      WARDS.forEach(w => {
+        const refs = rowRefs[w.key];
+        if (!refs || !refs.nameEl) return;
+        if (document.activeElement === refs.nameEl) return;
+        if (refs.nameEl.tagName === 'INPUT') refs.nameEl.value = w.label;
+        else refs.nameEl.textContent = w.label;
+      });
+      renderWardReports();
+    }, () => { /* non-fatal — page keeps last known names */ });
+  }
 
   // Loads and renders the permanent edit-history log for this 24-hour
   // period. Queried per-ward (19 small reads) rather than a single

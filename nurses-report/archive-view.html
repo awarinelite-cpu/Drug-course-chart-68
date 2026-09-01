@@ -118,7 +118,7 @@
   import { requireAuth } from "../js/auth-guard.js";
   import { db } from "../js/firebase.js";
   import { doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, occDelta } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, occDelta, loadWardNameOverrides } from "../js/nurses-report-common.js";
 
   const archiveId = new URLSearchParams(window.location.search).get('id');
   const movementFields = SHIFT_STAT_FIELDS;
@@ -757,6 +757,10 @@
       return;
     }
     archiveData = snap.data();
+    // Only affects the live "All Wards" overview (which reads WARDS
+    // directly) — a single ward's own archived record keeps its frozen
+    // wardLabel from when it was filed, on purpose.
+    await loadWardNameOverrides(db, { doc, getDoc });
     setupModel();
     document.getElementById('reportBox').style.display = 'block';
     renderHeader();
