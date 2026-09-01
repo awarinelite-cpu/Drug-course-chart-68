@@ -93,8 +93,6 @@ export const STAT_FIELDS = [
   { key: 'bid',         label: 'BID' },
   { key: 'vsc',         label: 'VSIL' },
   { key: 'absc',        label: 'Absc' },
-  { key: 'parol',       label: 'Parol' },
-  { key: 'dparol',      label: 'D/Parol' },
   { key: 'death',       label: 'Death' }
 ];
 
