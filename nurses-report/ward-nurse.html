@@ -60,6 +60,12 @@
     font-family: Arial, Helvetica, sans-serif; pointer-events: none; white-space: nowrap;
   }
   .night-update-meta { font-size: 11px; color: #6b7280; margin-top: 6px; min-height: 14px; }
+  #nightUpdateWrap { padding: 0; }
+  #nightUpdateWrap label.patient-note-label { margin-top: 0; }
+  #nightUpdateInput {
+    border: none; border-radius: 0; padding: 0; background: transparent; box-shadow: none;
+    font-size: 14px; line-height: 1.5; text-align: justify; font-family: inherit; resize: vertical;
+  }
 </style>
 </head>
 <body>
@@ -110,10 +116,10 @@
       <button class="add-patient-btn" id="addPatientBtn" type="button">+ Add Patient</button>
 
       <h2 class="night-update-heading">Night Update</h2>
-      <p style="font-size:12px; color:#555; margin-top:-6px;">Night nurse: tap the button below and add your update, continuing straight on from the write-up above. Submit Report only appears once this is filled in.</p>
+      <p style="font-size:12px; color:#555; margin-top:-6px;">Night nurse: tap the button below and add your update, continuing straight on from the write-up above. If there's nothing to add, you can still submit the report as is — for example if there's a new admission, add them as a patient above and write their report instead.</p>
       <button class="btn btn-secondary" id="nightUpdateBtn" type="button">🌙 Night Update</button>
       <div class="patient-field" id="nightUpdateWrap" style="display:none; margin-top:10px;">
-        <label>Night update:</label>
+        <label class="patient-note-label" style="margin-top:0;">Night update:</label>
         <textarea id="nightUpdateInput" placeholder="Type the night update here…" style="min-height:140px;"></textarea>
       </div>
       <div class="night-update-meta" id="nightUpdateMeta"></div>
@@ -609,8 +615,7 @@
 
   function updateSubmitVisibility() {
     const submitBtn = document.getElementById('submitBtn');
-    const hasNightUpdate = !!(wardDoc && wardDoc.nightUpdate && wardDoc.nightUpdate.trim());
-    submitBtn.style.display = (editable && hasNightUpdate) ? '' : 'none';
+    submitBtn.style.display = editable ? '' : 'none';
   }
 
   function applyEditableState() {
@@ -761,15 +766,13 @@
 
   document.getElementById('submitBtn').addEventListener('click', async () => {
     if (!currentWardKey || !wardDoc || !editable) return;
-    if (!wardDoc.nightUpdate || !wardDoc.nightUpdate.trim()) {
-      setSaveStatus('Add the night update before submitting.', true);
-      return;
-    }
     recomputeTotals();
+    const hasNightUpdate = !!(wardDoc.nightUpdate && wardDoc.nightUpdate.trim());
     // The nurse submitting is the one who added the night update — autofill
     // the Pm shift's "Nurses on Duty" with her name if it's still blank.
+    // Only relevant when there actually is a night update to attribute.
     const pmRefs = shiftInputs.pm;
-    if (pmRefs && !wardDoc.shifts.pm.nurseOnDuty && currentProfile && currentProfile.name) {
+    if (hasNightUpdate && pmRefs && !wardDoc.shifts.pm.nurseOnDuty && currentProfile && currentProfile.name) {
       pmRefs.duty.value = currentProfile.name;
       pmRefs.duty.dispatchEvent(new Event('input'));
     }
@@ -777,20 +780,24 @@
     const payload = Object.assign({}, wardDoc, {
       submitted: true,
       locked: true,
-      nightUpdateBy: wardDoc.nightUpdateBy || currentProfile.name || 'Unknown',
-      nightUpdatedAt: wardDoc.nightUpdatedAt || serverTimestamp(),
       submittedBy: currentProfile.name || 'Unknown',
       submittedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       updatedBy: currentProfile.name || 'Unknown'
     });
+    if (hasNightUpdate) {
+      payload.nightUpdateBy = wardDoc.nightUpdateBy || currentProfile.name || 'Unknown';
+      payload.nightUpdatedAt = wardDoc.nightUpdatedAt || serverTimestamp();
+    }
     try {
       await setDoc(ref, payload, { merge: true });
       setSaveStatus('Report submitted.', false);
       wardDoc.submitted = true;
       wardDoc.locked = true;
-      wardDoc.nightUpdateBy = payload.nightUpdateBy;
-      document.getElementById('nightUpdateMeta').textContent = 'Added by ' + wardDoc.nightUpdateBy;
+      if (hasNightUpdate) {
+        wardDoc.nightUpdateBy = payload.nightUpdateBy;
+        document.getElementById('nightUpdateMeta').textContent = 'Added by ' + wardDoc.nightUpdateBy;
+      }
       refreshStatusPill();
       renderPatients();
     } catch (e) {
