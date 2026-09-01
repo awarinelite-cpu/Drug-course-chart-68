@@ -49,6 +49,16 @@
   .patient-block .patient-note-label { display: block; margin-top: 8px; }
   .patient-block .patient-note-text { text-align: justify; }
   .patient-block .patient-note-subheading { font-size: 14px; font-weight: bold; margin: 8px 0 2px 0; }
+  .patient-block { position: relative; }
+  .status-select { padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 999px; font-size: 12px; font-weight: bold; background: #fff; }
+  .status-select.set { background: #fee2e2; color: #7f1d1d; border-color: #fca5a5; }
+  .status-stamp {
+    position: absolute; top: 10px; right: 14px;
+    color: #dc2626; font-weight: 900; font-size: 15px; text-transform: uppercase;
+    letter-spacing: 1px; transform: rotate(-14deg); opacity: .85;
+    font-family: Arial, Helvetica, sans-serif; pointer-events: none; white-space: nowrap;
+  }
+  .night-update-meta { font-size: 11px; color: #6b7280; margin-top: 6px; min-height: 14px; }
 </style>
 </head>
 <body>
@@ -93,6 +103,17 @@
     </div>
 
     <div class="card-box">
+      <h2>Night Update</h2>
+      <p style="font-size:12px; color:#555; margin-top:-6px;">Night nurse: tap the button below and add your update. Submit Report only appears once this is filled in.</p>
+      <button class="btn btn-secondary" id="nightUpdateBtn" type="button">🌙 Night Update</button>
+      <div class="patient-field" id="nightUpdateWrap" style="display:none; margin-top:10px;">
+        <label>Night update:</label>
+        <textarea id="nightUpdateInput" placeholder="Type the night update here…" style="min-height:140px;"></textarea>
+      </div>
+      <div class="night-update-meta" id="nightUpdateMeta"></div>
+    </div>
+
+    <div class="card-box">
       <h2>Patients</h2>
       <p style="font-size:12px; color:#555; margin-top:-6px;">Add a write-up for each patient covered in this report.</p>
       <div id="patientList"></div>
@@ -101,7 +122,8 @@
 
     <div class="card-box">
       <div class="submit-bar">
-        <button class="btn btn-primary" id="submitBtn" style="flex:1; padding:12px;">Submit Report</button>
+        <button class="btn btn-secondary" id="saveBtn" style="flex:1; padding:12px;">Save</button>
+        <button class="btn btn-primary" id="submitBtn" style="flex:1; padding:12px; display:none;">Submit Report</button>
       </div>
       <div class="save-status" id="saveStatus"></div>
     </div>
@@ -114,7 +136,7 @@
   import { requireAuth } from "../js/auth-guard.js";
   import { db } from "../js/firebase.js";
   import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, occDelta } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, reportDateId, occDelta } from "../js/nurses-report-common.js";
 
   const dateId = reportDateId();
   const movementFields = SHIFT_STAT_FIELDS;
@@ -129,6 +151,7 @@
   const occCells = {};      // shiftKey/'total' -> td
   const vacCells = {};      // shiftKey/'total' -> td
   let bedsInput = null;
+  let dutyTotalCell = null; // the Total row's "Nurses on Duty" cell (mirrors the Pm entry)
   let patientCounter = 0;
 
   const wardSelect = document.getElementById('wardSelect');
@@ -158,7 +181,10 @@
   }
 
   function defaultWardDoc(w) {
-    const d = { label: w.label, beds: w.beds, startOcc: 0, occ: 0, vac: w.beds, locked: false, submitted: false, shifts: {}, patients: [] };
+    const d = {
+      label: w.label, beds: w.beds, startOcc: 0, occ: 0, vac: w.beds, locked: false, submitted: false,
+      shifts: {}, patients: [], nightUpdate: '', nightUpdateBy: '', nightUpdatedAt: null
+    };
     SHIFTS.forEach(s => { d.shifts[s.key] = blankShift(); });
     movementFields.forEach(f => { d[f.key] = 0; });
     return d;
@@ -321,7 +347,7 @@
     dutyTotalTd.style.textAlign = 'left';
     dutyTotalTd.textContent = '\u2014';
     totalTr.appendChild(dutyTotalTd);
-    var dutyTotalCell = dutyTotalTd;
+    dutyTotalCell = dutyTotalTd;
 
     tbody.appendChild(totalTr);
     table.appendChild(tbody);
@@ -389,6 +415,33 @@
       card.remove();
     });
     card.appendChild(removeBtn);
+
+    const statusWrap = document.createElement('div');
+    statusWrap.className = 'patient-field';
+    const statusLabel = document.createElement('label');
+    statusLabel.textContent = 'Status:';
+    statusWrap.appendChild(statusLabel);
+    const statusSelect = document.createElement('select');
+    statusSelect.className = 'status-select';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '— Select status —';
+    statusSelect.appendChild(noneOpt);
+    PATIENT_STATUS_OPTIONS.forEach(opt => {
+      const o = document.createElement('option');
+      o.value = opt;
+      o.textContent = opt;
+      statusSelect.appendChild(o);
+    });
+    statusSelect.disabled = !editable;
+    statusSelect.addEventListener('change', () => {
+      const p = wardDoc.patients.find(p => p.id === id);
+      if (p) p.status = statusSelect.value;
+      statusSelect.classList.toggle('set', !!statusSelect.value);
+    });
+    statusWrap.appendChild(statusSelect);
+    card.appendChild(statusWrap);
+    card['input_status'] = statusSelect;
 
     const grid = document.createElement('div');
     grid.className = 'patient-grid';
@@ -460,6 +513,13 @@
     const block = document.createElement('div');
     block.className = 'patient-block';
 
+    if (p.status) {
+      const stamp = document.createElement('div');
+      stamp.className = 'status-stamp';
+      stamp.textContent = p.status;
+      block.appendChild(stamp);
+    }
+
     const summaryFields = PATIENT_FIELDS.filter(f => f.type !== 'textarea');
     summaryFields.forEach(f => {
       if (!p[f.key]) return;
@@ -492,6 +552,8 @@
       wardDoc.patients.forEach(p => {
         const card = patientCardHtml(p.id);
         PATIENT_FIELDS.forEach(f => { card['input_' + f.key].value = p[f.key] || ''; });
+        card['input_status'].value = p.status || '';
+        card['input_status'].classList.toggle('set', !!p.status);
         list.appendChild(card);
       });
     } else if (wardDoc.patients.length === 0) {
@@ -507,7 +569,7 @@
   function addPatient() {
     patientCounter += 1;
     const id = 'p' + Date.now() + '_' + patientCounter;
-    const blank = { id };
+    const blank = { id, status: '' };
     PATIENT_FIELDS.forEach(f => { blank[f.key] = ''; });
     wardDoc.patients.push(blank);
     const card = patientCardHtml(id);
@@ -525,16 +587,47 @@
     recomputeCensus();
   });
 
+  document.getElementById('nightUpdateBtn').addEventListener('click', () => {
+    if (!editable) return;
+    const wrap = document.getElementById('nightUpdateWrap');
+    const opening = wrap.style.display === 'none';
+    wrap.style.display = opening ? 'block' : 'none';
+    if (!opening) return;
+    document.getElementById('nightUpdateInput').focus();
+    // The night nurse tapping this button is who's adding the update —
+    // autofill the Pm shift's "Nurses on Duty" with her name if it's blank.
+    const pmRefs = shiftInputs.pm;
+    if (pmRefs && !wardDoc.shifts.pm.nurseOnDuty && currentProfile && currentProfile.name) {
+      pmRefs.duty.value = currentProfile.name;
+      pmRefs.duty.dispatchEvent(new Event('input'));
+    }
+  });
+
+  document.getElementById('nightUpdateInput').addEventListener('input', (e) => {
+    wardDoc.nightUpdate = e.target.value;
+    updateSubmitVisibility();
+  });
+
+  function updateSubmitVisibility() {
+    const submitBtn = document.getElementById('submitBtn');
+    const hasNightUpdate = !!(wardDoc && wardDoc.nightUpdate && wardDoc.nightUpdate.trim());
+    submitBtn.style.display = (editable && hasNightUpdate) ? '' : 'none';
+  }
+
   function applyEditableState() {
     if (bedsInput) bedsInput.disabled = !editable;
     document.getElementById('startOccInput').disabled = !editable;
     document.getElementById('addPatientBtn').style.display = editable ? '' : 'none';
-    document.getElementById('submitBtn').style.display = editable ? '' : 'none';
+    document.getElementById('saveBtn').style.display = editable ? '' : 'none';
+    document.getElementById('nightUpdateBtn').disabled = !editable;
+    document.getElementById('nightUpdateBtn').style.display = editable ? '' : 'none';
+    document.getElementById('nightUpdateInput').disabled = !editable;
+    updateSubmitVisibility();
     Object.values(shiftInputs).forEach(refs => {
       Object.values(refs.fields).forEach(i => i.disabled = !editable);
       refs.duty.disabled = !editable;
     });
-    document.querySelectorAll('.patient-card input, .patient-card textarea, .patient-card .remove-btn')
+    document.querySelectorAll('.patient-card input, .patient-card textarea, .patient-card select, .patient-card .remove-btn')
       .forEach(el => el.disabled = !editable);
   }
 
@@ -605,7 +698,12 @@
     wardDoc.shifts = wardDoc.shifts || {};
     SHIFTS.forEach(s => { wardDoc.shifts[s.key] = Object.assign(blankShift(), wardDoc.shifts[s.key] || {}); });
     wardDoc.patients = Array.isArray(wardDoc.patients) ? wardDoc.patients : [];
-    wardDoc.patients.forEach(p => { if (!p.id) p.id = 'p' + Math.random().toString(36).slice(2); });
+    wardDoc.patients.forEach(p => {
+      if (!p.id) p.id = 'p' + Math.random().toString(36).slice(2);
+      if (typeof p.status !== 'string') p.status = '';
+    });
+    wardDoc.nightUpdate = typeof wardDoc.nightUpdate === 'string' ? wardDoc.nightUpdate : '';
+    wardDoc.nightUpdateBy = wardDoc.nightUpdateBy || '';
 
     if (!snap.exists()) {
       // Best-effort carry-over: yesterday's closing Occ becomes today's
@@ -625,6 +723,11 @@
     fillShiftInputsFromDoc();
     renderPatients();
 
+    document.getElementById('nightUpdateInput').value = wardDoc.nightUpdate;
+    document.getElementById('nightUpdateWrap').style.display = wardDoc.nightUpdate ? 'block' : 'none';
+    document.getElementById('nightUpdateMeta').textContent = wardDoc.nightUpdateBy ? ('Added by ' + wardDoc.nightUpdateBy) : '';
+    updateSubmitVisibility();
+
     document.getElementById('formBox').style.display = 'block';
     setTopStatus('');
   }
@@ -634,13 +737,49 @@
     if (wardSelect.value) loadWard(wardSelect.value);
   });
 
-  document.getElementById('submitBtn').addEventListener('click', async () => {
-    if (!currentWardKey || !wardDoc) return;
+  document.getElementById('saveBtn').addEventListener('click', async () => {
+    if (!currentWardKey || !wardDoc || !editable) return;
     recomputeTotals();
+    // The nurse pressing Save is the one who wrote the report — autofill the
+    // Am shift's "Nurses on Duty" with her name if it's still blank.
+    const amRefs = shiftInputs.am;
+    if (amRefs && !wardDoc.shifts.am.nurseOnDuty && currentProfile && currentProfile.name) {
+      amRefs.duty.value = currentProfile.name;
+      amRefs.duty.dispatchEvent(new Event('input'));
+    }
+    const ref = doc(db, 'nurseReports', dateId, 'wards', currentWardKey);
+    const payload = Object.assign({}, wardDoc, {
+      updatedAt: serverTimestamp(),
+      updatedBy: currentProfile.name || 'Unknown'
+    });
+    try {
+      await setDoc(ref, payload, { merge: true });
+      setSaveStatus('Saved.', false);
+    } catch (e) {
+      setSaveStatus("Couldn't save: " + (e.code || e.message || 'unknown error'), true);
+    }
+  });
+
+  document.getElementById('submitBtn').addEventListener('click', async () => {
+    if (!currentWardKey || !wardDoc || !editable) return;
+    if (!wardDoc.nightUpdate || !wardDoc.nightUpdate.trim()) {
+      setSaveStatus('Add the night update before submitting.', true);
+      return;
+    }
+    recomputeTotals();
+    // The nurse submitting is the one who added the night update — autofill
+    // the Pm shift's "Nurses on Duty" with her name if it's still blank.
+    const pmRefs = shiftInputs.pm;
+    if (pmRefs && !wardDoc.shifts.pm.nurseOnDuty && currentProfile && currentProfile.name) {
+      pmRefs.duty.value = currentProfile.name;
+      pmRefs.duty.dispatchEvent(new Event('input'));
+    }
     const ref = doc(db, 'nurseReports', dateId, 'wards', currentWardKey);
     const payload = Object.assign({}, wardDoc, {
       submitted: true,
       locked: true,
+      nightUpdateBy: wardDoc.nightUpdateBy || currentProfile.name || 'Unknown',
+      nightUpdatedAt: wardDoc.nightUpdatedAt || serverTimestamp(),
       submittedBy: currentProfile.name || 'Unknown',
       submittedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -651,6 +790,8 @@
       setSaveStatus('Report submitted.', false);
       wardDoc.submitted = true;
       wardDoc.locked = true;
+      wardDoc.nightUpdateBy = payload.nightUpdateBy;
+      document.getElementById('nightUpdateMeta').textContent = 'Added by ' + wardDoc.nightUpdateBy;
       refreshStatusPill();
       renderPatients();
     } catch (e) {

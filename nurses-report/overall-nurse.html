@@ -40,13 +40,22 @@
   table.ward-shift th { background: #f3f4f6; text-transform: uppercase; font-size: 10px; }
   table.ward-shift td.shift-name { font-weight: bold; text-align: left; }
   table.ward-shift tr.total-row td { font-weight: bold; background: #eff6ff; }
-  .patient-block { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; margin-top: 10px; }
+  .patient-block { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; margin-top: 10px; position: relative; }
   .patient-block .patient-line { font-size: 13px; margin: 2px 0; }
   .patient-block h3 { display: inline; font-size: inherit; font-weight: bold; margin: 0; }
   .patient-block .patient-note-label { font-size: 12px; text-decoration: underline; margin-top: 8px; display: block; }
   .patient-block .patient-note-text { font-size: 13px; white-space: pre-wrap; margin: 4px 0 0 0; text-align: justify; }
   .patient-block .patient-note-subheading { font-size: 13px; font-weight: bold; margin: 8px 0 2px 0; }
+  .status-stamp {
+    position: absolute; top: 10px; right: 14px;
+    color: #dc2626; font-weight: 900; font-size: 15px; text-transform: uppercase;
+    letter-spacing: 1px; transform: rotate(-14deg); opacity: .85;
+    font-family: Arial, Helvetica, sans-serif; pointer-events: none; white-space: nowrap;
+  }
   .no-patients { font-size: 12px; color: #6b7280; }
+  .night-update-block { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; margin-top: 10px; background: #fefce8; }
+  .night-update-block .patient-note-label { font-size: 12px; text-decoration: underline; margin-top: 0; display: block; }
+  .night-update-block .patient-note-text { font-size: 13px; white-space: pre-wrap; margin: 4px 0 0 0; text-align: justify; }
   .ward-report-empty { font-size: 13px; color: #6b7280; text-align: center; padding: 10px; }
   h1.period-label { margin: 0; }
   .card-box > h2 { margin: 0 0 4px 0; font-weight: bold; font-size: 17px; }
@@ -443,6 +452,13 @@
     const block = document.createElement('div');
     block.className = 'patient-block';
 
+    if (p.status) {
+      const stamp = document.createElement('div');
+      stamp.className = 'status-stamp';
+      stamp.textContent = p.status;
+      block.appendChild(stamp);
+    }
+
     const summaryFields = PATIENT_FIELDS.filter(f => f.type !== 'textarea');
     summaryFields.forEach(f => {
       if (!p[f.key]) return;
@@ -495,6 +511,20 @@
       shiftWrap.className = 'table-wrap';
       shiftWrap.appendChild(buildWardShiftTable(w, data));
       block.appendChild(shiftWrap);
+
+      if (data.nightUpdate) {
+        const nu = document.createElement('div');
+        nu.className = 'night-update-block';
+        const label = document.createElement('h3');
+        label.className = 'patient-note-label';
+        label.textContent = 'Night Update' + (data.nightUpdateBy ? ' — ' + data.nightUpdateBy : '') + ':';
+        nu.appendChild(label);
+        const text = document.createElement('p');
+        text.className = 'patient-note-text';
+        text.textContent = data.nightUpdate;
+        nu.appendChild(text);
+        block.appendChild(nu);
+      }
 
       const patients = Array.isArray(data.patients) ? data.patients : [];
       if (patients.length === 0) {

@@ -92,6 +92,17 @@ export const PATIENT_FIELDS = [
   { key: 'diagnosis', label: 'Diagnosis / Notes', type: 'textarea', big: true }
 ];
 
+// Toggleable patient status, shown as a stamp on the write-up (both the
+// ward nurse's own view and the Overall Nurse's compiled report).
+export const PATIENT_STATUS_OPTIONS = [
+  'DISCHARGE',
+  'TRANS OUT',
+  'NEW PATIENT',
+  'TRANS IN FROM A&E',
+  'DEATH',
+  'ONGOING RX'
+];
+
 function pad(n) { return String(n).padStart(2, '0'); }
 
 // Ward is Africa/Lagos — WAT, UTC+1 year-round, no DST — matching the
