@@ -21,6 +21,8 @@
   table.shift tr.total-row td { font-weight: bold; background: #eff6ff; }
   table.shift input { width: 52px; padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; text-align: center; }
   table.shift input.duty-input { width: 130px; text-align: left; }
+  table.shift td.computed { background: #f9fafb; font-weight: bold; color: #1d4ed8; }
+  table.shift td.mirrored { background: #f9fafb; color: #374151; }
   .patient-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; margin-top: 12px; position: relative; }
   .patient-card .remove-btn { position: absolute; top: 10px; right: 10px; background: #fee2e2; color: #7f1d1d; border: none; border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: bold; cursor: pointer; }
   .patient-field { margin-top: 8px; }
@@ -60,34 +62,16 @@
     <div class="locked-notice" id="lockedNotice" style="display:none;"></div>
 
     <div class="card-box">
-      <h3 style="margin-top:0;">Beds</h3>
-      <div class="patient-field" style="max-width:140px;">
-        <input type="number" id="bedsInput" inputmode="numeric">
-      </div>
-    </div>
-
-    <div class="card-box">
-      <h3 style="margin-top:0;">Starting Census</h3>
-      <p style="font-size:12px; color:#555; margin-top:-6px;">Patients on the ward at 6:00 AM, before today's admissions/discharges. Carried over from yesterday's closing count when available — correct it if it's wrong.</p>
+      <h3 style="margin-top:0;">Previous Occ</h3>
+      <p style="font-size:12px; color:#555; margin-top:-6px;">Patients on the ward at 6:00 AM, before today's admissions/discharges. Carried over from yesterday's closing Occ when available — correct it if it's wrong.</p>
       <div class="patient-field" style="max-width:140px;">
         <input type="number" id="startOccInput" inputmode="numeric">
       </div>
     </div>
 
-    <div class="card-box" id="censusCard">
-      <h3 style="margin-top:0;">Census (auto-calculated)</h3>
-      <p style="font-size:12px; color:#555; margin-top:-6px;">Occ only changes from Adm, Transfer In, and Ext In (up) or Disch, Dama, Transfer Out, Ext Out, Absc, and Death (down) — it is never the sum of the two shifts.</p>
-      <table class="shift">
-        <tbody>
-          <tr><td class="shift-name">Occ (end of day)</td><td id="censusOcc" style="font-weight:bold;">0</td></tr>
-          <tr><td class="shift-name">Vac (Beds &minus; Occ)</td><td id="censusVac" style="font-weight:bold;">0</td></tr>
-        </tbody>
-      </table>
-    </div>
-
     <div class="card-box">
       <h3 style="margin-top:0;">Shift Statistics</h3>
-      <p style="font-size:12px; color:#555; margin-top:-6px;">Enter figures for each shift. Totals are calculated automatically.</p>
+      <p style="font-size:12px; color:#555; margin-top:-6px;">Beds, Occ and Vac carry forward automatically (Occ = Previous Occ + Adm/Transfer In/Ext In &minus; Disch/Dama/Transfer Out/Ext Out/Absc/Death). Enter the rest for each shift.</p>
       <div class="table-wrap">
         <table class="shift" id="shiftTable"></table>
       </div>
@@ -125,6 +109,10 @@
   let editable = false;
   const shiftInputs = {};   // shiftKey -> { field: input, duty: input }
   const totalCells = {};    // field -> td
+  const bedsCells = {};     // shiftKey/'total' -> td (Am holds the real input; Pm/Total mirror it)
+  const occCells = {};      // shiftKey/'total' -> td
+  const vacCells = {};      // shiftKey/'total' -> td
+  let bedsInput = null;
   let patientCounter = 0;
 
   const wardSelect = document.getElementById('wardSelect');
@@ -163,15 +151,64 @@
   function buildShiftTable() {
     const table = document.getElementById('shiftTable');
     table.innerHTML = '';
+    const byKey = k => movementFields.find(f => f.key === k);
+    const soloBefore = ['adm', 'disch', 'dama'].map(byKey);
+    const soloAfter = ['sc', 'vsc', 'absc', 'bid', 'death'].map(byKey);
+    const transferPair = [byKey('transferIn'), byKey('transferOut')];
+    const extPair = [byKey('ext'), byKey('extOut')];
+
     const thead = document.createElement('thead');
-    const headRow = document.createElement('tr');
-    ['Shift', ...movementFields.map(f => f.label), 'Nurses on Duty'].forEach(label => {
+    const row1 = document.createElement('tr');
+    const row2 = document.createElement('tr');
+
+    function rowspanTh(label, target) {
       const th = document.createElement('th');
       th.textContent = label;
-      headRow.appendChild(th);
+      th.rowSpan = 2;
+      target.appendChild(th);
+    }
+    function colspanTh(label, target) {
+      const th = document.createElement('th');
+      th.textContent = label;
+      th.colSpan = 2;
+      target.appendChild(th);
+    }
+
+    rowspanTh('Shift', row1);
+    rowspanTh('Beds', row1);
+    rowspanTh('Occ', row1);
+    rowspanTh('Vac', row1);
+    soloBefore.forEach(f => rowspanTh(f.label, row1));
+    colspanTh('Transfer', row1);
+    colspanTh('Ext', row1);
+    soloAfter.forEach(f => rowspanTh(f.label, row1));
+    rowspanTh('Nurses on Duty', row1);
+
+    ['In', 'Out', 'In', 'Out'].forEach(label => {
+      const th = document.createElement('th');
+      th.textContent = label;
+      row2.appendChild(th);
     });
-    thead.appendChild(headRow);
+
+    thead.appendChild(row1);
+    thead.appendChild(row2);
     table.appendChild(thead);
+
+    function movementInput(tr, s, f) {
+      const td = document.createElement('td');
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.inputMode = 'numeric';
+      input.disabled = !editable;
+      input.addEventListener('input', () => {
+        const num = parseFloat(input.value);
+        wardDoc.shifts[s.key][f.key] = isNaN(num) ? 0 : num;
+        recomputeTotals();
+      });
+      td.appendChild(input);
+      tr.appendChild(td);
+      return input;
+    }
 
     const tbody = document.createElement('tbody');
     SHIFTS.forEach(s => {
@@ -181,22 +218,43 @@
       nameTd.textContent = s.label;
       tr.appendChild(nameTd);
 
-      const fieldInputs = {};
-      movementFields.forEach(f => {
-        const td = document.createElement('td');
-        const input = document.createElement('input');
-        input.type = 'number';
-        input.inputMode = 'numeric';
-        input.disabled = !editable;
-        input.addEventListener('input', () => {
-          const num = parseFloat(input.value);
-          wardDoc.shifts[s.key][f.key] = isNaN(num) ? 0 : num;
-          recomputeTotals();
+      // Beds: real editable input on Am, read-only mirror on Pm
+      const bedsTd = document.createElement('td');
+      if (s.key === 'am') {
+        bedsInput = document.createElement('input');
+        bedsInput.type = 'number';
+        bedsInput.inputMode = 'numeric';
+        bedsInput.disabled = !editable;
+        bedsInput.addEventListener('input', () => {
+          const num = parseFloat(bedsInput.value);
+          wardDoc.beds = isNaN(num) ? 0 : num;
+          recomputeCensus();
         });
-        td.appendChild(input);
-        tr.appendChild(td);
-        fieldInputs[f.key] = input;
-      });
+        bedsTd.appendChild(bedsInput);
+      } else {
+        bedsTd.className = 'mirrored';
+        bedsTd.textContent = '0';
+      }
+      tr.appendChild(bedsTd);
+      bedsCells[s.key] = bedsTd;
+
+      const occTd = document.createElement('td');
+      occTd.className = 'computed';
+      occTd.textContent = '0';
+      tr.appendChild(occTd);
+      occCells[s.key] = occTd;
+
+      const vacTd = document.createElement('td');
+      vacTd.className = 'computed';
+      vacTd.textContent = '0';
+      tr.appendChild(vacTd);
+      vacCells[s.key] = vacTd;
+
+      const fieldInputs = {};
+      soloBefore.forEach(f => { fieldInputs[f.key] = movementInput(tr, s, f); });
+      transferPair.forEach(f => { fieldInputs[f.key] = movementInput(tr, s, f); });
+      extPair.forEach(f => { fieldInputs[f.key] = movementInput(tr, s, f); });
+      soloAfter.forEach(f => { fieldInputs[f.key] = movementInput(tr, s, f); });
 
       const dutyTd = document.createElement('td');
       const dutyInput = document.createElement('input');
@@ -206,6 +264,7 @@
       dutyInput.disabled = !editable;
       dutyInput.addEventListener('input', () => {
         wardDoc.shifts[s.key].nurseOnDuty = dutyInput.value;
+        if (s.key === 'pm') dutyTotalCell.textContent = dutyInput.value || '\u2014';
       });
       dutyTd.appendChild(dutyInput);
       tr.appendChild(dutyTd);
@@ -214,21 +273,41 @@
       shiftInputs[s.key] = { fields: fieldInputs, duty: dutyInput };
     });
 
+    // Total row: Beds/Occ/Vac mirror the Pm (final) figures — never summed.
+    // Movement columns sum Am+Pm. Nurses on Duty carries Pm's entry forward.
     const totalTr = document.createElement('tr');
     totalTr.className = 'total-row';
     const totalNameTd = document.createElement('td');
     totalNameTd.className = 'shift-name';
     totalNameTd.textContent = 'Total';
     totalTr.appendChild(totalNameTd);
+
+    const totalBedsTd = document.createElement('td');
+    totalTr.appendChild(totalBedsTd);
+    bedsCells.total = totalBedsTd;
+
+    const totalOccTd = document.createElement('td');
+    totalTr.appendChild(totalOccTd);
+    occCells.total = totalOccTd;
+
+    const totalVacTd = document.createElement('td');
+    totalTr.appendChild(totalVacTd);
+    vacCells.total = totalVacTd;
+
     movementFields.forEach(f => {
       const td = document.createElement('td');
       td.textContent = '0';
       totalTr.appendChild(td);
       totalCells[f.key] = td;
     });
-    totalTr.appendChild(document.createElement('td'));
-    tbody.appendChild(totalTr);
 
+    const dutyTotalTd = document.createElement('td');
+    dutyTotalTd.style.textAlign = 'left';
+    dutyTotalTd.textContent = '\u2014';
+    totalTr.appendChild(dutyTotalTd);
+    var dutyTotalCell = dutyTotalTd;
+
+    tbody.appendChild(totalTr);
     table.appendChild(tbody);
   }
 
@@ -246,16 +325,26 @@
   }
 
   function recomputeCensus() {
+    const beds = typeof wardDoc.beds === 'number' ? wardDoc.beds : 0;
     const start = typeof wardDoc.startOcc === 'number' ? wardDoc.startOcc : 0;
     let occ = start;
-    SHIFTS.forEach(s => { occ += occDelta(wardDoc.shifts[s.key] || {}); });
-    if (occ < 0) occ = 0;
-    const beds = typeof wardDoc.beds === 'number' ? wardDoc.beds : 0;
-    const vac = beds - occ;
-    wardDoc.occ = occ;
-    wardDoc.vac = vac;
-    document.getElementById('censusOcc').textContent = occ;
-    document.getElementById('censusVac').textContent = vac;
+    const perShiftOcc = {};
+    SHIFTS.forEach(s => {
+      occ += occDelta(wardDoc.shifts[s.key] || {});
+      if (occ < 0) occ = 0;
+      perShiftOcc[s.key] = occ;
+    });
+    wardDoc.occ = occ;   // Total Occ = the final (Pm) shift's figure, not a sum
+    wardDoc.vac = beds - occ;
+
+    SHIFTS.forEach(s => {
+      if (occCells[s.key]) occCells[s.key].textContent = perShiftOcc[s.key];
+      if (vacCells[s.key]) vacCells[s.key].textContent = beds - perShiftOcc[s.key];
+    });
+    if (occCells.total) occCells.total.textContent = occ;
+    if (vacCells.total) vacCells.total.textContent = beds - occ;
+    if (bedsCells.pm) bedsCells.pm.textContent = beds;
+    if (bedsCells.total) bedsCells.total.textContent = beds;
   }
 
   function fillShiftInputsFromDoc() {
@@ -265,6 +354,7 @@
       movementFields.forEach(f => { refs.fields[f.key].value = typeof data[f.key] === 'number' ? data[f.key] : 0; });
       refs.duty.value = data.nurseOnDuty || '';
     });
+    if (bedsInput) bedsInput.value = typeof wardDoc.beds === 'number' ? wardDoc.beds : 0;
     recomputeTotals();
   }
 
@@ -334,12 +424,6 @@
     addPatient();
   });
 
-  document.getElementById('bedsInput').addEventListener('input', (e) => {
-    const num = parseFloat(e.target.value);
-    wardDoc.beds = isNaN(num) ? 0 : num;
-    recomputeCensus();
-  });
-
   document.getElementById('startOccInput').addEventListener('input', (e) => {
     const num = parseFloat(e.target.value);
     wardDoc.startOcc = isNaN(num) ? 0 : num;
@@ -347,7 +431,7 @@
   });
 
   function applyEditableState() {
-    document.getElementById('bedsInput').disabled = !editable;
+    if (bedsInput) bedsInput.disabled = !editable;
     document.getElementById('startOccInput').disabled = !editable;
     document.getElementById('addPatientBtn').style.display = editable ? '' : 'none';
     document.getElementById('submitBtn').style.display = editable ? '' : 'none';
@@ -421,7 +505,6 @@
       } catch (e) { /* non-fatal — leave startOcc at 0, nurse can correct it */ }
     }
 
-    document.getElementById('bedsInput').value = typeof wardDoc.beds === 'number' ? wardDoc.beds : w.beds;
     document.getElementById('startOccInput').value = typeof wardDoc.startOcc === 'number' ? wardDoc.startOcc : 0;
     buildShiftTable();
     refreshStatusPill();

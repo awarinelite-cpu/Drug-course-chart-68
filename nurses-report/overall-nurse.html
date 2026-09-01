@@ -97,7 +97,7 @@
   import {
     doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, writeBatch
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel, weekId } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel, weekId, occDelta } from "../js/nurses-report-common.js";
 
   const wk = weekId();
   const dateId = reportDateId();
@@ -255,17 +255,57 @@
 
   function buildWardShiftTable(w, data) {
     const shifts = data.shifts || {};
+    const byKey = k => movementFields.find(f => f.key === k);
+    const soloBefore = ['adm', 'disch', 'dama'].map(byKey);
+    const soloAfter = ['sc', 'vsc', 'absc', 'bid', 'death'].map(byKey);
+    const transferPair = [byKey('transferIn'), byKey('transferOut')];
+    const extPair = [byKey('ext'), byKey('extOut')];
+
+    const beds = typeof data.beds === 'number' ? data.beds : (w.beds || 0);
+    const startOcc = typeof data.startOcc === 'number' ? data.startOcc : 0;
+    let runningOcc = startOcc;
+    const perShiftOcc = {};
+    SHIFTS.forEach(s => {
+      runningOcc += occDelta(shifts[s.key] || {});
+      if (runningOcc < 0) runningOcc = 0;
+      perShiftOcc[s.key] = runningOcc;
+    });
+    const finalOcc = typeof data.occ === 'number' ? data.occ : runningOcc;
+
     const table = document.createElement('table');
     table.className = 'ward-shift';
 
     const thead = document.createElement('thead');
-    const headRow = document.createElement('tr');
-    ['Shift', ...movementFields.map(f => f.label), 'Nurses on Duty'].forEach(label => {
+    const row1 = document.createElement('tr');
+    const row2 = document.createElement('tr');
+    function rowspanTh(label, target) {
       const th = document.createElement('th');
       th.textContent = label;
-      headRow.appendChild(th);
+      th.rowSpan = 2;
+      target.appendChild(th);
+    }
+    function colspanTh(label, target) {
+      const th = document.createElement('th');
+      th.textContent = label;
+      th.colSpan = 2;
+      target.appendChild(th);
+    }
+    rowspanTh('Shift', row1);
+    rowspanTh('Beds', row1);
+    rowspanTh('Occ', row1);
+    rowspanTh('Vac', row1);
+    soloBefore.forEach(f => rowspanTh(f.label, row1));
+    colspanTh('Transfer', row1);
+    colspanTh('Ext', row1);
+    soloAfter.forEach(f => rowspanTh(f.label, row1));
+    rowspanTh('Nurses on Duty', row1);
+    ['In', 'Out', 'In', 'Out'].forEach(label => {
+      const th = document.createElement('th');
+      th.textContent = label;
+      row2.appendChild(th);
     });
-    thead.appendChild(headRow);
+    thead.appendChild(row1);
+    thead.appendChild(row2);
     table.appendChild(thead);
 
     const tbody = document.createElement('tbody');
@@ -277,7 +317,19 @@
       nameTd.textContent = s.label;
       tr.appendChild(nameTd);
 
-      movementFields.forEach(f => {
+      const bedsTd = document.createElement('td');
+      bedsTd.textContent = beds;
+      tr.appendChild(bedsTd);
+
+      const occTd = document.createElement('td');
+      occTd.textContent = perShiftOcc[s.key];
+      tr.appendChild(occTd);
+
+      const vacTd = document.createElement('td');
+      vacTd.textContent = beds - perShiftOcc[s.key];
+      tr.appendChild(vacTd);
+
+      [...soloBefore, ...transferPair, ...extPair, ...soloAfter].forEach(f => {
         const td = document.createElement('td');
         td.textContent = typeof sData[f.key] === 'number' ? sData[f.key] : 0;
         tr.appendChild(td);
@@ -291,35 +343,42 @@
       tbody.appendChild(tr);
     });
 
+    // Total row: Beds/Occ/Vac carry the Pm (final) figures forward — never
+    // summed. Movement columns sum Am+Pm. Nurses on Duty carries Pm forward.
     const totalTr = document.createElement('tr');
     totalTr.className = 'total-row';
     const totalNameTd = document.createElement('td');
     totalNameTd.className = 'shift-name';
     totalNameTd.textContent = 'Total';
     totalTr.appendChild(totalNameTd);
-    movementFields.forEach(f => {
+
+    const totalBedsTd = document.createElement('td');
+    totalBedsTd.textContent = beds;
+    totalTr.appendChild(totalBedsTd);
+
+    const totalOccTd = document.createElement('td');
+    totalOccTd.textContent = finalOcc;
+    totalTr.appendChild(totalOccTd);
+
+    const totalVacTd = document.createElement('td');
+    totalVacTd.textContent = beds - finalOcc;
+    totalTr.appendChild(totalVacTd);
+
+    [...soloBefore, ...transferPair, ...extPair, ...soloAfter].forEach(f => {
       const td = document.createElement('td');
       td.textContent = typeof data[f.key] === 'number' ? data[f.key] : 0;
       totalTr.appendChild(td);
     });
-    totalTr.appendChild(document.createElement('td'));
-    tbody.appendChild(totalTr);
 
+    const dutyTotalTd = document.createElement('td');
+    dutyTotalTd.style.textAlign = 'left';
+    const pmDuty = (shifts.pm || {}).nurseOnDuty;
+    dutyTotalTd.textContent = pmDuty || '\u2014';
+    totalTr.appendChild(dutyTotalTd);
+
+    tbody.appendChild(totalTr);
     table.appendChild(tbody);
     return table;
-  }
-
-  function buildCensusLine(w, data) {
-    const beds = typeof data.beds === 'number' ? data.beds : (w.beds || 0);
-    const startOcc = typeof data.startOcc === 'number' ? data.startOcc : 0;
-    const occ = typeof data.occ === 'number' ? data.occ : 0;
-    const vac = beds - occ;
-    const p = document.createElement('p');
-    p.style.fontSize = '13px';
-    p.style.margin = '0 0 8px 0';
-    p.innerHTML = '<b>Beds:</b> ' + beds + '&nbsp;&nbsp; <b>Starting Census:</b> ' + startOcc +
-      '&nbsp;&nbsp; <b>Occ (end of day):</b> ' + occ + '&nbsp;&nbsp; <b>Vac:</b> ' + vac;
-    return p;
   }
 
   function buildPatientBlock(p) {
@@ -377,7 +436,6 @@
       heading.textContent = w.label;
       block.appendChild(heading);
 
-      block.appendChild(buildCensusLine(w, data));
       block.appendChild(buildWardShiftTable(w, data));
 
       const patients = Array.isArray(data.patients) ? data.patients : [];
