@@ -67,6 +67,7 @@
   <div class="brand">Overall Nurse</div>
   <div class="right">
     <button class="btn btn-secondary" style="padding:6px 12px;" onclick="gnavGoBack('role-select.html')">Back</button>
+    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="window.location.href='archive-list.html?type=overall'">📁 Archive</button>
     <button class="btn btn-primary" style="padding:6px 12px;" onclick="window.print()">Print</button>
   </div>
 </div>
@@ -97,6 +98,17 @@
       <h2>Ward Reports</h2>
       <div id="wardReports"></div>
     </div>
+
+    <div class="card-box" id="archiveBox" style="display:none;">
+      <h2>Finalize This Report</h2>
+      <p style="font-size:12px; color:#555; margin-top:-4px;">
+        Once every ward report above looks right, save this 24-hour period to the permanent
+        Ward Charts Archive. This files the overall report and all 19 ward reports as read-only
+        records. After saving, only an admin or subadmin can make corrections to it.
+      </p>
+      <button class="btn btn-primary" id="archiveBtn" style="padding:10px 16px;">💾 Save to Archive</button>
+      <div class="save-status" id="archiveStatus"></div>
+    </div>
   </div>
 
 </div>
@@ -107,7 +119,7 @@
   import {
     doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, writeBatch
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel, weekId, occDelta } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel, wardReportPeriodLabel, weekId, occDelta } from "../js/nurses-report-common.js";
 
   const wk = weekId();
   const dateId = reportDateId();
@@ -590,9 +602,10 @@
     }
     const overall = roleSnap.exists() ? roleSnap.data().overallNurse : null;
     const isAdmin = profile.role === 'admin';
+    const isSubadmin = profile.role === 'subadmin';
     const isOverall = overall && overall.uid === user.uid;
 
-    if (!isAdmin && !isOverall) {
+    if (!isAdmin && !isSubadmin && !isOverall) {
       document.getElementById('deniedMsg').textContent = overall
         ? (overall.name || 'Another nurse') + ' is the Overall Nurse for this week. Ask them to hand off the role, or claim it yourself if it\u2019s free next week.'
         : "No one has assumed the Overall Nurse role this week yet.";
@@ -600,13 +613,98 @@
       return;
     }
 
-    document.getElementById('whoLabel').textContent = 'Overall Nurse this week: ' + (overall ? overall.name : profile.name) + (isAdmin && !isOverall ? ' (viewing as admin)' : '');
+    document.getElementById('whoLabel').textContent = 'Overall Nurse this week: ' + (overall ? overall.name : profile.name) + ((isAdmin || isSubadmin) && !isOverall ? ' (viewing as ' + profile.role + ')' : '');
     document.getElementById('reportBox').style.display = 'block';
+
+    // Save to Archive is only offered to the Overall Nurse, admin, or
+    // subadmin — matching who Firestore rules allow to file/update it.
+    document.getElementById('archiveBox').style.display = 'block';
+    document.getElementById('archiveBtn').addEventListener('click', () => saveToArchive(isAdmin, isSubadmin));
 
     buildTable();
     await ensureSeeded();
     subscribeToWards();
   });
+
+  function setArchiveStatus(msg, isError) {
+    const el = document.getElementById('archiveStatus');
+    el.textContent = msg;
+    el.style.color = isError ? '#dc2626' : '#6b7280';
+  }
+
+  // Files the current 24-hour period to the permanent Ward Charts Archive:
+  // one "overall_<dateId>" doc plus one "ward_<wardKey>_<dateId>" doc per
+  // ward, all as a single batch. If today's period was already archived,
+  // only an admin/subadmin may re-run this to refresh the filed copy —
+  // matching firestore.rules, which only lets the Overall Nurse *create*
+  // an archive entry, never update an existing one.
+  async function saveToArchive(isAdmin, isSubadmin) {
+    const overallRef = doc(db, 'archives', 'overall_' + dateId);
+    let existingSnap;
+    try {
+      existingSnap = await getDoc(overallRef);
+    } catch (e) {
+      setArchiveStatus("Couldn't check the archive: " + (e.code || e.message || 'unknown error'), true);
+      return;
+    }
+    const alreadyArchived = existingSnap.exists();
+    if (alreadyArchived && !isAdmin && !isSubadmin) {
+      setArchiveStatus('This period is already archived. Only an admin or subadmin can update an archived report.', true);
+      return;
+    }
+    const verb = alreadyArchived ? 'update the archived copy of' : 'save';
+    if (!confirm('This will ' + verb + ' this 24-hour report (overall + all ' + WARDS.length + ' ward reports) to the permanent archive. Continue?')) {
+      return;
+    }
+
+    const who = currentProfile.name || 'Unknown';
+    const batch = writeBatch(db);
+
+    const wardsSnapshot = {};
+    WARDS.forEach(w => { wardsSnapshot[w.key] = wardData[w.key] || {}; });
+    const overallPayload = {
+      type: 'overall', dateId, weekId: wk,
+      fileName: reportPeriodLabel(dateId),
+      wards: wardsSnapshot,
+      archivedBy: who, archivedByUid: currentUser.uid, archivedAt: serverTimestamp()
+    };
+    if (alreadyArchived) {
+      overallPayload.lastEditedBy = who;
+      overallPayload.lastEditedByUid = currentUser.uid;
+      overallPayload.lastEditedAt = serverTimestamp();
+      batch.update(overallRef, overallPayload);
+    } else {
+      batch.set(overallRef, overallPayload);
+    }
+
+    WARDS.forEach(w => {
+      const ref = doc(db, 'archives', 'ward_' + w.key + '_' + dateId);
+      const payload = {
+        type: 'ward', wardKey: w.key, wardLabel: w.label, dateId, weekId: wk,
+        fileName: wardReportPeriodLabel(dateId),
+        data: wardData[w.key] || {},
+        archivedBy: who, archivedByUid: currentUser.uid, archivedAt: serverTimestamp()
+      };
+      if (alreadyArchived) {
+        payload.lastEditedBy = who;
+        payload.lastEditedByUid = currentUser.uid;
+        payload.lastEditedAt = serverTimestamp();
+        batch.update(ref, payload);
+      } else {
+        batch.set(ref, payload);
+      }
+    });
+
+    document.getElementById('archiveBtn').disabled = true;
+    try {
+      await batch.commit();
+      setArchiveStatus('Archived. Overall report + ' + WARDS.length + ' ward reports saved.', false);
+    } catch (e) {
+      setArchiveStatus("Couldn't save to archive: " + (e.code || e.message || 'unknown error'), true);
+    } finally {
+      document.getElementById('archiveBtn').disabled = false;
+    }
+  }
 </script>
 </body>
 </html>

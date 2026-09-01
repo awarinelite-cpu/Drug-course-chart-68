@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="../icons/icon-192.png">
+<title>Report Archive</title>
+<link rel="stylesheet" href="../js/styles.css">
+<style>
+  .archive-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px; margin-top: 14px;
+  }
+  .archive-card {
+    border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 12px;
+    cursor: pointer; background: #fff; transition: box-shadow .15s, border-color .15s;
+    text-align: left;
+  }
+  .archive-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.1); border-color: #93c5fd; }
+  .archive-card .file-icon { font-size: 26px; line-height: 1; }
+  .archive-card .file-name {
+    font-weight: bold; font-size: 12.5px; margin-top: 8px; line-height: 1.35;
+    text-transform: uppercase; color: #111827;
+  }
+  .archive-card .file-meta { font-size: 11px; color: #6b7280; margin-top: 8px; }
+  .archive-card .edited-badge {
+    display: inline-block; margin-top: 6px; font-size: 10px; font-weight: bold;
+    background: #eff6ff; color: #1d4ed8; border-radius: 999px; padding: 2px 8px;
+  }
+  .archive-empty { font-size: 13px; color: #6b7280; text-align: center; padding: 30px 10px; }
+</style>
+</head>
+<body>
+<script type="module" src="../js/nav.js"></script>
+<div class="topbar">
+  <div class="brand" id="brandTitle">Report Archive</div>
+  <div class="right">
+    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="gnavGoBack('role-select.html')">Back</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="card-box">
+    <h2 id="pageTitle">Report Archive</h2>
+    <p style="font-size:12px; color:#555; margin-top:-6px;" id="pageSubtitle"></p>
+    <div class="search-row">
+      <input type="text" id="dateSearch" placeholder="Search by date, e.g. 01/09/26 or 2026-09-01">
+    </div>
+    <div id="fileCount" style="font-size:12px; color:#666; margin-top:8px;"></div>
+    <div class="archive-grid" id="archiveGrid"></div>
+    <div class="archive-empty" id="archiveEmpty" style="display:none;">No archived reports yet.</div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from "../js/auth-guard.js";
+  import { db } from "../js/firebase.js";
+  import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+  const params = new URLSearchParams(window.location.search);
+  const type = params.get('type') === 'ward' ? 'ward' : 'overall';
+  const wardKey = params.get('ward') || '';
+  const wardLabel = params.get('label') || '';
+
+  if (type === 'ward') {
+    document.getElementById('brandTitle').textContent = wardLabel + ' Archive';
+    document.getElementById('pageTitle').textContent = wardLabel + ' — Ward Report Archive';
+    document.getElementById('pageSubtitle').textContent = 'Every finalized 24-hour ward report for ' + wardLabel + '.';
+  } else {
+    document.getElementById('brandTitle').textContent = 'Overall Archive';
+    document.getElementById('pageTitle').textContent = 'Overall Report Archive';
+    document.getElementById('pageSubtitle').textContent = 'Every finalized 24-hour overall report.';
+  }
+
+  let allFiles = [];
+
+  function fmtTimestamp(ts) {
+    if (!ts || !ts.toDate) return '';
+    const d = ts.toDate();
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function render() {
+    const q = document.getElementById('dateSearch').value.trim().toLowerCase();
+    const grid = document.getElementById('archiveGrid');
+    grid.innerHTML = '';
+    const filtered = !q ? allFiles : allFiles.filter(f =>
+      f.dateId.toLowerCase().includes(q) || (f.fileName || '').toLowerCase().includes(q)
+    );
+    document.getElementById('fileCount').textContent = filtered.length + ' file' + (filtered.length === 1 ? '' : 's');
+    document.getElementById('archiveEmpty').style.display = filtered.length === 0 ? 'block' : 'none';
+
+    filtered.forEach(f => {
+      const card = document.createElement('div');
+      card.className = 'archive-card';
+      card.tabIndex = 0;
+      card.innerHTML =
+        '<div class="file-icon">\uD83D\uDCC4</div>' +
+        '<div class="file-name">' + escapeHtml(f.fileName || f.dateId) + '</div>' +
+        '<div class="file-meta">Archived by ' + escapeHtml(f.archivedBy || 'Unknown') +
+        (f.archivedAt ? '<br>' + fmtTimestamp(f.archivedAt) : '') + '</div>' +
+        (f.lastEditedAt ? '<div class="edited-badge">Edited</div>' : '');
+      const open = () => { window.location.href = 'archive-view.html?id=' + encodeURIComponent(f.id); };
+      card.addEventListener('click', open);
+      card.addEventListener('keydown', e => { if (e.key === 'Enter') open(); });
+      grid.appendChild(card);
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  document.getElementById('dateSearch').addEventListener('input', render);
+
+  requireAuth(async () => {
+    let snap;
+    try {
+      if (type === 'ward') {
+        snap = await getDocs(query(collection(db, 'archives'), where('wardKey', '==', wardKey)));
+      } else {
+        snap = await getDocs(query(collection(db, 'archives'), where('type', '==', 'overall')));
+      }
+    } catch (e) {
+      document.getElementById('archiveEmpty').textContent = "Couldn't load the archive: " + (e.code || e.message || 'unknown error');
+      document.getElementById('archiveEmpty').style.display = 'block';
+      return;
+    }
+    allFiles = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Most recent day first.
+    allFiles.sort((a, b) => (b.dateId || '').localeCompare(a.dateId || ''));
+    render();
+  });
+</script>
+</body>
+</html>

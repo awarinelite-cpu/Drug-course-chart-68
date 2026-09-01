@@ -157,7 +157,7 @@
   import { app, db, firebaseConfig } from "./js/firebase.js";
   import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-  import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
   import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js";
   import { downloadFullBackup } from "./js/export.js";
   import { avatarMarkup } from "./js/avatar.js";
@@ -501,6 +501,18 @@
       const tdRole = document.createElement('td');
       tdRole.textContent = u.role || '';
       const tdAction = document.createElement('td');
+      if (u.id !== currentAdminUid && (u.role === 'nurse' || u.role === 'subadmin')) {
+        // Subadmin is a Ward Charts Archive permission (edit/finalize
+        // archived reports) — toggled here rather than at account
+        // creation, since most accounts start as plain nurse accounts.
+        const roleBtn = document.createElement('button');
+        roleBtn.className = 'btn btn-secondary';
+        roleBtn.style.cssText = 'padding:4px 10px; font-size:11px; margin-right:6px;';
+        const makingSubadmin = u.role !== 'subadmin';
+        roleBtn.textContent = makingSubadmin ? 'Make Subadmin' : 'Remove Subadmin';
+        roleBtn.onclick = () => setUserRole(u, makingSubadmin ? 'subadmin' : 'nurse', roleBtn);
+        tdAction.appendChild(roleBtn);
+      }
       if (u.id !== currentAdminUid) {
         const delBtn = document.createElement('button');
         delBtn.className = 'btn btn-secondary';
@@ -514,6 +526,16 @@
       tbody.appendChild(tr);
     });
   }
+
+  window.setUserRole = async function (u, newRole, btn) {
+    btn.disabled = true;
+    try {
+      await updateDoc(doc(db, 'users', u.id), { role: newRole });
+    } catch (e) {
+      alert("Couldn't update role: " + (e.code || e.message || 'unknown error'));
+    }
+    loadUsers();
+  };
 
   window.createNurse = async function () {
     const name = document.getElementById('n_name').value.trim();

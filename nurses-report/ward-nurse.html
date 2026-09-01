@@ -85,6 +85,7 @@
         <option value="">-- Select your ward --</option>
       </select>
       <span class="status-pill" id="statusPill" style="display:none;"></span>
+      <button class="btn btn-secondary" id="wardArchiveBtn" style="padding:6px 12px; display:none;" type="button">📁 Archive</button>
     </div>
     <div class="save-status" id="topStatus"></div>
   </div>
@@ -734,7 +735,17 @@
 
   wardSelect.addEventListener('change', () => {
     document.getElementById('formBox').style.display = 'none';
-    if (wardSelect.value) loadWard(wardSelect.value);
+    const archiveBtn = document.getElementById('wardArchiveBtn');
+    if (wardSelect.value) {
+      loadWard(wardSelect.value);
+      const w = WARDS.find(x => x.key === wardSelect.value);
+      archiveBtn.style.display = '';
+      archiveBtn.onclick = () => {
+        window.location.href = 'archive-list.html?type=ward&ward=' + encodeURIComponent(w.key) + '&label=' + encodeURIComponent(w.label);
+      };
+    } else {
+      archiveBtn.style.display = 'none';
+    }
   });
 
   document.getElementById('saveBtn').addEventListener('click', async () => {

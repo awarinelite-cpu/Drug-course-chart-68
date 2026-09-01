@@ -13,6 +13,18 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
+    function isSubadmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'subadmin';
+    }
+    // The nurse currently holding the Overall Nurse role for a given week
+    // (see /nurseReportRoles/{weekId}) — used to gate first-time archiving.
+    function isOverallForWeek(wid) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/nurseReportRoles/$(wid))
+        && get(/databases/$(database)/documents/nurseReportRoles/$(wid)).data.overallNurse.uid == request.auth.uid;
+    }
 
     // User profiles / roles
     match /users/{uid} {
@@ -60,6 +72,24 @@ service cloud.firestore {
       match /wards/{wardKey} {
         allow read, write: if isKnownUser();
       }
+    }
+
+    // Ward Charts Archive — the finalized, permanent daily record. One
+    // "overall_<dateId>" doc plus one "ward_<wardKey>_<dateId>" doc per
+    // ward are created together (see nurses-report/overall-nurse.html's
+    // Save to Archive action). Any known user may read/search the
+    // archive. Only the Overall Nurse for the report's week (checked via
+    // the weekId carried on the write itself), an admin, or a subadmin
+    // may create an archive entry the first time; once it exists, only an
+    // admin or subadmin may change it (correcting a figure or note) — even
+    // the Overall Nurse who filed it cannot edit it afterwards. Archive
+    // files are permanent: delete is never allowed, by anyone.
+    match /archives/{archiveId} {
+      allow read: if isKnownUser();
+      allow create: if isKnownUser()
+        && (isAdmin() || isSubadmin() || isOverallForWeek(request.resource.data.weekId));
+      allow update: if isAdmin() || isSubadmin();
+      allow delete: if false;
     }
 
     // Patients and every chart subcollection under them

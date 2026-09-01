@@ -124,12 +124,19 @@ export function reportDateId(d = new Date()) {
 
 // Matches the paper report's header line, e.g.
 // "24 HOURS OVERALL REPORT WEF 0600HRS OF 15/08/26 TO 0600HRS OF 16/08/26"
-export function reportPeriodLabel(dateId) {
+// `kind` swaps in for a per-ward archive file's heading, e.g.
+// "24 HOURS WARD REPORT WEF 0600HRS OF 15/08/26 TO 0600HRS OF 16/08/26"
+export function reportPeriodLabel(dateId, kind = 'OVERALL') {
   const [y, m, d] = dateId.split('-').map(Number);
   const start = new Date(Date.UTC(y, m - 1, d));
   const end = new Date(Date.UTC(y, m - 1, d + 1));
   const fmt = dt => pad(dt.getUTCDate()) + '/' + pad(dt.getUTCMonth() + 1) + '/' + String(dt.getUTCFullYear()).slice(2);
-  return '24 HOURS OVERALL REPORT WEF 0600HRS OF ' + fmt(start) + ' TO 0600HRS OF ' + fmt(end);
+  return '24 HOURS ' + kind + ' REPORT WEF 0600HRS OF ' + fmt(start) + ' TO 0600HRS OF ' + fmt(end);
+}
+
+// The Archive file name for one ward's daily report — see reportPeriodLabel.
+export function wardReportPeriodLabel(dateId) {
+  return reportPeriodLabel(dateId, 'WARD');
 }
 
 // The Overall Nurse role runs Monday–Sunday, identified by that Monday's

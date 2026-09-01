@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="../icons/icon-192.png">
+<title>Archived Report</title>
+<link rel="stylesheet" href="../js/styles.css">
+<style>
+  .file-meta-row { font-size: 12px; color: #555; margin-top: 6px; }
+  .readonly-badge, .editing-badge {
+    display: inline-block; font-size: 11px; font-weight: bold; border-radius: 999px;
+    padding: 3px 10px; margin-left: 8px;
+  }
+  .readonly-badge { background: #f3f4f6; color: #374151; }
+  .editing-badge { background: #fef3c7; color: #78350f; }
+  .edit-toggle-btn {
+    border: none; background: #eff6ff; color: #1d4ed8; border-radius: 6px;
+    padding: 4px 10px; font-size: 13px; cursor: pointer; margin-left: 8px;
+  }
+  h1.period-label { margin: 0; display: flex; align-items: center; flex-wrap: wrap; }
+
+  table.report th, table.report td { border: 1px solid #d1d5db; padding: 5px 4px; font-size: 12px; text-align: center; }
+  table.report th { background: #f3f4f6; text-transform: uppercase; font-size: 10px; white-space: normal !important; }
+  table.report td.ward-name { font-weight: bold; text-align: left; white-space: nowrap; }
+  table.report input { width: 56px; padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; text-align: center; }
+  table.report input.duty-input { width: 100px; text-align: left; }
+  table.report tr.totals-row td { font-weight: bold; background: #eff6ff; }
+
+  .ward-report-block { margin-top: 16px; }
+  .ward-report-heading {
+    font-family: Arial, Helvetica, sans-serif; font-weight: 900; font-size: 22px;
+    text-transform: uppercase; color: #000; letter-spacing: .5px; margin: 0 0 10px 0;
+  }
+  table.ward-shift th, table.ward-shift td { border: 1px solid #d1d5db; padding: 5px 4px; font-size: 12px; text-align: center; }
+  table.ward-shift th { background: #f3f4f6; text-transform: uppercase; font-size: 10px; }
+  table.ward-shift td.shift-name { font-weight: bold; text-align: left; }
+  table.ward-shift tr.total-row td { font-weight: bold; background: #eff6ff; }
+  table.ward-shift input { width: 52px; padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; text-align: center; }
+  table.ward-shift input.duty-input { width: 120px; text-align: left; }
+  table.ward-shift td.computed { background: #f9fafb; font-weight: bold; color: #1d4ed8; }
+
+  .patient-block { padding: 0; margin-top: 14px; position: relative; }
+  .patient-block .patient-line { font-size: 13px; margin: 2px 0; }
+  .patient-block h3 { display: inline; font-size: inherit; font-weight: bold; margin: 0; }
+  .patient-block .patient-note-label { font-size: 12px; text-decoration: underline; margin-top: 8px; display: block; }
+  .patient-block .patient-note-text { font-size: 13px; white-space: pre-wrap; margin: 4px 0 0 0; text-align: justify; }
+  .patient-block .patient-note-subheading { font-size: 13px; font-weight: bold; margin: 8px 0 2px 0; }
+  .status-stamp {
+    position: absolute; top: 0; right: 0; color: #dc2626; font-weight: 900; font-size: 15px;
+    text-transform: uppercase; letter-spacing: 1px; transform: rotate(-14deg); opacity: .85;
+    font-family: Arial, Helvetica, sans-serif; pointer-events: none; white-space: nowrap;
+  }
+  .no-patients { font-size: 12px; color: #6b7280; }
+  .night-update-block { padding: 0; margin-top: 4px; }
+
+  .patient-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; margin-top: 12px; position: relative; }
+  .patient-card .remove-btn { position: absolute; top: 10px; right: 10px; background: #fee2e2; color: #7f1d1d; border: none; border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: bold; cursor: pointer; }
+  .patient-field { margin-top: 8px; }
+  .patient-field label { display: block; font-size: 13px; color: #111; margin-bottom: 4px; font-weight: bold; }
+  .patient-field input, .patient-field textarea { width: 100%; padding: 7px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: inherit; }
+  .patient-field textarea { min-height: 60px; resize: vertical; }
+  .patient-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+  .status-select { padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 999px; font-size: 12px; font-weight: bold; background: #fff; }
+  .status-select.set { background: #fee2e2; color: #7f1d1d; border-color: #fca5a5; }
+  .add-patient-btn { margin-top: 12px; width: 100%; padding: 10px; border: 2px dashed #93c5fd; background: #eff6ff; color: #1d4ed8; border-radius: 8px; font-weight: bold; font-size: 13px; cursor: pointer; }
+
+  .edit-actions { display: flex; gap: 10px; margin-top: 16px; position: sticky; bottom: 0; background: #fff; padding: 10px 0; }
+  .save-status { font-size: 11px; color: #6b7280; min-height: 14px; }
+  .card-box > h2 { margin: 0 0 4px 0; font-weight: bold; font-size: 17px; }
+</style>
+</head>
+<body>
+<script type="module" src="../js/nav.js"></script>
+<div class="topbar">
+  <div class="brand">Archived Report</div>
+  <div class="right">
+    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="history.back()">Back</button>
+    <button class="btn btn-primary" style="padding:6px 12px;" onclick="window.print()">Print</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="card-box" id="deniedBox" style="display:none; text-align:center;">
+    <h3 style="margin-top:0;">Not Found</h3>
+    <p style="font-size:13px; color:#555;" id="deniedMsg"></p>
+  </div>
+
+  <div id="reportBox" style="display:none;">
+    <div class="card-box">
+      <h1 class="period-label" id="periodLabel">Loading…</h1>
+      <div class="file-meta-row" id="fileMeta"></div>
+    </div>
+
+    <div class="card-box" id="statsCard" style="display:none;">
+      <h2>All Wards — 24-Hour Statistics</h2>
+      <div class="table-wrap"><table class="report" id="reportTable"></table></div>
+    </div>
+
+    <div class="card-box">
+      <h2>Ward Report<span id="wardReportsPlural"></span></h2>
+      <div id="wardReports"></div>
+    </div>
+
+    <div class="card-box" id="editActionsCard" style="display:none;">
+      <div class="edit-actions">
+        <button class="btn btn-primary" id="saveBtn" style="flex:1; padding:12px;">Save Changes</button>
+        <button class="btn btn-secondary" id="cancelBtn" style="flex:1; padding:12px;">Cancel</button>
+      </div>
+      <div class="save-status" id="editStatus"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from "../js/auth-guard.js";
+  import { db } from "../js/firebase.js";
+  import { doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, occDelta } from "../js/nurses-report-common.js";
+
+  const archiveId = new URLSearchParams(window.location.search).get('id');
+  const movementFields = SHIFT_STAT_FIELDS;
+
+  let currentProfile = null, currentUser = null;
+  let canEdit = false;       // admin or subadmin
+  let editMode = false;
+  let archiveRef, archiveData; // raw loaded doc
+  let isOverallType = true;
+  let wardsMeta = [];         // [{key,label,beds}]
+  let wardsMap = {};          // key -> mutable ward data object
+  let patientCounter = 0;
+
+  function fmtTimestamp(ts) {
+    if (!ts || !ts.toDate) return '';
+    const d = ts.toDate();
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // ---------- read-only rendering ----------
+
+  function isNoteHeadingLine(line) {
+    const t = line.trim();
+    if (!t || t.length > 60) return false;
+    const letters = t.replace(/[^A-Za-z]/g, '');
+    return letters.length > 0 && letters === letters.toUpperCase();
+  }
+  function renderNoteLines(container, text) {
+    const lines = String(text).split('\n');
+    let paraLines = [];
+    function flushPara() {
+      if (!paraLines.length) return;
+      const p = document.createElement('p');
+      p.className = 'patient-note-text';
+      p.textContent = paraLines.join('\n');
+      container.appendChild(p);
+      paraLines = [];
+    }
+    lines.forEach(line => {
+      if (isNoteHeadingLine(line)) {
+        flushPara();
+        const h = document.createElement('h4');
+        h.className = 'patient-note-subheading';
+        h.textContent = line.trim();
+        container.appendChild(h);
+      } else {
+        paraLines.push(line);
+      }
+    });
+    flushPara();
+  }
+
+  function buildPatientBlockView(p) {
+    const block = document.createElement('div');
+    block.className = 'patient-block';
+    if (p.status) {
+      const stamp = document.createElement('div');
+      stamp.className = 'status-stamp';
+      stamp.textContent = p.status;
+      block.appendChild(stamp);
+    }
+    PATIENT_FIELDS.filter(f => f.type !== 'textarea').forEach(f => {
+      if (!p[f.key]) return;
+      const line = document.createElement('div');
+      line.className = 'patient-line';
+      const b = document.createElement('h3');
+      b.textContent = f.label + ': ';
+      line.appendChild(b);
+      line.appendChild(document.createTextNode(p[f.key]));
+      block.appendChild(line);
+    });
+    PATIENT_FIELDS.filter(f => f.type === 'textarea').forEach(f => {
+      if (!p[f.key]) return;
+      const label = document.createElement('h3');
+      label.className = 'patient-note-label';
+      label.textContent = f.label + ':';
+      block.appendChild(label);
+      renderNoteLines(block, p[f.key]);
+    });
+    return block;
+  }
+
+  function buildWardShiftTableView(w, data) {
+    const shifts = data.shifts || {};
+    const byKey = k => movementFields.find(f => f.key === k);
+    const soloBefore = ['adm', 'disch', 'dama'].map(byKey);
+    const soloAfter = ['sc', 'vsc', 'absc', 'bid', 'death'].map(byKey);
+    const transferPair = [byKey('transferIn'), byKey('transferOut')];
+    const extPair = [byKey('ext'), byKey('extOut')];
+
+    const beds = typeof data.beds === 'number' ? data.beds : (w.beds || 0);
+    const startOcc = typeof data.startOcc === 'number' ? data.startOcc : 0;
+    let runningOcc = startOcc;
+    const perShiftOcc = {};
+    SHIFTS.forEach(s => {
+      runningOcc += occDelta(shifts[s.key] || {});
+      if (runningOcc < 0) runningOcc = 0;
+      perShiftOcc[s.key] = runningOcc;
+    });
+    const finalOcc = typeof data.occ === 'number' ? data.occ : runningOcc;
+
+    const table = document.createElement('table');
+    table.className = 'ward-shift';
+    const thead = document.createElement('thead');
+    const row1 = document.createElement('tr'), row2 = document.createElement('tr');
+    const rowspanTh = (label, target) => { const th = document.createElement('th'); th.textContent = label; th.rowSpan = 2; target.appendChild(th); };
+    const colspanTh = (label, target) => { const th = document.createElement('th'); th.textContent = label; th.colSpan = 2; target.appendChild(th); };
+    rowspanTh('Shift', row1); rowspanTh('Beds', row1); rowspanTh('Occ', row1); rowspanTh('Vac', row1);
+    soloBefore.forEach(f => rowspanTh(f.label, row1));
+    colspanTh('Int. Transfer', row1); colspanTh('Ext. Transfer', row1);
+    soloAfter.forEach(f => rowspanTh(f.label, row1));
+    rowspanTh('Nurses on Duty', row1);
+    ['In', 'Out', 'In', 'Out'].forEach(label => { const th = document.createElement('th'); th.textContent = label; row2.appendChild(th); });
+    thead.appendChild(row1); thead.appendChild(row2); table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    SHIFTS.forEach(s => {
+      const sData = shifts[s.key] || {};
+      const tr = document.createElement('tr');
+      const nameTd = document.createElement('td'); nameTd.className = 'shift-name'; nameTd.textContent = s.label; tr.appendChild(nameTd);
+      const bedsTd = document.createElement('td'); bedsTd.textContent = beds; tr.appendChild(bedsTd);
+      const occTd = document.createElement('td'); occTd.textContent = perShiftOcc[s.key]; tr.appendChild(occTd);
+      const vacTd = document.createElement('td'); vacTd.textContent = beds - perShiftOcc[s.key]; tr.appendChild(vacTd);
+      [...soloBefore, ...transferPair, ...extPair, ...soloAfter].forEach(f => {
+        const td = document.createElement('td'); td.textContent = typeof sData[f.key] === 'number' ? sData[f.key] : 0; tr.appendChild(td);
+      });
+      const dutyTd = document.createElement('td'); dutyTd.style.textAlign = 'left'; dutyTd.textContent = sData.nurseOnDuty || '\u2014'; tr.appendChild(dutyTd);
+      tbody.appendChild(tr);
+    });
+
+    const totalTr = document.createElement('tr'); totalTr.className = 'total-row';
+    const totalNameTd = document.createElement('td'); totalNameTd.className = 'shift-name'; totalNameTd.textContent = 'Total'; totalTr.appendChild(totalNameTd);
+    const totalBedsTd = document.createElement('td'); totalBedsTd.textContent = beds; totalTr.appendChild(totalBedsTd);
+    const totalOccTd = document.createElement('td'); totalOccTd.textContent = finalOcc; totalTr.appendChild(totalOccTd);
+    const totalVacTd = document.createElement('td'); totalVacTd.textContent = beds - finalOcc; totalTr.appendChild(totalVacTd);
+    [...soloBefore, ...transferPair, ...extPair, ...soloAfter].forEach(f => {
+      const td = document.createElement('td'); td.textContent = typeof data[f.key] === 'number' ? data[f.key] : 0; totalTr.appendChild(td);
+    });
+    const pmDuty = (shifts.pm || {}).nurseOnDuty;
+    const dutyTotalTd = document.createElement('td'); dutyTotalTd.style.textAlign = 'left'; dutyTotalTd.textContent = pmDuty || '\u2014'; totalTr.appendChild(dutyTotalTd);
+    tbody.appendChild(totalTr);
+    table.appendChild(tbody);
+    return table;
+  }
+
+  function buildWardReportBlockView(w, data) {
+    const block = document.createElement('div');
+    block.className = 'ward-report-block';
+    const heading = document.createElement('h2');
+    heading.className = 'ward-report-heading';
+    heading.textContent = w.label;
+    block.appendChild(heading);
+
+    const shiftWrap = document.createElement('div');
+    shiftWrap.className = 'table-wrap';
+    shiftWrap.appendChild(buildWardShiftTableView(w, data));
+    block.appendChild(shiftWrap);
+
+    const patients = Array.isArray(data.patients) ? data.patients : [];
+    if (patients.length === 0) {
+      const none = document.createElement('div');
+      none.className = 'no-patients';
+      none.style.marginTop = '10px';
+      none.textContent = 'No patient write-ups submitted for this ward.';
+      block.appendChild(none);
+    } else {
+      patients.forEach(p => block.appendChild(buildPatientBlockView(p)));
+    }
+
+    if (data.nightUpdate) {
+      const nu = document.createElement('div');
+      nu.className = 'night-update-block';
+      const label = document.createElement('h3');
+      label.className = 'patient-note-label';
+      label.textContent = 'Night Update' + (data.nightUpdateBy ? ' — ' + data.nightUpdateBy : '') + ':';
+      nu.appendChild(label);
+      const text = document.createElement('p');
+      text.className = 'patient-note-text';
+      text.textContent = data.nightUpdate;
+      nu.appendChild(text);
+      block.appendChild(nu);
+    }
+    return block;
+  }
+
+  function buildStatsTableView() {
+    const table = document.createElement('table');
+    table.className = 'report';
+    const thead = document.createElement('thead');
+    const row1 = document.createElement('tr'), row2 = document.createElement('tr');
+    const rowspanTh = (label, target) => { const th = document.createElement('th'); th.textContent = label; th.rowSpan = 2; target.appendChild(th); };
+    const colspanTh = (label, target) => { const th = document.createElement('th'); th.textContent = label; th.colSpan = 2; target.appendChild(th); };
+    rowspanTh('Ward', row1);
+    STAT_FIELDS.forEach(f => {
+      if (f.key === 'transferIn') { colspanTh('Int. Transfer', row1); return; }
+      if (f.key === 'transferOut') return;
+      if (f.key === 'ext') { colspanTh('Ext. Transfer', row1); return; }
+      if (f.key === 'extOut') return;
+      rowspanTh(f.label, row1);
+    });
+    rowspanTh('Nurses on Duty', row1);
+    ['In', 'Out', 'In', 'Out'].forEach(label => { const th = document.createElement('th'); th.textContent = label; row2.appendChild(th); });
+    thead.appendChild(row1); thead.appendChild(row2); table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    const totals = {};
+    STAT_FIELDS.forEach(f => totals[f.key] = 0);
+    wardsMeta.forEach(w => {
+      const data = wardsMap[w.key] || {};
+      const tr = document.createElement('tr');
+      const nameTd = document.createElement('td'); nameTd.className = 'ward-name'; nameTd.textContent = w.label; tr.appendChild(nameTd);
+      STAT_FIELDS.forEach(f => {
+        const v = f.key === 'beds' ? (typeof data.beds === 'number' ? data.beds : w.beds) : (typeof data[f.key] === 'number' ? data[f.key] : 0);
+        totals[f.key] += v;
+        const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
+      });
+      const dutyTd = document.createElement('td'); dutyTd.style.textAlign = 'left'; dutyTd.textContent = data.nurseOnDuty || '\u2014'; tr.appendChild(dutyTd);
+      tbody.appendChild(tr);
+    });
+    const totalsTr = document.createElement('tr'); totalsTr.className = 'totals-row';
+    const totalsLabelTd = document.createElement('td'); totalsLabelTd.className = 'ward-name'; totalsLabelTd.textContent = 'TOTAL'; totalsTr.appendChild(totalsLabelTd);
+    STAT_FIELDS.forEach(f => { const td = document.createElement('td'); td.textContent = totals[f.key]; totalsTr.appendChild(td); });
+    totalsTr.appendChild(document.createElement('td'));
+    tbody.appendChild(totalsTr);
+    table.appendChild(tbody);
+    return table;
+  }
+
+  // ---------- editable rendering ----------
+
+  function numInput(value, onChange) {
+    const input = document.createElement('input');
+    input.type = 'number'; input.inputMode = 'numeric';
+    input.value = typeof value === 'number' ? value : 0;
+    input.addEventListener('input', () => { const n = parseFloat(input.value); onChange(isNaN(n) ? 0 : n); });
+    return input;
+  }
+  function textInputEl(value, onChange, cls) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    if (cls) input.className = cls;
+    input.value = value || '';
+    input.addEventListener('input', () => onChange(input.value));
+    return input;
+  }
+  function textareaEl(value, onChange, cls) {
+    const ta = document.createElement('textarea');
+    if (cls) ta.className = cls;
+    ta.value = value || '';
+    ta.addEventListener('input', () => onChange(ta.value));
+    return ta;
+  }
+
+  function buildStatsTableEdit() {
+    const table = document.createElement('table');
+    table.className = 'report';
+    const thead = document.createElement('thead');
+    const row1 = document.createElement('tr'), row2 = document.createElement('tr');
+    const rowspanTh = (label, target) => { const th = document.createElement('th'); th.textContent = label; th.rowSpan = 2; target.appendChild(th); };
+    const colspanTh = (label, target) => { const th = document.createElement('th'); th.textContent = label; th.colSpan = 2; target.appendChild(th); };
+    rowspanTh('Ward', row1);
+    STAT_FIELDS.forEach(f => {
+      if (f.key === 'transferIn') { colspanTh('Int. Transfer', row1); return; }
+      if (f.key === 'transferOut') return;
+      if (f.key === 'ext') { colspanTh('Ext. Transfer', row1); return; }
+      if (f.key === 'extOut') return;
+      rowspanTh(f.label, row1);
+    });
+    rowspanTh('Nurses on Duty', row1);
+    ['In', 'Out', 'In', 'Out'].forEach(label => { const th = document.createElement('th'); th.textContent = label; row2.appendChild(th); });
+    thead.appendChild(row1); thead.appendChild(row2); table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    const totalCells = {};
+    function recompute() {
+      STAT_FIELDS.forEach(f => {
+        let sum = 0;
+        wardsMeta.forEach(w => { const v = (wardsMap[w.key] || {})[f.key]; sum += typeof v === 'number' ? v : 0; });
+        totalCells[f.key].textContent = sum;
+      });
+    }
+    wardsMeta.forEach(w => {
+      const data = wardsMap[w.key] = wardsMap[w.key] || {};
+      const tr = document.createElement('tr');
+      const nameTd = document.createElement('td'); nameTd.className = 'ward-name'; nameTd.textContent = w.label; tr.appendChild(nameTd);
+      STAT_FIELDS.forEach(f => {
+        const td = document.createElement('td');
+        const input = numInput(f.key === 'beds' ? (typeof data.beds === 'number' ? data.beds : w.beds) : data[f.key], val => { data[f.key] = val; recompute(); });
+        td.appendChild(input);
+        tr.appendChild(td);
+      });
+      const dutyTd = document.createElement('td');
+      dutyTd.appendChild(textInputEl(data.nurseOnDuty, val => { data.nurseOnDuty = val; }, 'duty-input'));
+      tr.appendChild(dutyTd);
+      tbody.appendChild(tr);
+    });
+    const totalsTr = document.createElement('tr'); totalsTr.className = 'totals-row';
+    const totalsLabelTd = document.createElement('td'); totalsLabelTd.className = 'ward-name'; totalsLabelTd.textContent = 'TOTAL'; totalsTr.appendChild(totalsLabelTd);
+    STAT_FIELDS.forEach(f => { const td = document.createElement('td'); td.textContent = '0'; totalsTr.appendChild(td); totalCells[f.key] = td; });
+    totalsTr.appendChild(document.createElement('td'));
+    tbody.appendChild(totalsTr);
+    table.appendChild(tbody);
+    recompute();
+    return table;
+  }
+
+  function buildWardShiftTableEdit(w, data) {
+    data.shifts = data.shifts || {};
+    SHIFTS.forEach(s => { data.shifts[s.key] = data.shifts[s.key] || {}; });
+    const byKey = k => movementFields.find(f => f.key === k);
+    const soloBefore = ['adm', 'disch', 'dama'].map(byKey);
+    const soloAfter = ['sc', 'vsc', 'absc', 'bid', 'death'].map(byKey);
+    const transferPair = [byKey('transferIn'), byKey('transferOut')];
+    const extPair = [byKey('ext'), byKey('extOut')];
+    const allMoveFields = [...soloBefore, ...transferPair, ...extPair, ...soloAfter];
+
+    const table = document.createElement('table');
+    table.className = 'ward-shift';
+    const thead = document.createElement('thead');
+    const row1 = document.createElement('tr'), row2 = document.createElement('tr');
+    const rowspanTh = (label, target) => { const th = document.createElement('th'); th.textContent = label; th.rowSpan = 2; target.appendChild(th); };
+    const colspanTh = (label, target) => { const th = document.createElement('th'); th.textContent = label; th.colSpan = 2; target.appendChild(th); };
+    rowspanTh('Shift', row1); rowspanTh('Beds', row1); rowspanTh('Occ', row1); rowspanTh('Vac', row1);
+    soloBefore.forEach(f => rowspanTh(f.label, row1));
+    colspanTh('Int. Transfer', row1); colspanTh('Ext. Transfer', row1);
+    soloAfter.forEach(f => rowspanTh(f.label, row1));
+    rowspanTh('Nurses on Duty', row1);
+    ['In', 'Out', 'In', 'Out'].forEach(label => { const th = document.createElement('th'); th.textContent = label; row2.appendChild(th); });
+    thead.appendChild(row1); thead.appendChild(row2); table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    const occCells = {}, vacCells = {}, bedsCells = {};
+    let bedsInput = null;
+
+    function recomputeCensus() {
+      const beds = typeof data.beds === 'number' ? data.beds : (w.beds || 0);
+      const start = typeof data.startOcc === 'number' ? data.startOcc : 0;
+      let occ = start;
+      SHIFTS.forEach(s => {
+        occ += occDelta(data.shifts[s.key] || {});
+        if (occ < 0) occ = 0;
+        if (occCells[s.key]) occCells[s.key].textContent = occ;
+        if (vacCells[s.key]) vacCells[s.key].textContent = beds - occ;
+      });
+      data.occ = occ;
+      data.vac = beds - occ;
+      if (occCells.total) occCells.total.textContent = occ;
+      if (vacCells.total) vacCells.total.textContent = beds - occ;
+      if (bedsCells.total) bedsCells.total.textContent = beds;
+    }
+    function recomputeTotals() {
+      allMoveFields.forEach(f => {
+        let sum = 0;
+        SHIFTS.forEach(s => { const v = data.shifts[s.key][f.key]; sum += typeof v === 'number' ? v : 0; });
+        totalCells[f.key].textContent = sum;
+        data[f.key] = sum;
+      });
+      recomputeCensus();
+    }
+
+    const totalCells = {};
+    SHIFTS.forEach(s => {
+      const sData = data.shifts[s.key];
+      const tr = document.createElement('tr');
+      const nameTd = document.createElement('td'); nameTd.className = 'shift-name'; nameTd.textContent = s.label; tr.appendChild(nameTd);
+
+      const bedsTd = document.createElement('td');
+      if (s.key === 'am') {
+        bedsInput = numInput(data.beds, val => { data.beds = val; recomputeCensus(); });
+        bedsTd.appendChild(bedsInput);
+      } else {
+        bedsTd.textContent = data.beds || 0;
+      }
+      bedsCells[s.key] = bedsTd;
+      tr.appendChild(bedsTd);
+
+      const occTd = document.createElement('td'); occTd.className = 'computed'; occTd.textContent = '0'; occCells[s.key] = occTd; tr.appendChild(occTd);
+      const vacTd = document.createElement('td'); vacTd.className = 'computed'; vacTd.textContent = '0'; vacCells[s.key] = vacTd; tr.appendChild(vacTd);
+
+      allMoveFields.forEach(f => {
+        const td = document.createElement('td');
+        td.appendChild(numInput(sData[f.key], val => { sData[f.key] = val; recomputeTotals(); }));
+        tr.appendChild(td);
+      });
+
+      const dutyTd = document.createElement('td');
+      dutyTd.appendChild(textInputEl(sData.nurseOnDuty, val => { sData.nurseOnDuty = val; }, 'duty-input'));
+      tr.appendChild(dutyTd);
+      tbody.appendChild(tr);
+    });
+
+    const totalTr = document.createElement('tr'); totalTr.className = 'total-row';
+    const totalNameTd = document.createElement('td'); totalNameTd.className = 'shift-name'; totalNameTd.textContent = 'Total'; totalTr.appendChild(totalNameTd);
+    const totalBedsTd = document.createElement('td'); totalTr.appendChild(totalBedsTd); bedsCells.total = totalBedsTd;
+    const totalOccTd = document.createElement('td'); totalTr.appendChild(totalOccTd); occCells.total = totalOccTd;
+    const totalVacTd = document.createElement('td'); totalTr.appendChild(totalVacTd); vacCells.total = totalVacTd;
+    allMoveFields.forEach(f => { const td = document.createElement('td'); td.textContent = '0'; totalTr.appendChild(td); totalCells[f.key] = td; });
+    const dutyTotalTd = document.createElement('td'); dutyTotalTd.style.textAlign = 'left'; dutyTotalTd.textContent = '\u2014'; totalTr.appendChild(dutyTotalTd);
+    tbody.appendChild(totalTr);
+    table.appendChild(tbody);
+
+    // Also add a "Previous Occ" field above via a small wrapper row is
+    // awkward inside <table>; instead expose it as a small control before
+    // the table (see buildWardReportBlockEdit).
+    table.dataset.hasStartOcc = '1';
+    recomputeTotals();
+    return { table, setStartOcc: v => { data.startOcc = v; recomputeCensus(); } };
+  }
+
+  function buildPatientCardEdit(p, onRemove) {
+    const card = document.createElement('div');
+    card.className = 'patient-card';
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button'; removeBtn.className = 'remove-btn'; removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', onRemove);
+    card.appendChild(removeBtn);
+
+    const statusWrap = document.createElement('div');
+    statusWrap.className = 'patient-field';
+    const statusLabel = document.createElement('label'); statusLabel.textContent = 'Status:'; statusWrap.appendChild(statusLabel);
+    const statusSelect = document.createElement('select');
+    statusSelect.className = 'status-select';
+    const noneOpt = document.createElement('option'); noneOpt.value = ''; noneOpt.textContent = '— Select status —'; statusSelect.appendChild(noneOpt);
+    PATIENT_STATUS_OPTIONS.forEach(opt => { const o = document.createElement('option'); o.value = opt; o.textContent = opt; statusSelect.appendChild(o); });
+    statusSelect.value = p.status || '';
+    statusSelect.classList.toggle('set', !!p.status);
+    statusSelect.addEventListener('change', () => { p.status = statusSelect.value; statusSelect.classList.toggle('set', !!statusSelect.value); });
+    statusWrap.appendChild(statusSelect);
+    card.appendChild(statusWrap);
+
+    const grid = document.createElement('div');
+    grid.className = 'patient-grid';
+    PATIENT_FIELDS.forEach(f => {
+      const wrap = document.createElement('div');
+      wrap.className = 'patient-field';
+      if (f.type === 'textarea') wrap.style.gridColumn = '1 / -1';
+      const label = document.createElement('label'); label.textContent = f.label + ':'; wrap.appendChild(label);
+      const el = f.type === 'textarea'
+        ? textareaEl(p[f.key], val => { p[f.key] = val; }, f.big ? 'big' : '')
+        : textInputEl(p[f.key], val => { p[f.key] = val; });
+      wrap.appendChild(el);
+      grid.appendChild(wrap);
+    });
+    card.appendChild(grid);
+    return card;
+  }
+
+  function buildWardReportBlockEdit(w, data) {
+    const block = document.createElement('div');
+    block.className = 'ward-report-block';
+    const heading = document.createElement('h2');
+    heading.className = 'ward-report-heading';
+    heading.textContent = w.label;
+    block.appendChild(heading);
+
+    const startOccWrap = document.createElement('div');
+    startOccWrap.className = 'patient-field';
+    startOccWrap.style.maxWidth = '160px';
+    const startOccLabel = document.createElement('label');
+    startOccLabel.textContent = 'Previous Occ:';
+    startOccWrap.appendChild(startOccLabel);
+    block.appendChild(startOccWrap);
+
+    const shiftWrap = document.createElement('div');
+    shiftWrap.className = 'table-wrap';
+    const { table, setStartOcc } = buildWardShiftTableEdit(w, data);
+    shiftWrap.appendChild(table);
+    block.appendChild(shiftWrap);
+    startOccWrap.appendChild(numInput(data.startOcc, setStartOcc));
+
+    const patientList = document.createElement('div');
+    if (!Array.isArray(data.patients)) data.patients = [];
+    function renderPatients() {
+      patientList.innerHTML = '';
+      data.patients.forEach(p => {
+        patientList.appendChild(buildPatientCardEdit(p, () => {
+          data.patients = data.patients.filter(x => x !== p);
+          renderPatients();
+        }));
+      });
+    }
+    renderPatients();
+    block.appendChild(patientList);
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button'; addBtn.className = 'add-patient-btn'; addBtn.textContent = '+ Add Patient';
+    addBtn.addEventListener('click', () => {
+      patientCounter += 1;
+      data.patients.push({ id: 'a' + Date.now() + '_' + patientCounter, status: '' });
+      renderPatients();
+    });
+    block.appendChild(addBtn);
+
+    const nuWrap = document.createElement('div');
+    nuWrap.className = 'patient-field';
+    nuWrap.style.marginTop = '14px';
+    const nuLabel = document.createElement('label');
+    nuLabel.textContent = 'Night Update:';
+    nuWrap.appendChild(nuLabel);
+    nuWrap.appendChild(textareaEl(data.nightUpdate, val => { data.nightUpdate = val; }));
+    block.appendChild(nuWrap);
+
+    return block;
+  }
+
+  // ---------- render orchestration ----------
+
+  function render() {
+    document.getElementById('statsCard').style.display = isOverallType ? 'block' : 'none';
+    document.getElementById('wardReportsPlural').textContent = isOverallType ? 's' : '';
+
+    if (isOverallType) {
+      const reportTable = document.getElementById('reportTable');
+      reportTable.innerHTML = '';
+      reportTable.appendChild(editMode ? buildStatsTableEdit() : buildStatsTableView());
+    }
+
+    const wardReports = document.getElementById('wardReports');
+    wardReports.innerHTML = '';
+    wardsMeta.forEach(w => {
+      const data = wardsMap[w.key] = wardsMap[w.key] || {};
+      wardReports.appendChild(editMode ? buildWardReportBlockEdit(w, data) : buildWardReportBlockView(w, data));
+    });
+
+    document.getElementById('editActionsCard').style.display = editMode ? 'block' : 'none';
+  }
+
+  function renderHeader() {
+    document.getElementById('periodLabel').innerHTML = '';
+    const titleText = document.createTextNode(archiveData.fileName || archiveData.dateId);
+    document.getElementById('periodLabel').appendChild(titleText);
+    const badge = document.createElement('span');
+    badge.className = editMode ? 'editing-badge' : 'readonly-badge';
+    badge.textContent = editMode ? 'Editing' : 'Read-only';
+    document.getElementById('periodLabel').appendChild(badge);
+    if (canEdit) {
+      const editBtn = document.createElement('button');
+      editBtn.className = 'edit-toggle-btn';
+      editBtn.textContent = editMode ? '✖ Stop Editing' : '✏️ Edit';
+      editBtn.addEventListener('click', () => {
+        if (editMode) {
+          if (!confirm('Discard unsaved changes?')) return;
+          reloadFresh();
+          return;
+        }
+        editMode = true;
+        renderHeader();
+        render();
+      });
+      document.getElementById('periodLabel').appendChild(editBtn);
+    }
+
+    const meta = [];
+    meta.push('Archived by ' + (archiveData.archivedBy || 'Unknown') + (archiveData.archivedAt ? ' on ' + fmtTimestamp(archiveData.archivedAt) : ''));
+    if (archiveData.lastEditedAt) meta.push('Last edited by ' + (archiveData.lastEditedBy || 'Unknown') + ' on ' + fmtTimestamp(archiveData.lastEditedAt));
+    document.getElementById('fileMeta').textContent = meta.join(' · ');
+  }
+
+  async function reloadFresh() {
+    const snap = await getDoc(archiveRef);
+    archiveData = snap.data();
+    setupModel();
+    editMode = false;
+    renderHeader();
+    render();
+  }
+
+  function setupModel() {
+    isOverallType = archiveData.type === 'overall';
+    if (isOverallType) {
+      wardsMeta = WARDS;
+      wardsMap = archiveData.wards || {};
+    } else {
+      wardsMeta = [{ key: archiveData.wardKey, label: archiveData.wardLabel, beds: (archiveData.data || {}).beds || 0 }];
+      wardsMap = { [archiveData.wardKey]: archiveData.data || {} };
+    }
+  }
+
+  function setEditStatus(msg, isError) {
+    const el = document.getElementById('editStatus');
+    el.textContent = msg;
+    el.style.color = isError ? '#dc2626' : '#6b7280';
+  }
+
+  document.getElementById('cancelBtn').addEventListener('click', () => {
+    if (!confirm('Discard unsaved changes?')) return;
+    reloadFresh();
+  });
+
+  document.getElementById('saveBtn').addEventListener('click', async () => {
+    const payload = {
+      lastEditedBy: currentProfile.name || 'Unknown',
+      lastEditedByUid: currentUser.uid,
+      lastEditedAt: serverTimestamp()
+    };
+    if (isOverallType) {
+      payload.wards = wardsMap;
+    } else {
+      payload.data = wardsMap[archiveData.wardKey];
+    }
+    document.getElementById('saveBtn').disabled = true;
+    try {
+      await updateDoc(archiveRef, payload);
+      setEditStatus('Saved.', false);
+      editMode = false;
+      await reloadFresh();
+    } catch (e) {
+      setEditStatus("Couldn't save: " + (e.code || e.message || 'unknown error'), true);
+    } finally {
+      document.getElementById('saveBtn').disabled = false;
+    }
+  });
+
+  requireAuth(async (user, profile) => {
+    currentUser = user;
+    currentProfile = profile;
+    canEdit = profile.role === 'admin' || profile.role === 'subadmin';
+
+    if (!archiveId) {
+      document.getElementById('deniedMsg').textContent = 'No report was specified.';
+      document.getElementById('deniedBox').style.display = 'block';
+      return;
+    }
+    archiveRef = doc(db, 'archives', archiveId);
+    let snap;
+    try {
+      snap = await getDoc(archiveRef);
+    } catch (e) {
+      document.getElementById('deniedMsg').textContent = "Couldn't load this report: " + (e.code || e.message || 'unknown error');
+      document.getElementById('deniedBox').style.display = 'block';
+      return;
+    }
+    if (!snap.exists()) {
+      document.getElementById('deniedMsg').textContent = 'This archived report no longer exists.';
+      document.getElementById('deniedBox').style.display = 'block';
+      return;
+    }
+    archiveData = snap.data();
+    setupModel();
+    document.getElementById('reportBox').style.display = 'block';
+    renderHeader();
+    render();
+  });
+</script>
+</body>
+</html>
