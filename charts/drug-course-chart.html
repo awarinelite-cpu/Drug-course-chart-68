@@ -289,12 +289,10 @@
     </div>
     <div class="modal-body">
       <div id="bulkStep1">
-        <p style="font-size:12px; color:#555; margin:0 0 8px;">Paste one drug per line, in the order: <b>drug name, dosage, frequency, duration</b>. Example: <i>Tabs Omeprazole 20mg bd x2/52</i></p>
         <textarea id="bulkTextInput" rows="10" style="width:100%; font-family:inherit; font-size:13px; box-sizing:border-box; padding:8px;" placeholder="Tabs Omeprazole 20mg bd x2/52&#10;IV Ceftriaxone 1g 12hrly&#10;Tab Doxycycline 100mg bd"></textarea>
         <div id="bulkParseMsg" style="font-size:12px; color:#dc2626; margin-top:6px;"></div>
       </div>
       <div id="bulkStep2" style="display:none;">
-        <p style="font-size:12px; color:#555; margin:0 0 8px;">Review the parsed drugs below and fix anything before adding them to the list.</p>
         <div style="overflow-x:auto;">
           <table style="width:100%; border-collapse:collapse; font-size:12px;">
             <thead>
@@ -329,7 +327,6 @@
       <button class="modal-close" onclick="cancelFreqCustomModal()">&times;</button>
     </div>
     <div class="modal-body">
-      <p style="font-size:12px; color:#555; margin:0 0 8px;">Type the exact dosing schedule, e.g. <i>STAT, then 40mg 12hrly</i> or <i>0, 12, 24hr</i>.</p>
       <textarea id="freqCustomInput" rows="4" style="width:100%; font-size:14px; padding:8px; box-sizing:border-box; resize:vertical;" placeholder="e.g. STAT, then 40mg 12hrly"></textarea>
     </div>
     <div class="modal-footer">
