@@ -48,6 +48,7 @@
   .patient-block h3, .patient-line h3 { display: inline; font-size: inherit; font-weight: bold; margin: 0; }
   .patient-block .patient-note-label { display: block; margin-top: 8px; }
   .patient-block .patient-note-text { text-align: justify; }
+  .patient-block .patient-note-subheading { font-size: 14px; font-weight: bold; margin: 8px 0 2px 0; }
 </style>
 </head>
 <body>
@@ -418,6 +419,43 @@
   // Read-only view: patient identifying details + the diagnosis/notes
   // write-up shown together as one flowing note (not boxed form fields),
   // matching how the Overall Nurse's summary already reads.
+  // A nurse's free-text write-up often has its own section headers inside
+  // it (LEFT UPPER LIMB FRACTURE / NURSING DIAGNOSIS / NURSING OBJECTIVE /
+  // etc, by convention typed in ALL CAPS on their own line). Detect those
+  // lines and render them as bold sub-headings within the note, splitting
+  // the surrounding text into justified paragraphs around them — still one
+  // continuous note, just with its internal structure visible.
+  function isNoteHeadingLine(line) {
+    const t = line.trim();
+    if (!t || t.length > 60) return false;
+    const letters = t.replace(/[^A-Za-z]/g, '');
+    return letters.length > 0 && letters === letters.toUpperCase();
+  }
+  function renderNoteLines(container, text) {
+    const lines = String(text).split('\n');
+    let paraLines = [];
+    function flushPara() {
+      if (!paraLines.length) return;
+      const p = document.createElement('p');
+      p.className = 'patient-note-text';
+      p.textContent = paraLines.join('\n');
+      container.appendChild(p);
+      paraLines = [];
+    }
+    lines.forEach(line => {
+      if (isNoteHeadingLine(line)) {
+        flushPara();
+        const h = document.createElement('h4');
+        h.className = 'patient-note-subheading';
+        h.textContent = line.trim();
+        container.appendChild(h);
+      } else {
+        paraLines.push(line);
+      }
+    });
+    flushPara();
+  }
+
   function buildPatientBlock(p) {
     const block = document.createElement('div');
     block.className = 'patient-block';
@@ -441,10 +479,7 @@
       label.className = 'patient-note-label';
       label.textContent = f.label + ':';
       block.appendChild(label);
-      const text = document.createElement('p');
-      text.className = 'patient-note-text';
-      text.textContent = p[f.key];
-      block.appendChild(text);
+      renderNoteLines(block, p[f.key]);
     });
 
     return block;
