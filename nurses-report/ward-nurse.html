@@ -38,6 +38,12 @@
   .brand { font-weight: bold; }
   .card-box > h2 { margin-top: 0; font-weight: bold; font-size: 19px; }
   .card-box > p { font-size: 12px; color: #555; margin-top: -6px; }
+  .patient-block { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; margin-top: 12px; }
+  .patient-block .patient-line { font-size: 13px; margin: 2px 0; }
+  .patient-block .patient-line b { font-weight: bold; }
+  .patient-block .patient-note-label { font-size: 12px; font-weight: bold; text-decoration: underline; margin-top: 8px; display: block; }
+  .patient-block .patient-note-text { font-size: 14px; line-height: 1.5; white-space: pre-wrap; margin: 4px 0 0 0; }
+  .no-patients { font-size: 12px; color: #6b7280; }
 </style>
 </head>
 <body>
@@ -404,14 +410,58 @@
     return card;
   }
 
+  // Read-only view: patient identifying details + the diagnosis/notes
+  // write-up shown together as one flowing note (not boxed form fields),
+  // matching how the Overall Nurse's summary already reads.
+  function buildPatientBlock(p) {
+    const block = document.createElement('div');
+    block.className = 'patient-block';
+
+    const summaryFields = PATIENT_FIELDS.filter(f => f.type !== 'textarea');
+    summaryFields.forEach(f => {
+      if (!p[f.key]) return;
+      const line = document.createElement('div');
+      line.className = 'patient-line';
+      const b = document.createElement('b');
+      b.textContent = f.label + ': ';
+      line.appendChild(b);
+      line.appendChild(document.createTextNode(p[f.key]));
+      block.appendChild(line);
+    });
+
+    const textFields = PATIENT_FIELDS.filter(f => f.type === 'textarea');
+    textFields.forEach(f => {
+      if (!p[f.key]) return;
+      const label = document.createElement('span');
+      label.className = 'patient-note-label';
+      label.textContent = f.label;
+      block.appendChild(label);
+      const text = document.createElement('p');
+      text.className = 'patient-note-text';
+      text.textContent = p[f.key];
+      block.appendChild(text);
+    });
+
+    return block;
+  }
+
   function renderPatients() {
     const list = document.getElementById('patientList');
     list.innerHTML = '';
-    wardDoc.patients.forEach(p => {
-      const card = patientCardHtml(p.id);
-      PATIENT_FIELDS.forEach(f => { card['input_' + f.key].value = p[f.key] || ''; });
-      list.appendChild(card);
-    });
+    if (editable) {
+      wardDoc.patients.forEach(p => {
+        const card = patientCardHtml(p.id);
+        PATIENT_FIELDS.forEach(f => { card['input_' + f.key].value = p[f.key] || ''; });
+        list.appendChild(card);
+      });
+    } else if (wardDoc.patients.length === 0) {
+      const none = document.createElement('div');
+      none.className = 'no-patients';
+      none.textContent = 'No patient write-ups on this report.';
+      list.appendChild(none);
+    } else {
+      wardDoc.patients.forEach(p => { list.appendChild(buildPatientBlock(p)); });
+    }
   }
 
   function addPatient() {
@@ -543,6 +593,7 @@
       wardDoc.submitted = true;
       wardDoc.locked = true;
       refreshStatusPill();
+      renderPatients();
     } catch (e) {
       setSaveStatus("Couldn't submit: " + (e.code || e.message || 'unknown error'), true);
     }
