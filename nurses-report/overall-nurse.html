@@ -140,13 +140,37 @@
   function buildTable() {
     const table = document.getElementById('reportTable');
     const thead = document.createElement('thead');
-    const headRow = document.createElement('tr');
-    ['Ward', ...STAT_FIELDS.map(f => f.label), 'Nurses on Duty', 'Access'].forEach(label => {
+    const row1 = document.createElement('tr');
+    const row2 = document.createElement('tr');
+    function rowspanTh(label, target) {
       const th = document.createElement('th');
       th.textContent = label;
-      headRow.appendChild(th);
+      th.rowSpan = 2;
+      target.appendChild(th);
+    }
+    function colspanTh(label, target) {
+      const th = document.createElement('th');
+      th.textContent = label;
+      th.colSpan = 2;
+      target.appendChild(th);
+    }
+    rowspanTh('Ward', row1);
+    STAT_FIELDS.forEach(f => {
+      if (f.key === 'transferIn') { colspanTh('Int. Transfer', row1); return; }
+      if (f.key === 'transferOut') return; // covered by the Int. Transfer colspan above
+      if (f.key === 'ext') { colspanTh('Ext. Transfer', row1); return; }
+      if (f.key === 'extOut') return; // covered by the Ext. Transfer colspan above
+      rowspanTh(f.label, row1);
     });
-    thead.appendChild(headRow);
+    rowspanTh('Nurses on Duty', row1);
+    rowspanTh('Access', row1);
+    ['In', 'Out', 'In', 'Out'].forEach(label => {
+      const th = document.createElement('th');
+      th.textContent = label;
+      row2.appendChild(th);
+    });
+    thead.appendChild(row1);
+    thead.appendChild(row2);
     table.appendChild(thead);
 
     const tbody = document.createElement('tbody');
