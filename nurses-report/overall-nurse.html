@@ -25,6 +25,28 @@
   .lock-btn.locked { background: #fee2e2; color: #7f1d1d; }
   .lock-btn.open { background: #dcfce7; color: #14532d; }
   .save-status { font-size: 11px; color: #6b7280; min-height: 14px; }
+
+  .ward-report-block { margin-top: 16px; }
+  .ward-report-heading {
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: 900;
+    font-size: 22px;
+    text-transform: uppercase;
+    color: #000;
+    letter-spacing: .5px;
+    margin: 0 0 10px 0;
+  }
+  table.ward-shift th, table.ward-shift td { border: 1px solid #d1d5db; padding: 5px 4px; font-size: 12px; text-align: center; }
+  table.ward-shift th { background: #f3f4f6; text-transform: uppercase; font-size: 10px; }
+  table.ward-shift td.shift-name { font-weight: bold; text-align: left; }
+  table.ward-shift tr.total-row td { font-weight: bold; background: #eff6ff; }
+  .patient-block { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; margin-top: 10px; }
+  .patient-block .patient-line { font-size: 13px; margin: 2px 0; }
+  .patient-block .patient-line b { font-weight: bold; }
+  .patient-block .patient-note-label { font-size: 12px; font-weight: bold; text-decoration: underline; margin-top: 8px; display: block; }
+  .patient-block .patient-note-text { font-size: 13px; white-space: pre-wrap; margin: 4px 0 0 0; }
+  .no-patients { font-size: 12px; color: #6b7280; }
+  .ward-report-empty { font-size: 13px; color: #6b7280; text-align: center; padding: 10px; }
 </style>
 </head>
 <body>
@@ -59,6 +81,12 @@
       </div>
       <div class="save-status" id="saveStatus"></div>
     </div>
+
+    <div class="card-box">
+      <h3 style="margin-top:0;">Ward Reports</h3>
+      <p style="font-size:12px; color:#555; margin-top:-6px;">Full submitted report for each ward, in the order above. Wards that haven't submitted yet don't appear here.</p>
+      <div id="wardReports"></div>
+    </div>
   </div>
 
 </div>
@@ -69,7 +97,7 @@
   import {
     doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, writeBatch
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, reportDateId, reportPeriodLabel, weekId } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel, weekId } from "../js/nurses-report-common.js";
 
   const wk = weekId();
   const dateId = reportDateId();
@@ -220,6 +248,144 @@
     refs.lockBtn.className = 'lock-btn ' + (locked ? 'locked' : 'open');
     refs.lockBtn.textContent = locked ? '🔒 Locked' : '🔓 Open';
     recomputeTotals();
+    renderWardReports();
+  }
+
+  const movementFields = STAT_FIELDS.filter(f => f.key !== 'beds');
+
+  function buildWardShiftTable(w, data) {
+    const shifts = data.shifts || {};
+    const table = document.createElement('table');
+    table.className = 'ward-shift';
+
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    ['Shift', 'Beds', ...movementFields.map(f => f.label), 'Nurses on Duty'].forEach(label => {
+      const th = document.createElement('th');
+      th.textContent = label;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    SHIFTS.forEach(s => {
+      const sData = shifts[s.key] || {};
+      const tr = document.createElement('tr');
+      const nameTd = document.createElement('td');
+      nameTd.className = 'shift-name';
+      nameTd.textContent = s.label;
+      tr.appendChild(nameTd);
+
+      const bedsTd = document.createElement('td');
+      bedsTd.textContent = typeof data.beds === 'number' ? data.beds : (w.beds || 0);
+      tr.appendChild(bedsTd);
+
+      movementFields.forEach(f => {
+        const td = document.createElement('td');
+        td.textContent = typeof sData[f.key] === 'number' ? sData[f.key] : 0;
+        tr.appendChild(td);
+      });
+
+      const dutyTd = document.createElement('td');
+      dutyTd.style.textAlign = 'left';
+      dutyTd.textContent = sData.nurseOnDuty || '\u2014';
+      tr.appendChild(dutyTd);
+
+      tbody.appendChild(tr);
+    });
+
+    const totalTr = document.createElement('tr');
+    totalTr.className = 'total-row';
+    const totalNameTd = document.createElement('td');
+    totalNameTd.className = 'shift-name';
+    totalNameTd.textContent = 'Total';
+    totalTr.appendChild(totalNameTd);
+    const totalBedsTd = document.createElement('td');
+    totalBedsTd.textContent = typeof data.beds === 'number' ? data.beds : (w.beds || 0);
+    totalTr.appendChild(totalBedsTd);
+    movementFields.forEach(f => {
+      const td = document.createElement('td');
+      td.textContent = typeof data[f.key] === 'number' ? data[f.key] : 0;
+      totalTr.appendChild(td);
+    });
+    totalTr.appendChild(document.createElement('td'));
+    tbody.appendChild(totalTr);
+
+    table.appendChild(tbody);
+    return table;
+  }
+
+  function buildPatientBlock(p) {
+    const block = document.createElement('div');
+    block.className = 'patient-block';
+
+    const summaryFields = PATIENT_FIELDS.filter(f => f.type !== 'textarea');
+    summaryFields.forEach(f => {
+      if (!p[f.key]) return;
+      const line = document.createElement('div');
+      line.className = 'patient-line';
+      const b = document.createElement('b');
+      b.textContent = f.label + ': ';
+      line.appendChild(b);
+      line.appendChild(document.createTextNode(p[f.key]));
+      block.appendChild(line);
+    });
+
+    const textFields = PATIENT_FIELDS.filter(f => f.type === 'textarea');
+    textFields.forEach(f => {
+      if (!p[f.key]) return;
+      const label = document.createElement('span');
+      label.className = 'patient-note-label';
+      label.textContent = f.label;
+      block.appendChild(label);
+      const text = document.createElement('p');
+      text.className = 'patient-note-text';
+      text.textContent = p[f.key];
+      block.appendChild(text);
+    });
+
+    return block;
+  }
+
+  function renderWardReports() {
+    const container = document.getElementById('wardReports');
+    container.innerHTML = '';
+    const submittedWards = WARDS.filter(w => wardData[w.key] && wardData[w.key].submitted);
+
+    if (submittedWards.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'ward-report-empty';
+      empty.textContent = 'No ward reports submitted yet.';
+      container.appendChild(empty);
+      return;
+    }
+
+    submittedWards.forEach(w => {
+      const data = wardData[w.key];
+      const block = document.createElement('div');
+      block.className = 'ward-report-block';
+
+      const heading = document.createElement('div');
+      heading.className = 'ward-report-heading';
+      heading.textContent = w.label;
+      block.appendChild(heading);
+
+      block.appendChild(buildWardShiftTable(w, data));
+
+      const patients = Array.isArray(data.patients) ? data.patients : [];
+      if (patients.length === 0) {
+        const none = document.createElement('div');
+        none.className = 'no-patients';
+        none.style.marginTop = '10px';
+        none.textContent = 'No patient write-ups submitted for this ward.';
+        block.appendChild(none);
+      } else {
+        patients.forEach(p => block.appendChild(buildPatientBlock(p)));
+      }
+
+      container.appendChild(block);
+    });
   }
 
   async function ensureSeeded() {

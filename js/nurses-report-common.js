@@ -25,26 +25,47 @@ export const WARDS = [
   { key: 'esw',      label: 'ESW',       beds: 20 }
 ];
 
-// Numeric columns, in display order, matching the paper report. 'beds' is
-// listed separately in the UI (it's capacity, not a daily movement figure)
-// but included here too since it's still summed in the totals row.
+// Numeric columns, in display order, matching the ward-level "24Hrs Ward
+// Report" paper form. 'beds' is listed separately in the UI (it's capacity,
+// not a daily movement figure) but included here too since it's still
+// summed in the totals row.
 export const STAT_FIELDS = [
   { key: 'beds',        label: 'Beds' },
   { key: 'occ',         label: 'Occ' },
   { key: 'vac',         label: 'Vac' },
   { key: 'adm',         label: 'Adm' },
   { key: 'disch',       label: 'Disch' },
-  { key: 'cs',          label: 'C/S' },
+  { key: 'dama',        label: 'Dama' },
   { key: 'transferIn',  label: 'Transfer In' },
   { key: 'transferOut', label: 'Transfer Out' },
-  { key: 'exeatIn',     label: 'Exeat In' },
-  { key: 'exeatOut',    label: 'Exeat Out' },
+  { key: 'ext',         label: 'Ext' },
+  { key: 'sc',          label: 'S/C' },
+  { key: 'vsc',         label: 'VS/C' },
   { key: 'absc',        label: 'Absc' },
-  { key: 'vgl',         label: 'Vgl' },
   { key: 'bid',         label: 'BID' },
-  { key: 'parol',       label: 'Parol' },
-  { key: 'dparol',      label: 'D/Parol' },
   { key: 'death',       label: 'Death' }
+];
+
+// A ward report is entered per shift, then totalled. 'beds' isn't collected
+// per shift (it's the ward's fixed capacity) — every other STAT_FIELDS key
+// is summed across shifts for the Total row and for the figure that feeds
+// the Overall Nurse's ward-totals table.
+export const SHIFTS = [
+  { key: 'am', label: 'Am' },
+  { key: 'pm', label: 'Pm' }
+];
+
+// Structured fields for each patient write-up under a ward's report,
+// matching the paper form's per-patient block (name/age/sex/EMR/DOA plus
+// a free-text diagnosis & orders note).
+export const PATIENT_FIELDS = [
+  { key: 'name',      label: 'Name',      type: 'text' },
+  { key: 'age',       label: 'Age',       type: 'text' },
+  { key: 'sex',       label: 'Sex',       type: 'text' },
+  { key: 'emr',       label: 'EMR',       type: 'text' },
+  { key: 'doa',       label: 'DOA',       type: 'text' },
+  { key: 'diagnosis', label: 'Diagnosis', type: 'textarea' },
+  { key: 'notes',     label: 'Notes / Orders', type: 'textarea' }
 ];
 
 function pad(n) { return String(n).padStart(2, '0'); }
