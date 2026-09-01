@@ -202,6 +202,16 @@ export async function renameCustomColumn(db, fns, key, newLabel) {
   applyCustomColumns(next);
 }
 
+// Removes a custom column from the config doc entirely. Already-entered
+// per-ward data under that key is simply orphaned (no longer displayed or
+// summed) rather than actively wiped from Firestore ward docs.
+export async function removeCustomColumn(db, fns, key) {
+  const { doc, setDoc } = fns;
+  const next = CUSTOM_TEXT_COLUMNS.filter(c => c.key !== key);
+  await setDoc(doc(db, CUSTOM_COLUMNS_COLLECTION, CUSTOM_COLUMNS_DOC), { columns: next }, { merge: true });
+  applyCustomColumns(next);
+}
+
 // A ward report is entered per shift, then totalled. 'beds' isn't collected
 // per shift (it's the ward's fixed capacity) — every other STAT_FIELDS key
 // is summed across shifts for the Total row and for the figure that feeds

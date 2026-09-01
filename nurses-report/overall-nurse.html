@@ -146,7 +146,7 @@
     HEADER_LABELS_COLLECTION, HEADER_LABELS_DOC, applyHeaderLabelOverrides, loadHeaderLabelOverrides,
     saveHeaderLabelOverride, headerLabel, GROUP_LABEL_IDS,
     CUSTOM_COLUMNS_COLLECTION, CUSTOM_COLUMNS_DOC, CUSTOM_TEXT_COLUMNS, applyCustomColumns, loadCustomColumns,
-    addCustomColumn, renameCustomColumn
+    addCustomColumn, renameCustomColumn, removeCustomColumn
   } from "../js/nurses-report-common.js";
 
   const wk = weekId();
@@ -267,10 +267,21 @@
   }
 
   async function renameCustomColumnPrompt(c) {
-    const newLabel = window.prompt('Rename column "' + c.label + '" to:', c.label);
+    const newLabel = window.prompt('Rename column "' + c.label + '" to (clear the text and OK to delete it):', c.label);
     if (newLabel === null) return;
     const trimmed = newLabel.trim();
-    if (!trimmed || trimmed === c.label) return;
+    if (trimmed === c.label) return;
+    if (!trimmed) {
+      if (!window.confirm('Delete column "' + c.label + '"? This does not erase any data already entered under it, just removes the column from the tables.')) return;
+      try {
+        await removeCustomColumn(db, { doc, setDoc }, c.key);
+        rebuildAndRepaint();
+        setSaveStatus('Column deleted.', false);
+      } catch (e) {
+        setSaveStatus("Couldn't delete column: " + (e.code || e.message || 'unknown error'), true);
+      }
+      return;
+    }
     try {
       await renameCustomColumn(db, { doc, setDoc }, c.key, trimmed);
       rebuildAndRepaint();
