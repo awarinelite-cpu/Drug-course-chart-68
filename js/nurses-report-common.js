@@ -83,15 +83,18 @@ export const STAT_FIELDS = [
   { key: 'vac',         label: 'Vac' },
   { key: 'adm',         label: 'Adm' },
   { key: 'disch',       label: 'Disch' },
+  { key: 'cs',          label: 'C/S' },
+  { key: 'del',         label: 'Del' },
   { key: 'dama',        label: 'Dama' },
-  { key: 'transferIn',  label: 'Transfer In' },
-  { key: 'transferOut', label: 'Transfer Out' },
+  { key: 'transferIn',  label: 'Int In' },
+  { key: 'transferOut', label: 'Int Out' },
   { key: 'ext',         label: 'Ext In' },
   { key: 'extOut',      label: 'Ext Out' },
-  { key: 'sc',          label: 'S/C' },
-  { key: 'vsc',         label: 'VS/C' },
-  { key: 'absc',        label: 'Absc' },
   { key: 'bid',         label: 'BID' },
+  { key: 'vsc',         label: 'VSIL' },
+  { key: 'absc',        label: 'Absc' },
+  { key: 'parol',       label: 'Parol' },
+  { key: 'dparol',      label: 'D/Parol' },
   { key: 'death',       label: 'Death' }
 ];
 
