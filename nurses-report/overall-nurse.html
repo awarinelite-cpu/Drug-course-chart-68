@@ -515,7 +515,7 @@
     const shifts = data.shifts || {};
     const byKey = k => movementFields.find(f => f.key === k);
     const soloBefore = ['adm', 'disch', 'cs', 'del', 'dama'].map(byKey);
-    const soloAfter = ['bid', 'vsc', 'absc', 'death'].map(byKey);
+    const soloAfter = ['bid', 'vsc', 'absc', 'parol', 'dparol', 'death'].map(byKey);
     const transferPair = [byKey('transferIn'), byKey('transferOut')];
     const extPair = [byKey('ext'), byKey('extOut')];
 
