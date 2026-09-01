@@ -26,14 +26,18 @@
   .patient-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; margin-top: 12px; position: relative; }
   .patient-card .remove-btn { position: absolute; top: 10px; right: 10px; background: #fee2e2; color: #7f1d1d; border: none; border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: bold; cursor: pointer; }
   .patient-field { margin-top: 8px; }
-  .patient-field label { display: block; font-size: 11px; color: #555; margin-bottom: 3px; font-weight: bold; }
+  .patient-field label { display: block; font-size: 14px; color: #111; margin-bottom: 4px; font-weight: bold; }
   .patient-field input, .patient-field textarea { width: 100%; padding: 7px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: inherit; }
   .patient-field textarea { min-height: 60px; resize: vertical; }
+  .patient-field textarea.big { min-height: 60vh; font-size: 15px; line-height: 1.4; }
   .patient-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
   .add-patient-btn { margin-top: 12px; width: 100%; padding: 10px; border: 2px dashed #93c5fd; background: #eff6ff; color: #1d4ed8; border-radius: 8px; font-weight: bold; font-size: 13px; cursor: pointer; }
   .submit-bar { display: flex; gap: 10px; margin-top: 14px; }
   .save-status { font-size: 11px; color: #6b7280; min-height: 14px; margin-top: 6px; }
   .locked-notice { background: #fef3c7; color: #78350f; border-radius: 8px; padding: 10px 12px; font-size: 12px; margin-top: 10px; }
+  .brand { font-weight: bold; }
+  .card-box > h2 { margin-top: 0; font-weight: bold; font-size: 19px; }
+  .card-box > p { font-size: 12px; color: #555; margin-top: -6px; }
 </style>
 </head>
 <body>
@@ -62,7 +66,7 @@
     <div class="locked-notice" id="lockedNotice" style="display:none;"></div>
 
     <div class="card-box">
-      <h3 style="margin-top:0;">Previous Occ</h3>
+      <h2>Previous Occ</h2>
       <p style="font-size:12px; color:#555; margin-top:-6px;">Patients on the ward at 6:00 AM, before today's admissions/discharges. Carried over from yesterday's closing Occ when available — correct it if it's wrong.</p>
       <div class="patient-field" style="max-width:140px;">
         <input type="number" id="startOccInput" inputmode="numeric">
@@ -70,7 +74,7 @@
     </div>
 
     <div class="card-box">
-      <h3 style="margin-top:0;">Shift Statistics</h3>
+      <h2>Shift Statistics</h2>
       <p style="font-size:12px; color:#555; margin-top:-6px;">Beds, Occ and Vac carry forward automatically (Occ = Previous Occ + Adm/Transfer In/Ext In &minus; Disch/Dama/Transfer Out/Ext Out/Absc/Death). Enter the rest for each shift.</p>
       <div class="table-wrap">
         <table class="shift" id="shiftTable"></table>
@@ -78,7 +82,7 @@
     </div>
 
     <div class="card-box">
-      <h3 style="margin-top:0;">Patients</h3>
+      <h2>Patients</h2>
       <p style="font-size:12px; color:#555; margin-top:-6px;">Add a write-up for each patient covered in this report.</p>
       <div id="patientList"></div>
       <button class="add-patient-btn" id="addPatientBtn" type="button">+ Add Patient</button>
@@ -381,10 +385,11 @@
       wrap.className = 'patient-field';
       if (f.type === 'textarea') wrap.style.gridColumn = '1 / -1';
       const label = document.createElement('label');
-      label.textContent = f.label;
+      label.textContent = f.label + ':';
       wrap.appendChild(label);
       const input = document.createElement(f.type === 'textarea' ? 'textarea' : 'input');
       if (f.type !== 'textarea') input.type = 'text';
+      if (f.big) input.className = 'big';
       input.disabled = !editable;
       input.addEventListener('input', () => {
         const p = wardDoc.patients.find(p => p.id === id);

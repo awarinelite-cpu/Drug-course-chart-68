@@ -80,16 +80,16 @@ export function occDelta(shiftData) {
 }
 
 // Structured fields for each patient write-up under a ward's report,
-// matching the paper form's per-patient block (name/age/sex/EMR/DOA plus
-// a free-text diagnosis & orders note).
+// matching the paper form's per-patient block (name/age/sex/EMR/DOA up
+// top, then one large free-text area for diagnosis, orders, and any
+// nursing notes — matching how the paper form actually reads).
 export const PATIENT_FIELDS = [
   { key: 'name',      label: 'Name',      type: 'text' },
   { key: 'age',       label: 'Age',       type: 'text' },
   { key: 'sex',       label: 'Sex',       type: 'text' },
   { key: 'emr',       label: 'EMR',       type: 'text' },
   { key: 'doa',       label: 'DOA',       type: 'text' },
-  { key: 'diagnosis', label: 'Diagnosis', type: 'textarea' },
-  { key: 'notes',     label: 'Notes / Orders', type: 'textarea' }
+  { key: 'diagnosis', label: 'Diagnosis / Notes', type: 'textarea', big: true }
 ];
 
 function pad(n) { return String(n).padStart(2, '0'); }
