@@ -383,7 +383,7 @@
   import { loadPatientHeader, getPatientIdFromUrl } from "../js/chart-common.js";
   import { lockBackTo } from "../js/back-guard.js";
   import { db } from "../js/firebase.js";
-  import { doc, getDoc, setDoc, updateDoc, addDoc, collection, getDocs, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { doc, getDoc, setDoc, updateDoc, addDoc, collection, getDocs, deleteDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
   const patientId = getPatientIdFromUrl();
   if (!patientId) window.location.href = '../index.html';
@@ -1250,12 +1250,14 @@
     ).join('\n');
   }
 
-  // --- Cross-device sync polling ---
+  // --- Cross-device sync ---
   // Firestore was only ever being read once, on page load, so a change made
   // on another device wouldn't show up here until the page was reloaded.
-  // This polls the doc every 30s and pulls in newer data, as long as nobody
-  // is mid-edit on this device (so we never clobber unsaved typing).
+  // A live onSnapshot listener pulls in newer data as soon as it's written,
+  // as long as nobody is mid-edit on this device (so we never clobber
+  // unsaved typing).
   let lastAppliedUpdatedAt = null; // Firestore Timestamp of the version currently shown on screen
+  let chartUnsub = null;
 
   function applyRemoteChartData(data) {
     fieldIds.forEach(id => { const el = document.getElementById(id); if (el && data[id] !== undefined) el.value = data[id]; });
@@ -1278,29 +1280,27 @@
     checkDrugCompletion();
   }
 
-  async function pollForRemoteUpdates() {
+  function handleRemoteChartSnapshot(snap) {
     if (isArchived || !chartRef) return;
     // Don't pull in remote data while this device has anything open for
     // editing, or while a field on the page is actively focused.
     if (chartEditMode || drugsEditMode) return;
     const active = document.activeElement;
     if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
-    try {
-      const snap = await getDoc(chartRef);
-      if (!snap.exists()) return;
-      const data = snap.data();
-      const remoteMs = data.updatedAt && data.updatedAt.toMillis ? data.updatedAt.toMillis() : 0;
-      const localMs = lastAppliedUpdatedAt && lastAppliedUpdatedAt.toMillis ? lastAppliedUpdatedAt.toMillis() : 0;
-      if (remoteMs > localMs) {
-        lastAppliedUpdatedAt = data.updatedAt;
-        applyRemoteChartData(data);
-      }
-    } catch (e) {
-      // Silent — just try again on the next cycle.
+    if (!snap.exists()) return;
+    const data = snap.data();
+    const remoteMs = data.updatedAt && data.updatedAt.toMillis ? data.updatedAt.toMillis() : 0;
+    const localMs = lastAppliedUpdatedAt && lastAppliedUpdatedAt.toMillis ? lastAppliedUpdatedAt.toMillis() : 0;
+    if (remoteMs > localMs) {
+      lastAppliedUpdatedAt = data.updatedAt;
+      applyRemoteChartData(data);
     }
   }
 
-  setInterval(pollForRemoteUpdates, 30000);
+  function startChartSync() {
+    if (isArchived || !chartRef || chartUnsub) return;
+    chartUnsub = onSnapshot(chartRef, handleRemoteChartSnapshot, () => { /* silent — this is best-effort */ });
+  }
 
   // --- Verbal / emergency orders (conversation box) ---
   function renderVerbalOrderBtn() {
@@ -2118,6 +2118,7 @@
       });
     } else {
       document.getElementById('saveStatus').textContent = 'Changes save automatically';
+      startChartSync();
     }
   });
 
