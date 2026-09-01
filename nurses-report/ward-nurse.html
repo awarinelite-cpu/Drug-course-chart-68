@@ -38,7 +38,8 @@
   .brand { font-weight: bold; }
   .card-box > h2 { margin-top: 0; font-weight: bold; font-size: 19px; }
   .card-box > p { font-size: 12px; color: #555; margin-top: -6px; }
-  .patient-block { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; margin-top: 12px; }
+  .patient-block { padding: 0; margin-top: 14px; }
+  .night-update-heading { margin-top: 18px; padding-top: 14px; border-top: 1px solid #e5e7eb; }
   .patient-block .patient-line { font-size: 13px; margin: 2px 0; }
   .patient-block .patient-line b { font-weight: bold; }
   .patient-block .patient-note-label { font-size: 12px; font-weight: bold; text-decoration: underline; margin-top: 8px; display: block; }
@@ -102,16 +103,14 @@
       </div>
     </div>
 
-    <div class="card-box">
+    <div class="card-box report-sheet">
       <h2>Patients</h2>
       <p style="font-size:12px; color:#555; margin-top:-6px;">Add a write-up for each patient covered in this report.</p>
       <div id="patientList"></div>
       <button class="add-patient-btn" id="addPatientBtn" type="button">+ Add Patient</button>
-    </div>
 
-    <div class="card-box">
-      <h2>Night Update</h2>
-      <p style="font-size:12px; color:#555; margin-top:-6px;">Night nurse: tap the button below and add your update. Submit Report only appears once this is filled in.</p>
+      <h2 class="night-update-heading">Night Update</h2>
+      <p style="font-size:12px; color:#555; margin-top:-6px;">Night nurse: tap the button below and add your update, continuing straight on from the write-up above. Submit Report only appears once this is filled in.</p>
       <button class="btn btn-secondary" id="nightUpdateBtn" type="button">🌙 Night Update</button>
       <div class="patient-field" id="nightUpdateWrap" style="display:none; margin-top:10px;">
         <label>Night update:</label>
