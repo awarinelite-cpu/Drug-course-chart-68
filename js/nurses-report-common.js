@@ -95,6 +95,110 @@ export const STAT_FIELDS = [
   { key: 'death',       label: 'Death' }
 ];
 
+// Column headers can be corrected/renamed by an admin without touching the
+// underlying key or calculations (mirrors the ward-name mechanism above).
+// This covers every real STAT_FIELDS entry (mutated on f.label in place, so
+// every table that reads f.label — Overall Statistics, both Ward Report
+// shift tables — picks it up automatically) plus the two grouped "Int./Ext.
+// Transfer" headers, which aren't real fields and are looked up by id via
+// headerLabel() instead.
+STAT_FIELDS.forEach(f => { f.defaultLabel = f.label; });
+
+export const HEADER_LABELS_COLLECTION = 'nurseReportConfig';
+export const HEADER_LABELS_DOC = 'headerLabels';
+export const HEADER_LABEL_OVERRIDES = {};
+export const GROUP_LABEL_IDS = { intTransfer: '_group_int_transfer', extTransfer: '_group_ext_transfer' };
+
+export function applyHeaderLabelOverrides(overrides) {
+  Object.keys(HEADER_LABEL_OVERRIDES).forEach(k => delete HEADER_LABEL_OVERRIDES[k]);
+  Object.assign(HEADER_LABEL_OVERRIDES, overrides || {});
+  STAT_FIELDS.forEach(f => {
+    const custom = HEADER_LABEL_OVERRIDES[f.key];
+    f.label = (typeof custom === 'string' && custom.trim()) ? custom.trim() : f.defaultLabel;
+  });
+}
+
+export async function loadHeaderLabelOverrides(db, fns) {
+  const { doc, getDoc } = fns;
+  try {
+    const snap = await getDoc(doc(db, HEADER_LABELS_COLLECTION, HEADER_LABELS_DOC));
+    applyHeaderLabelOverrides(snap.exists() ? snap.data() : {});
+  } catch (e) {
+    // Non-fatal — page just keeps showing the default column names.
+  }
+}
+
+// id is either a real STAT_FIELDS key (keeps f.label in sync too) or one
+// of the synthetic GROUP_LABEL_IDS above.
+export async function saveHeaderLabelOverride(db, fns, id, newLabel, defaultLabel) {
+  const { doc, setDoc } = fns;
+  const trimmed = (newLabel || '').trim();
+  const valueToStore = trimmed && trimmed !== defaultLabel ? trimmed : null;
+  await setDoc(doc(db, HEADER_LABELS_COLLECTION, HEADER_LABELS_DOC), { [id]: valueToStore }, { merge: true });
+  if (valueToStore) HEADER_LABEL_OVERRIDES[id] = valueToStore; else delete HEADER_LABEL_OVERRIDES[id];
+  const f = STAT_FIELDS.find(x => x.key === id);
+  if (f) f.label = trimmed || f.defaultLabel;
+}
+
+export function headerLabel(id, defaultLabel) {
+  return HEADER_LABEL_OVERRIDES[id] || defaultLabel;
+}
+
+// Admin-added free-text columns layered on top of the fixed STAT_FIELDS
+// list (e.g. "Consultant", "Diet"). Ward-level, not per-shift, and never
+// summed in a totals row since they're text, not counts. Order is
+// preserved as one array in a single config doc; CUSTOM_TEXT_COLUMNS is
+// mutated in place (never reassigned) so every importer shares updates.
+export const CUSTOM_COLUMNS_COLLECTION = 'nurseReportConfig';
+export const CUSTOM_COLUMNS_DOC = 'customColumns';
+export const CUSTOM_TEXT_COLUMNS = [];
+
+export function applyCustomColumns(list) {
+  CUSTOM_TEXT_COLUMNS.length = 0;
+  (Array.isArray(list) ? list : []).forEach(c => {
+    if (c && c.key && c.label) CUSTOM_TEXT_COLUMNS.push({ key: c.key, label: c.label });
+  });
+}
+
+export async function loadCustomColumns(db, fns) {
+  const { doc, getDoc } = fns;
+  try {
+    const snap = await getDoc(doc(db, CUSTOM_COLUMNS_COLLECTION, CUSTOM_COLUMNS_DOC));
+    applyCustomColumns(snap.exists() ? snap.data().columns : []);
+  } catch (e) {
+    // Non-fatal — page just shows no custom columns.
+  }
+}
+
+// Generates a short, collision-resistant key from the label so an admin
+// never has to think about keys — just names.
+function slugColumnKey(label) {
+  const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 24) || 'col';
+  return 'custom_' + slug + '_' + Math.random().toString(36).slice(2, 6);
+}
+
+export async function addCustomColumn(db, fns, label) {
+  const { doc, setDoc } = fns;
+  const trimmed = (label || '').trim();
+  if (!trimmed) throw new Error('A column name is required.');
+  const col = { key: slugColumnKey(trimmed), label: trimmed };
+  const next = CUSTOM_TEXT_COLUMNS.concat([col]);
+  await setDoc(doc(db, CUSTOM_COLUMNS_COLLECTION, CUSTOM_COLUMNS_DOC), { columns: next }, { merge: true });
+  applyCustomColumns(next);
+  return col;
+}
+
+// Renames an existing custom column in place — key and column order are
+// unchanged, so already-entered data under that key is unaffected.
+export async function renameCustomColumn(db, fns, key, newLabel) {
+  const { doc, setDoc } = fns;
+  const trimmed = (newLabel || '').trim();
+  if (!trimmed) throw new Error('A column name is required.');
+  const next = CUSTOM_TEXT_COLUMNS.map(c => (c.key === key ? { key, label: trimmed } : c));
+  await setDoc(doc(db, CUSTOM_COLUMNS_COLLECTION, CUSTOM_COLUMNS_DOC), { columns: next }, { merge: true });
+  applyCustomColumns(next);
+}
+
 // A ward report is entered per shift, then totalled. 'beds' isn't collected
 // per shift (it's the ward's fixed capacity) — every other STAT_FIELDS key
 // is summed across shifts for the Total row and for the figure that feeds

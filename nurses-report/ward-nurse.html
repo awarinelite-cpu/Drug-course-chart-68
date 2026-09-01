@@ -139,7 +139,7 @@
   import { requireAuth } from "../js/auth-guard.js";
   import { db } from "../js/firebase.js";
   import { doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, reportDateId, weekId, occDelta, blankShift, defaultWardDoc, archiveOneWard, loadWardNameOverrides } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, reportDateId, weekId, occDelta, blankShift, defaultWardDoc, archiveOneWard, loadWardNameOverrides, loadHeaderLabelOverrides, headerLabel, GROUP_LABEL_IDS } from "../js/nurses-report-common.js";
 
   const dateId = reportDateId();
   const movementFields = SHIFT_STAT_FIELDS;
@@ -165,6 +165,7 @@
   // than the default hospital list.
   (async () => {
     await loadWardNameOverrides(db, { doc, getDoc });
+    await loadHeaderLabelOverrides(db, { doc, getDoc });
     WARDS.forEach(w => {
       const opt = document.createElement('option');
       opt.value = w.key;
@@ -215,8 +216,8 @@
     rowspanTh('Occ', row1);
     rowspanTh('Vac', row1);
     soloBefore.forEach(f => rowspanTh(f.label, row1));
-    colspanTh('Int. Transfer', row1);
-    colspanTh('Ext. Transfer', row1);
+    colspanTh(headerLabel(GROUP_LABEL_IDS.intTransfer, 'Int. Transfer'), row1);
+    colspanTh(headerLabel(GROUP_LABEL_IDS.extTransfer, 'Ext. Transfer'), row1);
     soloAfter.forEach(f => rowspanTh(f.label, row1));
     rowspanTh('Nurses on Duty', row1);
 

@@ -58,11 +58,13 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Nurses Report config — currently just wardNames, the admin-set
-    // overrides for each ward's display label (see overall-nurse.html's
-    // renameWard / js/nurses-report-common.js). Any known user reads it
-    // (it's shown on the Overall Statistics table and every ward report),
-    // but only an admin may rename a ward.
+    // Nurses Report config — admin-editable structure for the report
+    // tables: wardNames (ward renames), headerLabels (column renames,
+    // including the two grouped Transfer headers), and customColumns (new
+    // text columns an admin has added). See overall-nurse.html's rename/
+    // add-column actions and js/nurses-report-common.js. Any known user
+    // reads it (it drives what's shown on the Overall Statistics table and
+    // every ward report), but only an admin may change the structure.
     match /nurseReportConfig/{configId} {
       allow read: if isKnownUser();
       allow write: if isAdmin();

@@ -22,6 +22,8 @@
     width: 100px; text-align: left; font-weight: bold; padding: 4px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px;
   }
   .ward-report-heading-wrap { display: flex; align-items: center; gap: 8px; }
+  table.report th.renamable-col, table.ward-shift th.renamable-col { cursor: pointer; }
+  table.report th.renamable-col:hover, table.ward-shift th.renamable-col:hover { background: #e5e7eb; }
   table.report tr.totals-row td { font-weight: bold; background: #eff6ff; }
   .lock-btn {
     border: none; border-radius: 6px; padding: 5px 8px; font-size: 11px; font-weight: bold; cursor: pointer; white-space: nowrap;
@@ -140,7 +142,11 @@
   import {
     WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel,
     wardReportPeriodLabel, weekId, occDelta, defaultWardDoc, archiveOneWard,
-    WARD_NAMES_COLLECTION, WARD_NAMES_DOC, applyWardNameOverrides, loadWardNameOverrides, saveWardNameOverride
+    WARD_NAMES_COLLECTION, WARD_NAMES_DOC, applyWardNameOverrides, loadWardNameOverrides, saveWardNameOverride,
+    HEADER_LABELS_COLLECTION, HEADER_LABELS_DOC, applyHeaderLabelOverrides, loadHeaderLabelOverrides,
+    saveHeaderLabelOverride, headerLabel, GROUP_LABEL_IDS,
+    CUSTOM_COLUMNS_COLLECTION, CUSTOM_COLUMNS_DOC, CUSTOM_TEXT_COLUMNS, applyCustomColumns, loadCustomColumns,
+    addCustomColumn, renameCustomColumn
   } from "../js/nurses-report-common.js";
 
   const wk = weekId();
@@ -222,33 +228,135 @@
     }
   }
 
+  // Rebuilds the Overall Statistics table from scratch (needed whenever the
+  // column set/labels change) and repaints every ward's current figures
+  // from the in-memory cache — never from field defaults — so a column
+  // change never looks like data was reset.
+  function rebuildAndRepaint() {
+    buildTable();
+    WARDS.forEach(w => { if (wardData[w.key]) applyWardData(w.key, wardData[w.key]); });
+  }
+
+  async function renameBuiltInColumn(f) {
+    const current = f.label;
+    const newLabel = window.prompt('Rename column "' + current + '" to:', current);
+    if (newLabel === null) return;
+    const trimmed = newLabel.trim();
+    if (!trimmed || trimmed === current) return;
+    try {
+      await saveHeaderLabelOverride(db, { doc, setDoc }, f.key, trimmed, f.defaultLabel);
+      rebuildAndRepaint();
+      setSaveStatus('Column renamed.', false);
+    } catch (e) {
+      setSaveStatus("Couldn't rename column: " + (e.code || e.message || 'unknown error'), true);
+    }
+  }
+
+  async function renameGroupHeader(groupId, currentLabel, defaultLabel) {
+    const newLabel = window.prompt('Rename column "' + currentLabel + '" to:', currentLabel);
+    if (newLabel === null) return;
+    const trimmed = newLabel.trim();
+    if (!trimmed || trimmed === currentLabel) return;
+    try {
+      await saveHeaderLabelOverride(db, { doc, setDoc }, groupId, trimmed, defaultLabel);
+      rebuildAndRepaint();
+      setSaveStatus('Column renamed.', false);
+    } catch (e) {
+      setSaveStatus("Couldn't rename column: " + (e.code || e.message || 'unknown error'), true);
+    }
+  }
+
+  async function renameCustomColumnPrompt(c) {
+    const newLabel = window.prompt('Rename column "' + c.label + '" to:', c.label);
+    if (newLabel === null) return;
+    const trimmed = newLabel.trim();
+    if (!trimmed || trimmed === c.label) return;
+    try {
+      await renameCustomColumn(db, { doc, setDoc }, c.key, trimmed);
+      rebuildAndRepaint();
+      setSaveStatus('Column renamed.', false);
+    } catch (e) {
+      setSaveStatus("Couldn't rename column: " + (e.code || e.message || 'unknown error'), true);
+    }
+  }
+
+  async function addColumnPrompt() {
+    const label = window.prompt('New column name:');
+    if (label === null) return;
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    try {
+      await addCustomColumn(db, { doc, setDoc }, trimmed);
+      rebuildAndRepaint();
+      setSaveStatus('Column added.', false);
+    } catch (e) {
+      setSaveStatus("Couldn't add column: " + (e.code || e.message || 'unknown error'), true);
+    }
+  }
+
   function buildTable() {
     const table = document.getElementById('reportTable');
+    table.innerHTML = ''; // safe to rebuild — see rebuildAndRepaint()
     const thead = document.createElement('thead');
     const row1 = document.createElement('tr');
     const row2 = document.createElement('tr');
-    function rowspanTh(label, target) {
+    function rowspanTh(label, target, onRename) {
       const th = document.createElement('th');
       th.textContent = label;
       th.rowSpan = 2;
+      if (isAdminUser && onRename) {
+        th.classList.add('renamable-col');
+        th.title = 'Click to rename this column';
+        th.addEventListener('click', onRename);
+      }
       target.appendChild(th);
+      return th;
     }
-    function colspanTh(label, target) {
+    function colspanTh(label, target, onRename) {
       const th = document.createElement('th');
       th.textContent = label;
       th.colSpan = 2;
+      if (isAdminUser && onRename) {
+        th.classList.add('renamable-col');
+        th.title = 'Click to rename this column';
+        th.addEventListener('click', onRename);
+      }
       target.appendChild(th);
+      return th;
     }
     rowspanTh('Ward', row1);
     STAT_FIELDS.forEach(f => {
-      if (f.key === 'transferIn') { colspanTh('Int. Transfer', row1); return; }
+      if (f.key === 'transferIn') {
+        colspanTh(headerLabel(GROUP_LABEL_IDS.intTransfer, 'Int. Transfer'), row1,
+          () => renameGroupHeader(GROUP_LABEL_IDS.intTransfer, headerLabel(GROUP_LABEL_IDS.intTransfer, 'Int. Transfer'), 'Int. Transfer'));
+        return;
+      }
       if (f.key === 'transferOut') return; // covered by the Int. Transfer colspan above
-      if (f.key === 'ext') { colspanTh('Ext. Transfer', row1); return; }
+      if (f.key === 'ext') {
+        colspanTh(headerLabel(GROUP_LABEL_IDS.extTransfer, 'Ext. Transfer'), row1,
+          () => renameGroupHeader(GROUP_LABEL_IDS.extTransfer, headerLabel(GROUP_LABEL_IDS.extTransfer, 'Ext. Transfer'), 'Ext. Transfer'));
+        return;
+      }
       if (f.key === 'extOut') return; // covered by the Ext. Transfer colspan above
-      rowspanTh(f.label, row1);
+      rowspanTh(f.label, row1, () => renameBuiltInColumn(f));
+    });
+    CUSTOM_TEXT_COLUMNS.forEach(c => {
+      rowspanTh(c.label, row1, () => renameCustomColumnPrompt(c));
     });
     rowspanTh('Nurses on Duty', row1);
     rowspanTh('Access', row1);
+    if (isAdminUser) {
+      const addTh = document.createElement('th');
+      addTh.rowSpan = 2;
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'btn btn-secondary';
+      addBtn.style.cssText = 'padding:3px 8px; font-size:11px; white-space:nowrap;';
+      addBtn.textContent = '+ Column';
+      addBtn.addEventListener('click', addColumnPrompt);
+      addTh.appendChild(addBtn);
+      row1.appendChild(addTh);
+    }
     ['In', 'Out', 'In', 'Out'].forEach(label => {
       const th = document.createElement('th');
       th.textContent = label;
@@ -299,6 +407,25 @@
         inputs[f.key] = input;
       });
 
+      // Admin-added free-text columns (e.g. "Consultant"). Ward-level, not
+      // summed — same save mechanism as the Nurses on Duty field below.
+      const customInputs = {};
+      CUSTOM_TEXT_COLUMNS.forEach(c => {
+        const td = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'ward-name-input';
+        input.addEventListener('change', () => {
+          const oldValue = wardData[w.key] ? wardData[w.key][c.key] : undefined;
+          wardData[w.key] = wardData[w.key] || {};
+          wardData[w.key][c.key] = input.value;
+          saveField(w.key, c.key, input.value, oldValue);
+        });
+        td.appendChild(input);
+        tr.appendChild(td);
+        customInputs[c.key] = input;
+      });
+
       const dutyTd = document.createElement('td');
       const dutyInput = document.createElement('input');
       dutyInput.type = 'text';
@@ -320,8 +447,10 @@
       accessTd.appendChild(lockBtn);
       tr.appendChild(accessTd);
 
+      if (isAdminUser) tr.appendChild(document.createElement('td')); // aligns under "+ Column"
+
       tbody.appendChild(tr);
-      rowRefs[w.key] = { inputs, dutyInput, lockBtn, nameEl };
+      rowRefs[w.key] = { inputs, dutyInput, lockBtn, nameEl, customInputs };
     });
     table.appendChild(tbody);
 
@@ -337,8 +466,10 @@
       totalsTr.appendChild(td);
       totalCells[f.key] = td;
     });
+    CUSTOM_TEXT_COLUMNS.forEach(() => totalsTr.appendChild(document.createElement('td'))); // text, not summed
     totalsTr.appendChild(document.createElement('td'));
     totalsTr.appendChild(document.createElement('td'));
+    if (isAdminUser) totalsTr.appendChild(document.createElement('td'));
     tbody.appendChild(totalsTr);
   }
 
@@ -364,6 +495,12 @@
       const input = refs.inputs[f.key];
       if (document.activeElement !== input) input.value = (typeof data[f.key] === 'number') ? data[f.key] : 0;
     });
+    if (refs.customInputs) {
+      CUSTOM_TEXT_COLUMNS.forEach(c => {
+        const input = refs.customInputs[c.key];
+        if (input && document.activeElement !== input) input.value = data[c.key] || '';
+      });
+    }
     if (document.activeElement !== refs.dutyInput) refs.dutyInput.value = data.nurseOnDuty || '';
     const locked = !!data.locked;
     refs.lockBtn.className = 'lock-btn ' + (locked ? 'locked' : 'open');
@@ -416,8 +553,8 @@
     rowspanTh('Occ', row1);
     rowspanTh('Vac', row1);
     soloBefore.forEach(f => rowspanTh(f.label, row1));
-    colspanTh('Int. Transfer', row1);
-    colspanTh('Ext. Transfer', row1);
+    colspanTh(headerLabel(GROUP_LABEL_IDS.intTransfer, 'Int. Transfer'), row1);
+    colspanTh(headerLabel(GROUP_LABEL_IDS.extTransfer, 'Ext. Transfer'), row1);
     soloAfter.forEach(f => rowspanTh(f.label, row1));
     rowspanTh('Nurses on Duty', row1);
     ['In', 'Out', 'In', 'Out'].forEach(label => {
@@ -754,10 +891,13 @@
 
     isAdminUser = isAdmin;
     await loadWardNameOverrides(db, { doc, getDoc });
+    await loadHeaderLabelOverrides(db, { doc, getDoc });
+    await loadCustomColumns(db, { doc, getDoc });
     buildTable();
     await ensureSeeded();
     subscribeToWards();
     subscribeToWardNames();
+    subscribeToColumnConfig();
   });
 
   // Live-syncs ward name renames to every open session (matches the
@@ -775,6 +915,25 @@
       });
       renderWardReports();
     }, () => { /* non-fatal — page keeps last known names */ });
+  }
+
+  // Live-syncs column renames and newly-added columns to every open
+  // session. Renaming/adding a column changes the table's shape, so this
+  // has to rebuild it — skipped while an admin has a cell focused
+  // elsewhere in the table, so a remote change can't yank their cursor.
+  function subscribeToColumnConfig() {
+    function onRemoteChange() {
+      if (document.getElementById('reportTable').contains(document.activeElement)) return;
+      rebuildAndRepaint();
+    }
+    onSnapshot(doc(db, HEADER_LABELS_COLLECTION, HEADER_LABELS_DOC), snap => {
+      applyHeaderLabelOverrides(snap.exists() ? snap.data() : {});
+      onRemoteChange();
+    }, () => { /* non-fatal — page keeps last known column names */ });
+    onSnapshot(doc(db, CUSTOM_COLUMNS_COLLECTION, CUSTOM_COLUMNS_DOC), snap => {
+      applyCustomColumns(snap.exists() ? snap.data().columns : []);
+      onRemoteChange();
+    }, () => { /* non-fatal — page keeps last known columns */ });
   }
 
   // Loads and renders the permanent edit-history log for this 24-hour

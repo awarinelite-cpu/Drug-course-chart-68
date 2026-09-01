@@ -118,7 +118,7 @@
   import { requireAuth } from "../js/auth-guard.js";
   import { db } from "../js/firebase.js";
   import { doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, occDelta, loadWardNameOverrides } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, occDelta, loadWardNameOverrides, loadHeaderLabelOverrides, headerLabel, GROUP_LABEL_IDS } from "../js/nurses-report-common.js";
 
   const archiveId = new URLSearchParams(window.location.search).get('id');
   const movementFields = SHIFT_STAT_FIELDS;
@@ -228,7 +228,7 @@
     const colspanTh = (label, target) => { const th = document.createElement('th'); th.textContent = label; th.colSpan = 2; target.appendChild(th); };
     rowspanTh('Shift', row1); rowspanTh('Beds', row1); rowspanTh('Occ', row1); rowspanTh('Vac', row1);
     soloBefore.forEach(f => rowspanTh(f.label, row1));
-    colspanTh('Int. Transfer', row1); colspanTh('Ext. Transfer', row1);
+    colspanTh(headerLabel(GROUP_LABEL_IDS.intTransfer, 'Int. Transfer'), row1); colspanTh(headerLabel(GROUP_LABEL_IDS.extTransfer, 'Ext. Transfer'), row1);
     soloAfter.forEach(f => rowspanTh(f.label, row1));
     rowspanTh('Nurses on Duty', row1);
     ['In', 'Out', 'In', 'Out'].forEach(label => { const th = document.createElement('th'); th.textContent = label; row2.appendChild(th); });
@@ -313,9 +313,9 @@
     const colspanTh = (label, target) => { const th = document.createElement('th'); th.textContent = label; th.colSpan = 2; target.appendChild(th); };
     rowspanTh('Ward', row1);
     STAT_FIELDS.forEach(f => {
-      if (f.key === 'transferIn') { colspanTh('Int. Transfer', row1); return; }
+      if (f.key === 'transferIn') { colspanTh(headerLabel(GROUP_LABEL_IDS.intTransfer, 'Int. Transfer'), row1); return; }
       if (f.key === 'transferOut') return;
-      if (f.key === 'ext') { colspanTh('Ext. Transfer', row1); return; }
+      if (f.key === 'ext') { colspanTh(headerLabel(GROUP_LABEL_IDS.extTransfer, 'Ext. Transfer'), row1); return; }
       if (f.key === 'extOut') return;
       rowspanTh(f.label, row1);
     });
@@ -381,9 +381,9 @@
     const colspanTh = (label, target) => { const th = document.createElement('th'); th.textContent = label; th.colSpan = 2; target.appendChild(th); };
     rowspanTh('Ward', row1);
     STAT_FIELDS.forEach(f => {
-      if (f.key === 'transferIn') { colspanTh('Int. Transfer', row1); return; }
+      if (f.key === 'transferIn') { colspanTh(headerLabel(GROUP_LABEL_IDS.intTransfer, 'Int. Transfer'), row1); return; }
       if (f.key === 'transferOut') return;
-      if (f.key === 'ext') { colspanTh('Ext. Transfer', row1); return; }
+      if (f.key === 'ext') { colspanTh(headerLabel(GROUP_LABEL_IDS.extTransfer, 'Ext. Transfer'), row1); return; }
       if (f.key === 'extOut') return;
       rowspanTh(f.label, row1);
     });
@@ -443,7 +443,7 @@
     const colspanTh = (label, target) => { const th = document.createElement('th'); th.textContent = label; th.colSpan = 2; target.appendChild(th); };
     rowspanTh('Shift', row1); rowspanTh('Beds', row1); rowspanTh('Occ', row1); rowspanTh('Vac', row1);
     soloBefore.forEach(f => rowspanTh(f.label, row1));
-    colspanTh('Int. Transfer', row1); colspanTh('Ext. Transfer', row1);
+    colspanTh(headerLabel(GROUP_LABEL_IDS.intTransfer, 'Int. Transfer'), row1); colspanTh(headerLabel(GROUP_LABEL_IDS.extTransfer, 'Ext. Transfer'), row1);
     soloAfter.forEach(f => rowspanTh(f.label, row1));
     rowspanTh('Nurses on Duty', row1);
     ['In', 'Out', 'In', 'Out'].forEach(label => { const th = document.createElement('th'); th.textContent = label; row2.appendChild(th); });
