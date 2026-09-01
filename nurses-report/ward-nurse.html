@@ -137,7 +137,7 @@
 <script type="module">
   import { requireAuth } from "../js/auth-guard.js";
   import { db } from "../js/firebase.js";
-  import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
   import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, reportDateId, occDelta, blankShift, defaultWardDoc } from "../js/nurses-report-common.js";
 
   const dateId = reportDateId();
@@ -147,6 +147,8 @@
   let wardDoc = null; // latest loaded/edited state (in-memory, saved as a whole on submit)
   let editable = false;
   let adminEditOverride = false; // admin tapped the ✏️ to leave read-only view for a locked report
+  let wardUnsub = null;    // unsubscribe fn for the currently-open ward's live listener
+  let forceApplyNext = false; // true right after switching wards, so the next snapshot always paints
   const shiftInputs = {};   // shiftKey -> { field: input, duty: input }
   const totalCells = {};    // field -> td
   const bedsCells = {};     // shiftKey/'total' -> td (Am holds the real input; Pm/Total mirror it)
@@ -665,29 +667,32 @@
     return dt.getUTCFullYear() + '-' + String(dt.getUTCMonth() + 1).padStart(2, '0') + '-' + String(dt.getUTCDate()).padStart(2, '0');
   }
 
-  async function loadWard(wardKey) {
-    currentWardKey = wardKey;
-    adminEditOverride = false; // default to read-only even for admin; they can tap ✏️ per ward
-    const w = WARDS.find(x => x.key === wardKey);
-    const ref = doc(db, 'nurseReports', dateId, 'wards', wardKey);
-    let snap;
-    try {
-      snap = await getDoc(ref);
-    } catch (e) {
-      setTopStatus("Couldn't load this ward's report: " + (e.code || e.message || 'unknown error'), true);
-      return;
-    }
-    wardDoc = snap.exists() ? Object.assign(defaultWardDoc(w), snap.data()) : defaultWardDoc(w);
+  // Applies one Firestore snapshot of a ward's live report into the form.
+  // Shared by the initial paint and every subsequent live update, so a
+  // ward's page always reflects the server's current doc — including the
+  // Overall Nurse's "Save to Archive" reset back to the empty state, which
+  // otherwise a page left open through that reset would never see.
+  async function applyWardSnapshot(wardKey, w, snap) {
+    // Never clobber a report the nurse is actively filling in. Once the
+    // form is editable (an unlocked draft), later live updates for this
+    // same ward are skipped so in-progress typing is never overwritten —
+    // she'll see the latest state next time she reloads or switches wards.
+    // forceApplyNext overrides this once, right after loadWard() switches
+    // to a ward, so the first paint always happens.
+    if (!forceApplyNext && wardDoc && editable) return;
+    forceApplyNext = false;
+
+    const data = snap.exists() ? Object.assign(defaultWardDoc(w), snap.data()) : defaultWardDoc(w);
     // Normalize shape in case of partial legacy data
-    wardDoc.shifts = wardDoc.shifts || {};
-    SHIFTS.forEach(s => { wardDoc.shifts[s.key] = Object.assign(blankShift(), wardDoc.shifts[s.key] || {}); });
-    wardDoc.patients = Array.isArray(wardDoc.patients) ? wardDoc.patients : [];
-    wardDoc.patients.forEach(p => {
+    data.shifts = data.shifts || {};
+    SHIFTS.forEach(s => { data.shifts[s.key] = Object.assign(blankShift(), data.shifts[s.key] || {}); });
+    data.patients = Array.isArray(data.patients) ? data.patients : [];
+    data.patients.forEach(p => {
       if (!p.id) p.id = 'p' + Math.random().toString(36).slice(2);
       if (typeof p.status !== 'string') p.status = '';
     });
-    wardDoc.nightUpdate = typeof wardDoc.nightUpdate === 'string' ? wardDoc.nightUpdate : '';
-    wardDoc.nightUpdateBy = wardDoc.nightUpdateBy || '';
+    data.nightUpdate = typeof data.nightUpdate === 'string' ? data.nightUpdate : '';
+    data.nightUpdateBy = data.nightUpdateBy || '';
 
     if (!snap.exists()) {
       // Best-effort carry-over: yesterday's closing Occ becomes today's
@@ -696,10 +701,13 @@
         const prevRef = doc(db, 'nurseReports', prevDateId(dateId), 'wards', wardKey);
         const prevSnap = await getDoc(prevRef);
         if (prevSnap.exists() && typeof prevSnap.data().occ === 'number') {
-          wardDoc.startOcc = prevSnap.data().occ;
+          data.startOcc = prevSnap.data().occ;
         }
       } catch (e) { /* non-fatal — leave startOcc at 0, nurse can correct it */ }
     }
+
+    if (wardKey !== currentWardKey) return; // ward was switched again while we awaited above
+    wardDoc = data;
 
     document.getElementById('startOccInput').value = typeof wardDoc.startOcc === 'number' ? wardDoc.startOcc : 0;
     buildShiftTable();
@@ -716,7 +724,21 @@
     setTopStatus('');
   }
 
+  function loadWard(wardKey) {
+    if (wardUnsub) { wardUnsub(); wardUnsub = null; }
+    currentWardKey = wardKey;
+    adminEditOverride = false; // default to read-only even for admin; they can tap ✏️ per ward
+    forceApplyNext = true;     // always paint the first snapshot for a newly-selected ward
+    const w = WARDS.find(x => x.key === wardKey);
+    const ref = doc(db, 'nurseReports', dateId, 'wards', wardKey);
+    wardUnsub = onSnapshot(ref,
+      (snap) => { applyWardSnapshot(wardKey, w, snap); },
+      (e) => { setTopStatus("Couldn't load this ward's report: " + (e.code || e.message || 'unknown error'), true); }
+    );
+  }
+
   wardSelect.addEventListener('change', () => {
+    if (wardUnsub) { wardUnsub(); wardUnsub = null; }
     document.getElementById('formBox').style.display = 'none';
     const archiveBtn = document.getElementById('wardArchiveBtn');
     if (wardSelect.value) {
@@ -727,6 +749,7 @@
         window.location.href = 'archive-list.html?type=ward&ward=' + encodeURIComponent(w.key) + '&label=' + encodeURIComponent(w.label);
       };
     } else {
+      currentWardKey = null;
       archiveBtn.style.display = 'none';
     }
   });

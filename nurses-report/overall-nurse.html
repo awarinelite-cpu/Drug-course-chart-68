@@ -707,14 +707,21 @@
     // Filed. Reset every ward's live report to a blank slate for the next
     // 24-hour period, then leave for the archive. Nurses shouldn't land
     // back on an overall page still showing the report that was just
-    // filed away.
-    setArchiveStatus('Archived. Resetting reports for the next period...', false);
-    try {
-      await resetWardReports();
-    } catch (e) {
-      setArchiveStatus('Archived, but resetting the live reports failed: ' + (e.code || e.message || 'unknown error') + '. Reload and try Save to Archive again to reset them.', true);
-      document.getElementById('archiveBtn').disabled = false;
-      return;
+    // filed away. Only do this the first time a period is archived —
+    // re-running Save to Archive later just corrects the filed copy, and
+    // by then nurses may already have live drafts going for the *next*
+    // period, which a second reset would wipe out.
+    if (!alreadyArchived) {
+      setArchiveStatus('Archived. Resetting reports for the next period...', false);
+      try {
+        await resetWardReports();
+      } catch (e) {
+        setArchiveStatus('Archived, but resetting the live reports failed: ' + (e.code || e.message || 'unknown error') + '. Reload and try Save to Archive again to reset them.', true);
+        document.getElementById('archiveBtn').disabled = false;
+        return;
+      }
+    } else {
+      setArchiveStatus('Archived copy updated.', false);
     }
 
     window.location.href = 'archive-list.html?type=overall';
