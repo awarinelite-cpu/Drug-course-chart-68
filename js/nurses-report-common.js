@@ -168,6 +168,42 @@ export function wardReportPeriodLabel(dateId) {
   return reportPeriodLabel(dateId, 'WARD');
 }
 
+// Files a single ward's just-finished 24-hour report to the permanent Ward
+// Charts Archive, then resets that ward's live doc back to a blank,
+// unlocked state so a new report can start immediately. Used by both the
+// "Move to Archive" button on a ward's own page (ward-nurse.html) and the
+// per-ward archive action on the Overall Nurse page — so one ward is never
+// stuck waiting on the full 24-hour "Save to Archive" batch (which files
+// all 19 wards together) just to free up for its next period. `fns` carries
+// the Firestore functions the caller already imported (doc, getDoc, setDoc,
+// updateDoc, serverTimestamp) so this file stays free of its own Firestore
+// import. Returns { alreadyArchived }; throws on any Firestore error, same
+// as the batch archive flow, so the caller can show its own status message.
+export async function archiveOneWard(db, fns, { w, wardKey, data, dateId, weekId: wid, who, uid }) {
+  const { doc, getDoc, setDoc, updateDoc, serverTimestamp } = fns;
+  const archiveRef = doc(db, 'archives', 'ward_' + wardKey + '_' + dateId);
+  const existingSnap = await getDoc(archiveRef);
+  const alreadyArchived = existingSnap.exists();
+  const payload = {
+    type: 'ward', wardKey, wardLabel: w.label, dateId, weekId: wid,
+    fileName: wardReportPeriodLabel(dateId),
+    data: data || {},
+    archivedBy: who, archivedByUid: uid, archivedAt: serverTimestamp()
+  };
+  if (alreadyArchived) {
+    payload.lastEditedBy = who;
+    payload.lastEditedByUid = uid;
+    payload.lastEditedAt = serverTimestamp();
+    await updateDoc(archiveRef, payload);
+  } else {
+    await setDoc(archiveRef, payload);
+  }
+  const closingOcc = data && typeof data.occ === 'number' ? data.occ : 0;
+  const wardDocRef = doc(db, 'nurseReports', dateId, 'wards', wardKey);
+  await setDoc(wardDocRef, defaultWardDoc(w, closingOcc));
+  return { alreadyArchived };
+}
+
 // The Overall Nurse role runs Monday–Sunday, identified by that Monday's
 // ward-local date — avoids ISO week-number ambiguity across year boundaries.
 export function weekId(d = new Date()) {

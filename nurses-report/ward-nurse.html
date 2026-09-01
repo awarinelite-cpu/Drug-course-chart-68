@@ -86,6 +86,7 @@
       </select>
       <span class="status-pill" id="statusPill" style="display:none;"></span>
       <button class="btn btn-secondary" id="wardArchiveBtn" style="padding:6px 12px; display:none;" type="button">📁 Archive</button>
+      <button class="btn btn-primary" id="wardMoveArchiveBtn" style="padding:6px 12px; display:none;" type="button">✅ Move to Archive</button>
     </div>
     <div class="save-status" id="topStatus"></div>
   </div>
@@ -137,8 +138,8 @@
 <script type="module">
   import { requireAuth } from "../js/auth-guard.js";
   import { db } from "../js/firebase.js";
-  import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, reportDateId, occDelta, blankShift, defaultWardDoc } from "../js/nurses-report-common.js";
+  import { doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, reportDateId, weekId, occDelta, blankShift, defaultWardDoc, archiveOneWard } from "../js/nurses-report-common.js";
 
   const dateId = reportDateId();
   const movementFields = SHIFT_STAT_FIELDS;
@@ -632,6 +633,12 @@
       pill.textContent = 'Draft';
     }
 
+    // Move to Archive only makes sense once the report is finished
+    // (submitted + locked) — that's the "already saved report" the nurse
+    // wants out of the way so a new one can start.
+    document.getElementById('wardMoveArchiveBtn').style.display =
+      (wardDoc.submitted && wardDoc.locked) ? '' : 'none';
+
     const isAdmin = currentProfile && currentProfile.role === 'admin';
     editable = (isAdmin && adminEditOverride) || !wardDoc.locked;
     if (wardDoc.locked && !editable) {
@@ -741,6 +748,7 @@
     if (wardUnsub) { wardUnsub(); wardUnsub = null; }
     document.getElementById('formBox').style.display = 'none';
     const archiveBtn = document.getElementById('wardArchiveBtn');
+    document.getElementById('wardMoveArchiveBtn').style.display = 'none';
     if (wardSelect.value) {
       loadWard(wardSelect.value);
       const w = WARDS.find(x => x.key === wardSelect.value);
@@ -751,6 +759,31 @@
     } else {
       currentWardKey = null;
       archiveBtn.style.display = 'none';
+    }
+  });
+
+  // Files this ward's just-submitted report to the permanent archive and
+  // resets this ward's live doc to blank/unlocked, right from the ward's
+  // own page — no need to wait on the Overall Nurse's full 24-hour batch
+  // archive just to start a new report for this one ward.
+  document.getElementById('wardMoveArchiveBtn').addEventListener('click', async () => {
+    if (!currentWardKey || !wardDoc || !wardDoc.submitted || !wardDoc.locked) return;
+    const w = WARDS.find(x => x.key === currentWardKey);
+    if (!confirm('Move ' + w.label + '\u2019s submitted report to the permanent archive and start a fresh report for the next period?')) return;
+    const btn = document.getElementById('wardMoveArchiveBtn');
+    btn.disabled = true;
+    setSaveStatus('Archiving...', false);
+    try {
+      await archiveOneWard(db, { doc, getDoc, setDoc, updateDoc, serverTimestamp }, {
+        w, wardKey: currentWardKey, data: wardDoc, dateId, weekId: weekId(),
+        who: (currentProfile && currentProfile.name) || 'Unknown',
+        uid: currentUser.uid
+      });
+      setSaveStatus('Moved to archive. Ready for a new report.', false);
+    } catch (e) {
+      setSaveStatus("Couldn't move to archive: " + (e.code || e.message || 'unknown error'), true);
+    } finally {
+      btn.disabled = false;
     }
   });
 

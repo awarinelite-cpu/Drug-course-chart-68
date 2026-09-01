@@ -78,16 +78,25 @@ service cloud.firestore {
     // "overall_<dateId>" doc plus one "ward_<wardKey>_<dateId>" doc per
     // ward are created together (see nurses-report/overall-nurse.html's
     // Save to Archive action). Any known user may read/search the
-    // archive. Only the Overall Nurse for the report's week (checked via
-    // the weekId carried on the write itself), an admin, or a subadmin
-    // may create an archive entry the first time; once it exists, only an
-    // admin or subadmin may change it (correcting a figure or note) — even
-    // the Overall Nurse who filed it cannot edit it afterwards. Archive
-    // files are permanent: delete is never allowed, by anyone.
+    // archive. An "overall" entry may only be created by the Overall
+    // Nurse for the report's week (checked via the weekId carried on the
+    // write itself), an admin, or a subadmin — matching who sees that
+    // batch action. A "ward" entry may be created by any known user,
+    // matching how nurseReports/{dateId}/wards itself is already open to
+    // any known user — this is what lets a single ward's "Move to
+    // Archive" button (ward-nurse.html, and the per-ward action on the
+    // Overall Nurse page) file that one ward's report without waiting on
+    // the full batch. Once an entry exists, only an admin or subadmin may
+    // change it (correcting a figure or note) — even the nurse or Overall
+    // Nurse who filed it cannot edit it afterwards. Archive files are
+    // permanent: delete is never allowed, by anyone.
     match /archives/{archiveId} {
       allow read: if isKnownUser();
       allow create: if isKnownUser()
-        && (isAdmin() || isSubadmin() || isOverallForWeek(request.resource.data.weekId));
+        && (
+          request.resource.data.type == 'ward'
+          || isAdmin() || isSubadmin() || isOverallForWeek(request.resource.data.weekId)
+        );
       allow update: if isAdmin() || isSubadmin();
       allow delete: if false;
     }

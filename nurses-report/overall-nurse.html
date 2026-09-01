@@ -119,7 +119,7 @@
   import {
     doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, writeBatch
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel, wardReportPeriodLabel, weekId, occDelta, defaultWardDoc } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel, wardReportPeriodLabel, weekId, occDelta, defaultWardDoc, archiveOneWard } from "../js/nurses-report-common.js";
 
   const wk = weekId();
   const dateId = reportDateId();
@@ -512,10 +512,38 @@
       const block = document.createElement('div');
       block.className = 'ward-report-block';
 
+      const headingRow = document.createElement('div');
+      headingRow.style.display = 'flex';
+      headingRow.style.alignItems = 'center';
+      headingRow.style.justifyContent = 'space-between';
+      headingRow.style.gap = '10px';
+
       const heading = document.createElement('h2');
       heading.className = 'ward-report-heading';
+      heading.style.margin = '0';
       heading.textContent = w.label;
-      block.appendChild(heading);
+      headingRow.appendChild(heading);
+
+      // Lets the Overall Nurse/admin/subadmin file just this one ward's
+      // finished report to the archive and free it up for a new report,
+      // without waiting to run the full 24-hour "Save to Archive" batch
+      // below (which files the overall report and all 19 wards together).
+      const moveBtn = document.createElement('button');
+      moveBtn.className = 'btn btn-primary';
+      moveBtn.type = 'button';
+      moveBtn.style.padding = '5px 10px';
+      moveBtn.style.fontSize = '12px';
+      moveBtn.style.whiteSpace = 'nowrap';
+      moveBtn.textContent = '✅ Move to Archive';
+      moveBtn.addEventListener('click', () => moveWardToArchive(w, moveBtn));
+      headingRow.appendChild(moveBtn);
+
+      block.appendChild(headingRow);
+
+      const wardArchiveStatus = document.createElement('div');
+      wardArchiveStatus.className = 'save-status';
+      wardArchiveStatus.id = 'wardArchiveStatus-' + w.key;
+      block.appendChild(wardArchiveStatus);
 
       const shiftWrap = document.createElement('div');
       shiftWrap.className = 'table-wrap';
@@ -630,6 +658,32 @@
     const el = document.getElementById('archiveStatus');
     el.textContent = msg;
     el.style.color = isError ? '#dc2626' : '#6b7280';
+  }
+
+  // Files one ward's report to the archive and resets that ward's live doc
+  // to blank/unlocked, independent of the full 24-hour batch below — see
+  // archiveOneWard in nurses-report-common.js. Only offered here for wards
+  // already shown as "submitted" (renderWardReports only renders those).
+  async function moveWardToArchive(w, btn) {
+    const statusEl = document.getElementById('wardArchiveStatus-' + w.key);
+    if (!confirm('Move ' + w.label + '\u2019s submitted report to the permanent archive and start a fresh report for the next period?')) return;
+    btn.disabled = true;
+    if (statusEl) { statusEl.textContent = 'Archiving...'; statusEl.style.color = '#6b7280'; }
+    try {
+      await archiveOneWard(db, { doc, getDoc, setDoc, updateDoc, serverTimestamp }, {
+        w, wardKey: w.key, data: wardData[w.key] || {}, dateId, weekId: wk,
+        who: (currentProfile && currentProfile.name) || 'Unknown',
+        uid: currentUser.uid
+      });
+      if (statusEl) { statusEl.textContent = 'Moved to archive.'; statusEl.style.color = '#6b7280'; }
+    } catch (e) {
+      if (statusEl) { statusEl.textContent = "Couldn't move to archive: " + (e.code || e.message || 'unknown error'); statusEl.style.color = '#dc2626'; }
+      btn.disabled = false;
+    }
+    // On success the ward's live doc reset arrives via the existing
+    // subscribeToWards() listener, which calls applyWardData ->
+    // renderWardReports() and drops this ward out of the submitted list —
+    // no manual re-render needed here.
   }
 
   // Files the current 24-hour period to the permanent Ward Charts Archive:
