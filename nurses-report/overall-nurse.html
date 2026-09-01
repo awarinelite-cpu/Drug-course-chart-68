@@ -484,7 +484,7 @@
         if (span) span.textContent = data[c.key] || '';
       });
     }
-    refs.dutySpan.textContent = data.nurseOnDuty || '';
+    refs.dutySpan.textContent = data.submittedBy || data.nurseOnDuty || '';
     const locked = !!data.locked;
     refs.lockBtn.className = 'lock-btn ' + (locked ? 'locked' : 'open');
     refs.lockBtn.textContent = locked ? '🔒 Locked' : '🔓 Open';

@@ -335,7 +335,7 @@
         totals[f.key] += v;
         const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
       });
-      const dutyTd = document.createElement('td'); dutyTd.style.textAlign = 'left'; dutyTd.textContent = data.nurseOnDuty || '\u2014'; tr.appendChild(dutyTd);
+      const dutyTd = document.createElement('td'); dutyTd.style.textAlign = 'left'; dutyTd.textContent = data.submittedBy || data.nurseOnDuty || '\u2014'; tr.appendChild(dutyTd);
       tbody.appendChild(tr);
     });
     const totalsTr = document.createElement('tr'); totalsTr.className = 'totals-row';
