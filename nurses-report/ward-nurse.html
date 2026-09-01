@@ -44,6 +44,10 @@
   .patient-block .patient-note-label { font-size: 12px; font-weight: bold; text-decoration: underline; margin-top: 8px; display: block; }
   .patient-block .patient-note-text { font-size: 14px; line-height: 1.5; white-space: pre-wrap; margin: 4px 0 0 0; }
   .no-patients { font-size: 12px; color: #6b7280; }
+  .admin-edit-btn { border: none; background: #eff6ff; color: #1d4ed8; border-radius: 6px; padding: 2px 8px; font-size: 13px; cursor: pointer; margin-left: 8px; }
+  .patient-block h3, .patient-line h3 { display: inline; font-size: inherit; font-weight: bold; margin: 0; }
+  .patient-block .patient-note-label { display: block; margin-top: 8px; }
+  .patient-block .patient-note-text { text-align: justify; }
 </style>
 </head>
 <body>
@@ -117,6 +121,7 @@
   let currentUser = null, currentProfile = null, currentWardKey = null;
   let wardDoc = null; // latest loaded/edited state (in-memory, saved as a whole on submit)
   let editable = false;
+  let adminEditOverride = false; // admin tapped the ✏️ to leave read-only view for a locked report
   const shiftInputs = {};   // shiftKey -> { field: input, duty: input }
   const totalCells = {};    // field -> td
   const bedsCells = {};     // shiftKey/'total' -> td (Am holds the real input; Pm/Total mirror it)
@@ -422,7 +427,7 @@
       if (!p[f.key]) return;
       const line = document.createElement('div');
       line.className = 'patient-line';
-      const b = document.createElement('b');
+      const b = document.createElement('h3');
       b.textContent = f.label + ': ';
       line.appendChild(b);
       line.appendChild(document.createTextNode(p[f.key]));
@@ -432,9 +437,9 @@
     const textFields = PATIENT_FIELDS.filter(f => f.type === 'textarea');
     textFields.forEach(f => {
       if (!p[f.key]) return;
-      const label = document.createElement('span');
+      const label = document.createElement('h3');
       label.className = 'patient-note-label';
-      label.textContent = f.label;
+      label.textContent = f.label + ':';
       block.appendChild(label);
       const text = document.createElement('p');
       text.className = 'patient-note-text';
@@ -514,10 +519,28 @@
     }
 
     const isAdmin = currentProfile && currentProfile.role === 'admin';
-    editable = isAdmin || !wardDoc.locked;
-    if (wardDoc.locked && !isAdmin) {
+    editable = (isAdmin && adminEditOverride) || !wardDoc.locked;
+    if (wardDoc.locked && !editable) {
       notice.style.display = 'block';
-      notice.textContent = "This ward's report is locked. Ask the Overall Nurse to grant access before editing.";
+      notice.innerHTML = '';
+      const text = document.createElement('span');
+      text.textContent = isAdmin
+        ? "This ward's report is locked."
+        : "This ward's report is locked. Ask the Overall Nurse to grant access before editing.";
+      notice.appendChild(text);
+      if (isAdmin) {
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'admin-edit-btn';
+        editBtn.textContent = '✏️';
+        editBtn.title = 'Switch to edit mode';
+        editBtn.addEventListener('click', () => {
+          adminEditOverride = true;
+          refreshStatusPill();
+          renderPatients();
+        });
+        notice.appendChild(editBtn);
+      }
     } else {
       notice.style.display = 'none';
     }
@@ -532,6 +555,7 @@
 
   async function loadWard(wardKey) {
     currentWardKey = wardKey;
+    adminEditOverride = false; // default to read-only even for admin; they can tap ✏️ per ward
     const w = WARDS.find(x => x.key === wardKey);
     const ref = doc(db, 'nurseReports', dateId, 'wards', wardKey);
     let snap;
