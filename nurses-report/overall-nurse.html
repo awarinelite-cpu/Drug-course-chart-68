@@ -854,24 +854,25 @@
       return;
     }
 
-    // Filed. Reset every ward's live report to a blank slate for the next
-    // 24-hour period, then leave for the archive. Nurses shouldn't land
-    // back on an overall page still showing the report that was just
-    // filed away. Only do this the first time a period is archived —
-    // re-running Save to Archive later just corrects the filed copy, and
-    // by then nurses may already have live drafts going for the *next*
-    // period, which a second reset would wipe out.
-    if (!alreadyArchived) {
-      setArchiveStatus('Archived. Resetting reports for the next period...', false);
-      try {
-        await resetWardReports();
-      } catch (e) {
-        setArchiveStatus('Archived, but resetting the live reports failed: ' + (e.code || e.message || 'unknown error') + '. Reload and try Save to Archive again to reset them.', true);
-        document.getElementById('archiveBtn').disabled = false;
-        return;
-      }
-    } else {
-      setArchiveStatus('Archived copy updated.', false);
+    // Filed. Reset every ward that's still showing the just-filed report to
+    // a blank slate for the next 24-hour period. Nurses shouldn't land back
+    // on an overall page still showing the report that was just filed away,
+    // and the Overall Statistics table (which is just a live sum over each
+    // ward's doc) should fall back to zero the moment every ward is reset.
+    //
+    // resetWardReports() only touches wards still marked submitted+locked
+    // (i.e. still holding the old filed report), so it's safe to call every
+    // time Save to Archive runs — including retries after a failed reset,
+    // and re-runs that just correct the filed copy. A ward that's already
+    // been reset (submitted:false) is left alone, so a live draft already
+    // started for the *next* period is never wiped out.
+    setArchiveStatus(alreadyArchived ? 'Archived copy updated. Resetting any leftover reports...' : 'Archived. Resetting reports for the next period...', false);
+    try {
+      await resetWardReports();
+    } catch (e) {
+      setArchiveStatus('Archived, but resetting the live reports failed: ' + (e.code || e.message || 'unknown error') + '. Reload and try Save to Archive again to reset them.', true);
+      document.getElementById('archiveBtn').disabled = false;
+      return;
     }
 
     window.location.href = 'archive-list.html?type=overall';
@@ -882,13 +883,24 @@
   // ward's own page start the next period blank. Each ward's just-archived
   // closing Occ is carried forward as the new period's opening census,
   // same as the day-rollover carry-over in ward-nurse.html.
+  //
+  // Idempotent: only resets a ward whose live doc is still submitted+locked
+  // (i.e. still holding a filed-away report that hasn't been cleared yet).
+  // A ward already reset since the last archive (submitted:false) is left
+  // untouched, so this is always safe to call again — on a retry after a
+  // failed reset, or on a re-run of Save to Archive — without wiping out a
+  // live draft already started for the next period.
   async function resetWardReports() {
     const batch = writeBatch(db);
+    let any = false;
     WARDS.forEach(w => {
-      const closingOcc = wardData[w.key] && typeof wardData[w.key].occ === 'number' ? wardData[w.key].occ : 0;
+      const data = wardData[w.key];
+      if (!data || !data.submitted || !data.locked) return;
+      const closingOcc = typeof data.occ === 'number' ? data.occ : 0;
       batch.set(doc(wardsCol, w.key), defaultWardDoc(w, closingOcc));
+      any = true;
     });
-    await batch.commit();
+    if (any) await batch.commit();
   }
 </script>
 </body>
