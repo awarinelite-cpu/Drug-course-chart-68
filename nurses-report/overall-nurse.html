@@ -97,7 +97,7 @@
   import {
     doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, writeBatch
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel, weekId } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel, weekId } from "../js/nurses-report-common.js";
 
   const wk = weekId();
   const dateId = reportDateId();
@@ -251,7 +251,7 @@
     renderWardReports();
   }
 
-  const movementFields = STAT_FIELDS.filter(f => f.key !== 'beds');
+  const movementFields = SHIFT_STAT_FIELDS;
 
   function buildWardShiftTable(w, data) {
     const shifts = data.shifts || {};
@@ -260,7 +260,7 @@
 
     const thead = document.createElement('thead');
     const headRow = document.createElement('tr');
-    ['Shift', 'Beds', ...movementFields.map(f => f.label), 'Nurses on Duty'].forEach(label => {
+    ['Shift', ...movementFields.map(f => f.label), 'Nurses on Duty'].forEach(label => {
       const th = document.createElement('th');
       th.textContent = label;
       headRow.appendChild(th);
@@ -276,10 +276,6 @@
       nameTd.className = 'shift-name';
       nameTd.textContent = s.label;
       tr.appendChild(nameTd);
-
-      const bedsTd = document.createElement('td');
-      bedsTd.textContent = typeof data.beds === 'number' ? data.beds : (w.beds || 0);
-      tr.appendChild(bedsTd);
 
       movementFields.forEach(f => {
         const td = document.createElement('td');
@@ -301,9 +297,6 @@
     totalNameTd.className = 'shift-name';
     totalNameTd.textContent = 'Total';
     totalTr.appendChild(totalNameTd);
-    const totalBedsTd = document.createElement('td');
-    totalBedsTd.textContent = typeof data.beds === 'number' ? data.beds : (w.beds || 0);
-    totalTr.appendChild(totalBedsTd);
     movementFields.forEach(f => {
       const td = document.createElement('td');
       td.textContent = typeof data[f.key] === 'number' ? data[f.key] : 0;
@@ -314,6 +307,19 @@
 
     table.appendChild(tbody);
     return table;
+  }
+
+  function buildCensusLine(w, data) {
+    const beds = typeof data.beds === 'number' ? data.beds : (w.beds || 0);
+    const startOcc = typeof data.startOcc === 'number' ? data.startOcc : 0;
+    const occ = typeof data.occ === 'number' ? data.occ : 0;
+    const vac = beds - occ;
+    const p = document.createElement('p');
+    p.style.fontSize = '13px';
+    p.style.margin = '0 0 8px 0';
+    p.innerHTML = '<b>Beds:</b> ' + beds + '&nbsp;&nbsp; <b>Starting Census:</b> ' + startOcc +
+      '&nbsp;&nbsp; <b>Occ (end of day):</b> ' + occ + '&nbsp;&nbsp; <b>Vac:</b> ' + vac;
+    return p;
   }
 
   function buildPatientBlock(p) {
@@ -371,6 +377,7 @@
       heading.textContent = w.label;
       block.appendChild(heading);
 
+      block.appendChild(buildCensusLine(w, data));
       block.appendChild(buildWardShiftTable(w, data));
 
       const patients = Array.isArray(data.patients) ? data.patients : [];

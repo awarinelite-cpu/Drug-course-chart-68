@@ -56,6 +56,29 @@ export const SHIFTS = [
   { key: 'pm', label: 'Pm' }
 ];
 
+// Occ and Vac are census figures, not events — they are NOT summed across
+// shifts (a ward that had 8 patients in the morning and still had 8 in the
+// evening has 8, not 16). Only the true movement/event columns below are
+// entered per shift and summed for the Total row.
+export const SHIFT_STAT_FIELDS = STAT_FIELDS.filter(
+  f => f.key !== 'beds' && f.key !== 'occ' && f.key !== 'vac'
+);
+
+// Which movement columns move the Occ count, and which way. Confirmed with
+// the ward: Adm, (internal) Transfer In, and (external) Ext In increase the
+// census; Disch, Dama, Transfer Out, Ext Out, and Death decrease it. S/C,
+// VS/C, and BID do not change Occ.
+export const OCC_INCREASE_KEYS = ['adm', 'transferIn', 'ext'];
+export const OCC_DECREASE_KEYS = ['disch', 'dama', 'transferOut', 'extOut', 'absc', 'death'];
+
+// Net change to Occ contributed by one shift's movement figures.
+export function occDelta(shiftData) {
+  const get = k => (typeof shiftData[k] === 'number' ? shiftData[k] : 0);
+  const inc = OCC_INCREASE_KEYS.reduce((sum, k) => sum + get(k), 0);
+  const dec = OCC_DECREASE_KEYS.reduce((sum, k) => sum + get(k), 0);
+  return inc - dec;
+}
+
 // Structured fields for each patient write-up under a ward's report,
 // matching the paper form's per-patient block (name/age/sex/EMR/DOA plus
 // a free-text diagnosis & orders note).

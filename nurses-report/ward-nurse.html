@@ -67,6 +67,25 @@
     </div>
 
     <div class="card-box">
+      <h3 style="margin-top:0;">Starting Census</h3>
+      <p style="font-size:12px; color:#555; margin-top:-6px;">Patients on the ward at 6:00 AM, before today's admissions/discharges. Carried over from yesterday's closing count when available — correct it if it's wrong.</p>
+      <div class="patient-field" style="max-width:140px;">
+        <input type="number" id="startOccInput" inputmode="numeric">
+      </div>
+    </div>
+
+    <div class="card-box" id="censusCard">
+      <h3 style="margin-top:0;">Census (auto-calculated)</h3>
+      <p style="font-size:12px; color:#555; margin-top:-6px;">Occ only changes from Adm, Transfer In, and Ext In (up) or Disch, Dama, Transfer Out, Ext Out, Absc, and Death (down) — it is never the sum of the two shifts.</p>
+      <table class="shift">
+        <tbody>
+          <tr><td class="shift-name">Occ (end of day)</td><td id="censusOcc" style="font-weight:bold;">0</td></tr>
+          <tr><td class="shift-name">Vac (Beds &minus; Occ)</td><td id="censusVac" style="font-weight:bold;">0</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card-box">
       <h3 style="margin-top:0;">Shift Statistics</h3>
       <p style="font-size:12px; color:#555; margin-top:-6px;">Enter figures for each shift. Totals are calculated automatically.</p>
       <div class="table-wrap">
@@ -96,10 +115,10 @@
   import { requireAuth } from "../js/auth-guard.js";
   import { db } from "../js/firebase.js";
   import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, occDelta } from "../js/nurses-report-common.js";
 
   const dateId = reportDateId();
-  const movementFields = STAT_FIELDS.filter(f => f.key !== 'beds');
+  const movementFields = SHIFT_STAT_FIELDS;
 
   let currentUser = null, currentProfile = null, currentWardKey = null;
   let wardDoc = null; // latest loaded/edited state (in-memory, saved as a whole on submit)
@@ -135,7 +154,7 @@
   }
 
   function defaultWardDoc(w) {
-    const d = { label: w.label, beds: w.beds, locked: false, submitted: false, shifts: {}, patients: [] };
+    const d = { label: w.label, beds: w.beds, startOcc: 0, occ: 0, vac: w.beds, locked: false, submitted: false, shifts: {}, patients: [] };
     SHIFTS.forEach(s => { d.shifts[s.key] = blankShift(); });
     movementFields.forEach(f => { d[f.key] = 0; });
     return d;
@@ -223,6 +242,20 @@
       totalCells[f.key].textContent = sum;
       wardDoc[f.key] = sum; // top-level total, read by the Overall Nurse table
     });
+    recomputeCensus();
+  }
+
+  function recomputeCensus() {
+    const start = typeof wardDoc.startOcc === 'number' ? wardDoc.startOcc : 0;
+    let occ = start;
+    SHIFTS.forEach(s => { occ += occDelta(wardDoc.shifts[s.key] || {}); });
+    if (occ < 0) occ = 0;
+    const beds = typeof wardDoc.beds === 'number' ? wardDoc.beds : 0;
+    const vac = beds - occ;
+    wardDoc.occ = occ;
+    wardDoc.vac = vac;
+    document.getElementById('censusOcc').textContent = occ;
+    document.getElementById('censusVac').textContent = vac;
   }
 
   function fillShiftInputsFromDoc() {
@@ -304,10 +337,18 @@
   document.getElementById('bedsInput').addEventListener('input', (e) => {
     const num = parseFloat(e.target.value);
     wardDoc.beds = isNaN(num) ? 0 : num;
+    recomputeCensus();
+  });
+
+  document.getElementById('startOccInput').addEventListener('input', (e) => {
+    const num = parseFloat(e.target.value);
+    wardDoc.startOcc = isNaN(num) ? 0 : num;
+    recomputeCensus();
   });
 
   function applyEditableState() {
     document.getElementById('bedsInput').disabled = !editable;
+    document.getElementById('startOccInput').disabled = !editable;
     document.getElementById('addPatientBtn').style.display = editable ? '' : 'none';
     document.getElementById('submitBtn').style.display = editable ? '' : 'none';
     Object.values(shiftInputs).forEach(refs => {
@@ -344,6 +385,12 @@
     applyEditableState();
   }
 
+  function prevDateId(id) {
+    const [y, m, d] = id.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d - 1));
+    return dt.getUTCFullYear() + '-' + String(dt.getUTCMonth() + 1).padStart(2, '0') + '-' + String(dt.getUTCDate()).padStart(2, '0');
+  }
+
   async function loadWard(wardKey) {
     currentWardKey = wardKey;
     const w = WARDS.find(x => x.key === wardKey);
@@ -362,7 +409,20 @@
     wardDoc.patients = Array.isArray(wardDoc.patients) ? wardDoc.patients : [];
     wardDoc.patients.forEach(p => { if (!p.id) p.id = 'p' + Math.random().toString(36).slice(2); });
 
+    if (!snap.exists()) {
+      // Best-effort carry-over: yesterday's closing Occ becomes today's
+      // starting census. Never overrides an already-saved draft's figure.
+      try {
+        const prevRef = doc(db, 'nurseReports', prevDateId(dateId), 'wards', wardKey);
+        const prevSnap = await getDoc(prevRef);
+        if (prevSnap.exists() && typeof prevSnap.data().occ === 'number') {
+          wardDoc.startOcc = prevSnap.data().occ;
+        }
+      } catch (e) { /* non-fatal — leave startOcc at 0, nurse can correct it */ }
+    }
+
     document.getElementById('bedsInput').value = typeof wardDoc.beds === 'number' ? wardDoc.beds : w.beds;
+    document.getElementById('startOccInput').value = typeof wardDoc.startOcc === 'number' ? wardDoc.startOcc : 0;
     buildShiftTable();
     refreshStatusPill();
     fillShiftInputsFromDoc();
