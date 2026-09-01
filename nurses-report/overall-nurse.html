@@ -159,7 +159,7 @@
   let currentUser = null, currentProfile = null;
   let isAdminUser = false;   // only a full admin may rename wards
   const wardData = {};       // wardKey -> latest known Firestore data
-  const rowRefs = {};        // wardKey -> { inputs: {field: <input>}, dutyInput, lockBtn, nameEl }
+  const rowRefs = {};        // wardKey -> { inputs: {field: <span>}, dutySpan, lockBtn, nameEl, customInputs }
   const totalCells = {};     // field -> <td>
 
   // Renames a ward everywhere it's shown on this page (the Overall
@@ -396,58 +396,33 @@
       nameTd.appendChild(nameEl);
       tr.appendChild(nameTd);
 
+      // Read-only: figures come from each ward's own submitted report
+      // (below, under "Ward Reports") — the Overall Nurse compiles/views
+      // this table but never edits it directly.
       const inputs = {};
       STAT_FIELDS.forEach(f => {
         const td = document.createElement('td');
-        const input = document.createElement('input');
-        input.type = 'number';
-        input.inputMode = 'numeric';
-        input.value = f.key === 'beds' ? w.beds : 0;
-        input.addEventListener('change', () => {
-          const num = parseFloat(input.value);
-          const val = isNaN(num) ? 0 : num;
-          input.value = val;
-          const oldValue = wardData[w.key] ? wardData[w.key][f.key] : undefined;
-          wardData[w.key] = wardData[w.key] || {};
-          wardData[w.key][f.key] = val;
-          recomputeTotals();
-          saveField(w.key, f.key, val, oldValue);
-        });
-        td.appendChild(input);
+        const span = document.createElement('span');
+        span.textContent = f.key === 'beds' ? w.beds : 0;
+        td.appendChild(span);
         tr.appendChild(td);
-        inputs[f.key] = input;
+        inputs[f.key] = span;
       });
 
-      // Admin-added free-text columns (e.g. "Consultant"). Ward-level, not
-      // summed — same save mechanism as the Nurses on Duty field below.
+      // Admin-added free-text columns (e.g. "Consultant"). Read-only here
+      // too, for the same reason as the numeric fields above.
       const customInputs = {};
       CUSTOM_TEXT_COLUMNS.forEach(c => {
         const td = document.createElement('td');
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'ward-name-input';
-        input.addEventListener('change', () => {
-          const oldValue = wardData[w.key] ? wardData[w.key][c.key] : undefined;
-          wardData[w.key] = wardData[w.key] || {};
-          wardData[w.key][c.key] = input.value;
-          saveField(w.key, c.key, input.value, oldValue);
-        });
-        td.appendChild(input);
+        const span = document.createElement('span');
+        td.appendChild(span);
         tr.appendChild(td);
-        customInputs[c.key] = input;
+        customInputs[c.key] = span;
       });
 
       const dutyTd = document.createElement('td');
-      const dutyInput = document.createElement('input');
-      dutyInput.type = 'text';
-      dutyInput.className = 'duty-input';
-      dutyInput.placeholder = 'Nurse name';
-      dutyInput.addEventListener('change', () => {
-        wardData[w.key] = wardData[w.key] || {};
-        wardData[w.key].nurseOnDuty = dutyInput.value;
-        saveField(w.key, 'nurseOnDuty', dutyInput.value);
-      });
-      dutyTd.appendChild(dutyInput);
+      const dutySpan = document.createElement('span');
+      dutyTd.appendChild(dutySpan);
       tr.appendChild(dutyTd);
 
       const accessTd = document.createElement('td');
@@ -461,7 +436,7 @@
       if (isAdminUser) tr.appendChild(document.createElement('td')); // aligns under "+ Column"
 
       tbody.appendChild(tr);
-      rowRefs[w.key] = { inputs, dutyInput, lockBtn, nameEl, customInputs };
+      rowRefs[w.key] = { inputs, dutySpan, lockBtn, nameEl, customInputs };
     });
     table.appendChild(tbody);
 
@@ -495,24 +470,21 @@
     });
   }
 
-  // Applies a remote data update to the row's inputs, but never overwrites a
-  // field the nurse is actively typing into — otherwise a live sync update
-  // from another device could yank the cursor mid-entry.
+  // Applies a remote data update to the row's read-only display cells.
   function applyWardData(wardKey, data) {
     wardData[wardKey] = data;
     const refs = rowRefs[wardKey];
     if (!refs) return;
     STAT_FIELDS.forEach(f => {
-      const input = refs.inputs[f.key];
-      if (document.activeElement !== input) input.value = (typeof data[f.key] === 'number') ? data[f.key] : 0;
+      refs.inputs[f.key].textContent = (typeof data[f.key] === 'number') ? data[f.key] : 0;
     });
     if (refs.customInputs) {
       CUSTOM_TEXT_COLUMNS.forEach(c => {
-        const input = refs.customInputs[c.key];
-        if (input && document.activeElement !== input) input.value = data[c.key] || '';
+        const span = refs.customInputs[c.key];
+        if (span) span.textContent = data[c.key] || '';
       });
     }
-    if (document.activeElement !== refs.dutyInput) refs.dutyInput.value = data.nurseOnDuty || '';
+    refs.dutySpan.textContent = data.nurseOnDuty || '';
     const locked = !!data.locked;
     refs.lockBtn.className = 'lock-btn ' + (locked ? 'locked' : 'open');
     refs.lockBtn.textContent = locked ? '🔒 Locked' : '🔓 Open';
