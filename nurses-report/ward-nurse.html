@@ -138,7 +138,7 @@
   import { requireAuth } from "../js/auth-guard.js";
   import { db } from "../js/firebase.js";
   import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, reportDateId, occDelta } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, reportDateId, occDelta, blankShift, defaultWardDoc } from "../js/nurses-report-common.js";
 
   const dateId = reportDateId();
   const movementFields = SHIFT_STAT_FIELDS;
@@ -173,23 +173,6 @@
     const el = document.getElementById('topStatus');
     el.textContent = msg;
     el.style.color = isError ? '#dc2626' : '#6b7280';
-  }
-
-  function blankShift() {
-    const s = {};
-    movementFields.forEach(f => { s[f.key] = 0; });
-    s.nurseOnDuty = '';
-    return s;
-  }
-
-  function defaultWardDoc(w) {
-    const d = {
-      label: w.label, beds: w.beds, startOcc: 0, occ: 0, vac: w.beds, locked: false, submitted: false,
-      shifts: {}, patients: [], nightUpdate: '', nightUpdateBy: '', nightUpdatedAt: null
-    };
-    SHIFTS.forEach(s => { d.shifts[s.key] = blankShift(); });
-    movementFields.forEach(f => { d[f.key] = 0; });
-    return d;
   }
 
   function buildShiftTable() {

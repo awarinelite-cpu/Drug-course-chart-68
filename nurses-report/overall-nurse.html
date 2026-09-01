@@ -119,7 +119,7 @@
   import {
     doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, writeBatch
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel, wardReportPeriodLabel, weekId, occDelta } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel, wardReportPeriodLabel, weekId, occDelta, defaultWardDoc } from "../js/nurses-report-common.js";
 
   const wk = weekId();
   const dateId = reportDateId();
@@ -698,12 +698,40 @@
     document.getElementById('archiveBtn').disabled = true;
     try {
       await batch.commit();
-      setArchiveStatus('Archived. Overall report + ' + WARDS.length + ' ward reports saved.', false);
     } catch (e) {
       setArchiveStatus("Couldn't save to archive: " + (e.code || e.message || 'unknown error'), true);
-    } finally {
       document.getElementById('archiveBtn').disabled = false;
+      return;
     }
+
+    // Filed. Reset every ward's live report to a blank slate for the next
+    // 24-hour period, then leave for the archive. Nurses shouldn't land
+    // back on an overall page still showing the report that was just
+    // filed away.
+    setArchiveStatus('Archived. Resetting reports for the next period...', false);
+    try {
+      await resetWardReports();
+    } catch (e) {
+      setArchiveStatus('Archived, but resetting the live reports failed: ' + (e.code || e.message || 'unknown error') + '. Reload and try Save to Archive again to reset them.', true);
+      document.getElementById('archiveBtn').disabled = false;
+      return;
+    }
+
+    window.location.href = 'archive-list.html?type=overall';
+  }
+
+  // Puts each ward's live doc back to its empty-state shape (no shifts,
+  // no patients, unlocked, unsubmitted) so both the Overall page and every
+  // ward's own page start the next period blank. Each ward's just-archived
+  // closing Occ is carried forward as the new period's opening census,
+  // same as the day-rollover carry-over in ward-nurse.html.
+  async function resetWardReports() {
+    const batch = writeBatch(db);
+    WARDS.forEach(w => {
+      const closingOcc = wardData[w.key] && typeof wardData[w.key].occ === 'number' ? wardData[w.key].occ : 0;
+      batch.set(doc(wardsCol, w.key), defaultWardDoc(w, closingOcc));
+    });
+    await batch.commit();
   }
 </script>
 </body>

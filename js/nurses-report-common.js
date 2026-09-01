@@ -79,6 +79,35 @@ export function occDelta(shiftData) {
   return inc - dec;
 }
 
+// A fresh, unsubmitted shift's movement figures. Every count starts at
+// zero and no nurse is recorded yet. Used to build a blank ward doc, and
+// to reset one after the Overall Nurse archives the day's reports.
+export function blankShift() {
+  const s = {};
+  SHIFT_STAT_FIELDS.forEach(f => { s[f.key] = 0; });
+  s.nurseOnDuty = '';
+  return s;
+}
+
+// The empty-state shape for one ward's live report: no shifts entered,
+// nothing submitted, nothing locked. Used both on a ward's first-ever
+// load and to reset a ward's live doc once its report has been filed to
+// the archive. `startOcc` seeds the new period's opening census: pass
+// the ward's closing Occ from the just-archived report to carry it
+// forward as the new period's starting figure, or omit it for a truly
+// blank ward with no prior report.
+export function defaultWardDoc(w, startOcc = 0) {
+  const occ = typeof startOcc === 'number' ? startOcc : 0;
+  const d = {
+    label: w.label, beds: w.beds, startOcc: occ, occ: occ, vac: w.beds - occ,
+    locked: false, submitted: false,
+    shifts: {}, patients: [], nightUpdate: '', nightUpdateBy: '', nightUpdatedAt: null
+  };
+  SHIFTS.forEach(s => { d.shifts[s.key] = blankShift(); });
+  SHIFT_STAT_FIELDS.forEach(f => { d[f.key] = 0; });
+  return d;
+}
+
 // Structured fields for each patient write-up under a ward's report,
 // matching the paper form's per-patient block (name/age/sex/EMR/DOA up
 // top, then one large free-text area for diagnosis, orders, and any
