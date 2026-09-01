@@ -116,6 +116,26 @@
     table.chart th.col-remark, table.chart td.col-remark { width:auto; min-width:130px; }
     table.chart td input, table.chart td select { width:auto; min-width:60px; }
   }
+  /* Desktop: the window is wide enough to show every column of both tables
+     at once, so drop the mobile nowrap/scroll behavior above and let the
+     sheet itself widen to fit them instead. */
+  @media (min-width: 1024px) {
+    .sheet { max-width: 1600px; }
+    table.drugs-table { width:100%; min-width:0; table-layout:auto; }
+    table.drugs-table th, table.drugs-table td { white-space:normal; }
+    table.drugs-table td input, table.drugs-table td select { width:100%; min-width:0; }
+
+    table.chart { width:100%; min-width:0; table-layout:fixed; }
+    table.chart th, table.chart td { white-space:normal; }
+    table.chart th.col-date, table.chart td.col-date { width:10%; min-width:0; }
+    table.chart th.col-sno, table.chart td.col-sno { width:30%; min-width:0; }
+    table.chart th.col-time, table.chart td.col-time { width:9%; min-width:0; }
+    table.chart th.col-dose, table.chart td.col-dose { width:10%; min-width:0; }
+    table.chart th.col-route, table.chart td.col-route { width:11%; min-width:0; }
+    table.chart th.col-nurse, table.chart td.col-nurse { width:16%; min-width:0; }
+    table.chart th.col-remark, table.chart td.col-remark { width:14%; min-width:0; }
+    table.chart td input, table.chart td select { width:100%; min-width:0; }
+  }
 </style>
 </head>
 <body>

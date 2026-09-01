@@ -80,6 +80,19 @@ table.entries th { background: #f3f4f6; text-transform: uppercase; font-size: 11
   .table-wrap table th, .table-wrap table td { white-space: nowrap; }
 }
 
+/* Desktop: the window has room to lay out every column of even the
+   widest tables (the 19-ward Overall Nurse table, ward Shift Statistics,
+   intake/vitals/seizure charts) without side-scrolling, so let the page
+   use that width instead of the ~960px column sized for a phone, and let
+   each table spread out to fill it rather than staying pinned to its
+   natural nowrap width. */
+@media (min-width: 1024px) {
+  .container { max-width: 1600px; }
+  .table-wrap { overflow-x: visible; }
+  .table-wrap table { width: 100%; min-width: 0; table-layout: auto; }
+  .table-wrap table th, .table-wrap table td { white-space: normal; }
+}
+
 /* Abnormal-value flagging shared across vitals, glycemic and intake/output charts */
 .flag-abnormal { background: #fee2e2 !important; color: #7f1d1d; font-weight: bold; }
 .flag-deficit { background: #fef3c7 !important; color: #78350f; font-weight: bold; }

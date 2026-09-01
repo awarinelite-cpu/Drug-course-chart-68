@@ -29,6 +29,15 @@
     table.chart th { white-space:nowrap; }
     table.chart td input { width:auto; min-width:90px; }
   }
+  /* Desktop: the window is wide enough to show all 7 time points at once,
+     so drop the mobile nowrap/scroll behavior above and widen the sheet
+     itself to fit them instead. */
+  @media (min-width: 1024px) {
+    .sheet { max-width: 1600px; }
+    table.chart { width:100%; min-width:0; table-layout:auto; }
+    table.chart th { white-space:normal; }
+    table.chart td input { width:100%; min-width:0; }
+  }
   .unit-note { text-align:center; font-size:11px; color:#666; margin-bottom:10px; }
   @media print {
     .no-print { display:none !important; }

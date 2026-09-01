@@ -12,6 +12,11 @@
   #patientTableWrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   #patientsTable { width:max-content; min-width:100%; }
   #patientsTable th, #patientsTable td { white-space:nowrap; }
+  @media (min-width: 1024px) {
+    #patientTableWrap { overflow-x:visible; }
+    #patientsTable { width:100%; min-width:0; table-layout:auto; }
+    #patientsTable th, #patientsTable td { white-space:normal; }
+  }
 </style>
 </head>
 <body>
