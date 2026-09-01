@@ -7,6 +7,14 @@
       "**/node_modules/**",
       "functions/**",
       "firestore.rules"
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|css|html)",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache" }
+        ]
+      }
     ]
   },
   "functions": [
