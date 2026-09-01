@@ -71,6 +71,18 @@ service cloud.firestore {
 
       match /wards/{wardKey} {
         allow read, write: if isKnownUser();
+
+        // Permanent, append-only log of every edit made to a ward's
+        // statistics figures (see overall-nurse.html's saveField/
+        // logHistory). Any known user who can edit the figures may add
+        // an entry, but entries can never be changed or removed by
+        // anyone — including an admin — and only admin/subadmin may
+        // read the log, matching the History panel's visibility.
+        match /history/{historyId} {
+          allow read: if isAdmin() || isSubadmin();
+          allow create: if isKnownUser();
+          allow update, delete: if false;
+        }
       }
     }
 

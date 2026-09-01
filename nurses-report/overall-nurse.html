@@ -91,7 +91,20 @@
       <div class="table-wrap">
         <table class="report" id="reportTable"></table>
       </div>
-      <div class="save-status" id="saveStatus"></div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+        <div class="save-status" id="saveStatus"></div>
+        <button class="btn btn-secondary" id="historyBtn" style="display:none; padding:6px 10px; font-size:12px;">📜 View Edit History</button>
+      </div>
+      <div id="historyPanel" style="display:none; margin-top:10px; border-top:1px solid #d1d5db; padding-top:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h3 style="margin:0; font-size:14px;">Edit History — this 24-hour period</h3>
+          <button class="btn btn-secondary" id="historyCloseBtn" style="padding:4px 8px; font-size:11px;">Close</button>
+        </div>
+        <p style="font-size:11px; color:#6b7280; margin:4px 0 8px 0;">
+          A permanent, admin/subadmin-visible record of every change made to the figures above. Entries can never be edited or deleted.
+        </p>
+        <div id="historyList" style="font-size:12px;"></div>
+      </div>
     </div>
 
     <div class="card-box">
@@ -117,7 +130,8 @@
   import { requireAuth } from "../js/auth-guard.js";
   import { db } from "../js/firebase.js";
   import {
-    doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, writeBatch
+    doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, writeBatch,
+    addDoc, query, orderBy, limit
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
   import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel, wardReportPeriodLabel, weekId, occDelta, defaultWardDoc, archiveOneWard } from "../js/nurses-report-common.js";
 
@@ -139,15 +153,32 @@
     el.style.color = isError ? '#dc2626' : '#6b7280';
   }
 
-  async function saveField(wardKey, field, value) {
+  async function saveField(wardKey, field, value, oldValue) {
     try {
       await updateDoc(doc(wardsCol, wardKey), {
         [field]: value, updatedAt: serverTimestamp(), updatedBy: currentProfile.name || 'Unknown'
       });
       setSaveStatus('Saved.', false);
+      if (oldValue !== value) logHistory(wardKey, field, oldValue, value);
     } catch (e) {
       setSaveStatus("Couldn't save: " + (e.code || e.message || 'unknown error'), true);
     }
+  }
+
+  // Every real change to a statistics figure is also written to a
+  // permanent, append-only history log under that ward's doc for the
+  // day (firestore.rules blocks update/delete on it forever — even an
+  // admin correcting the live figure again can only add a new entry,
+  // never alter or remove a past one). Best-effort: a history-write
+  // failure never blocks or rolls back the actual save above.
+  function logHistory(wardKey, field, oldValue, newValue) {
+    const historyCol = collection(wardsCol, wardKey, 'history');
+    addDoc(historyCol, {
+      field, oldValue: (typeof oldValue === 'number') ? oldValue : null, newValue,
+      changedBy: (currentProfile && currentProfile.name) || 'Unknown',
+      changedByUid: currentUser.uid,
+      changedAt: serverTimestamp()
+    }).catch(() => {});
   }
 
   async function toggleLock(wardKey) {
@@ -214,10 +245,11 @@
           const num = parseFloat(input.value);
           const val = isNaN(num) ? 0 : num;
           input.value = val;
+          const oldValue = wardData[w.key] ? wardData[w.key][f.key] : undefined;
           wardData[w.key] = wardData[w.key] || {};
           wardData[w.key][f.key] = val;
           recomputeTotals();
-          saveField(w.key, f.key, val);
+          saveField(w.key, f.key, val, oldValue);
         });
         td.appendChild(input);
         tr.appendChild(td);
@@ -649,9 +681,73 @@
     document.getElementById('archiveBox').style.display = 'block';
     document.getElementById('archiveBtn').addEventListener('click', () => saveToArchive(isAdmin, isSubadmin));
 
+    // The permanent edit-history log is oversight tooling — only admin
+    // and subadmin can see it, matching firestore.rules below.
+    if (isAdmin || isSubadmin) {
+      document.getElementById('historyBtn').style.display = 'inline-block';
+    }
+
     buildTable();
     await ensureSeeded();
     subscribeToWards();
+  });
+
+  // Loads and renders the permanent edit-history log for this 24-hour
+  // period. Queried per-ward (19 small reads) rather than a single
+  // cross-ward query, since history lives as a subcollection under each
+  // ward's own doc — this needs no composite Firestore index to work.
+  async function loadHistory() {
+    const listEl = document.getElementById('historyList');
+    listEl.textContent = 'Loading…';
+    let entries = [];
+    try {
+      const results = await Promise.all(WARDS.map(async w => {
+        const historyCol = collection(wardsCol, w.key, 'history');
+        const snap = await getDocs(query(historyCol, orderBy('changedAt', 'desc'), limit(50)));
+        return snap.docs.map(d => ({ wardLabel: w.label, ...d.data() }));
+      }));
+      entries = results.flat();
+    } catch (e) {
+      listEl.textContent = "Couldn't load history: " + (e.code || e.message || 'unknown error');
+      return;
+    }
+    entries.sort((a, b) => (b.changedAt?.toMillis?.() || 0) - (a.changedAt?.toMillis?.() || 0));
+    if (!entries.length) {
+      listEl.textContent = 'No edits recorded yet for this period.';
+      return;
+    }
+    const fieldLabel = key => (STAT_FIELDS.find(f => f.key === key) || {}).label || key;
+    const table = document.createElement('table');
+    table.className = 'report';
+    table.style.width = '100%';
+    const thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Time</th><th>Ward</th><th>Field</th><th>Old → New</th><th>By</th></tr>';
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    entries.slice(0, 200).forEach(en => {
+      const tr = document.createElement('tr');
+      const when = en.changedAt?.toDate ? en.changedAt.toDate().toLocaleString() : '—';
+      tr.innerHTML =
+        '<td>' + when + '</td>' +
+        '<td class="ward-name">' + en.wardLabel + '</td>' +
+        '<td>' + fieldLabel(en.field) + '</td>' +
+        '<td>' + (en.oldValue ?? '—') + ' → ' + en.newValue + '</td>' +
+        '<td>' + (en.changedBy || 'Unknown') + '</td>';
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    listEl.innerHTML = '';
+    listEl.appendChild(table);
+  }
+
+  document.getElementById('historyBtn').addEventListener('click', () => {
+    const panel = document.getElementById('historyPanel');
+    const show = panel.style.display === 'none';
+    panel.style.display = show ? 'block' : 'none';
+    if (show) loadHistory(); // refresh every time it's opened
+  });
+  document.getElementById('historyCloseBtn').addEventListener('click', () => {
+    document.getElementById('historyPanel').style.display = 'none';
   });
 
   function setArchiveStatus(msg, isError) {
