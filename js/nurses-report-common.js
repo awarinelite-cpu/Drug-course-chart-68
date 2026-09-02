@@ -107,10 +107,18 @@ export const STAT_FIELDS = [
 // headerLabel() instead.
 STAT_FIELDS.forEach(f => { f.defaultLabel = f.label; });
 
-export const HEADER_LABELS_COLLECTION = 'nurseReportConfig';
-export const HEADER_LABELS_DOC = 'headerLabels';
-export const HEADER_LABEL_OVERRIDES = {};
-export const GROUP_LABEL_IDS = { intTransfer: '_group_int_transfer', extTransfer: '_group_ext_transfer' };
+// Separate small "Patient Demographics" table shown below both the Ward
+// Report and Overall Statistics tables — NOT part of STAT_FIELDS, entered
+// and totalled independently. Purely descriptive breakdown of admissions
+// (who was admitted), never fed into Occ or any STAT_FIELDS total.
+export const DEMOGRAPHIC_FIELDS = [
+  { key: 'male',     label: 'Male' },
+  { key: 'female',   label: 'Female' },
+  { key: 'child',    label: 'Children' },
+  { key: 'soldier',  label: 'Soldiers' },
+  { key: 'civilian', label: 'Civilians' }
+];
+
 
 export function applyHeaderLabelOverrides(overrides) {
   Object.keys(HEADER_LABEL_OVERRIDES).forEach(k => delete HEADER_LABEL_OVERRIDES[k]);
@@ -250,6 +258,7 @@ export function occDelta(shiftData) {
 export function blankShift() {
   const s = {};
   SHIFT_STAT_FIELDS.forEach(f => { s[f.key] = 0; });
+  DEMOGRAPHIC_FIELDS.forEach(f => { s[f.key] = 0; });
   s.nurseOnDuty = '';
   return s;
 }
@@ -270,6 +279,7 @@ export function defaultWardDoc(w, startOcc = 0) {
   };
   SHIFTS.forEach(s => { d.shifts[s.key] = blankShift(); });
   SHIFT_STAT_FIELDS.forEach(f => { d[f.key] = 0; });
+  DEMOGRAPHIC_FIELDS.forEach(f => { d[f.key] = 0; });
   return d;
 }
 

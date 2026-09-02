@@ -99,6 +99,11 @@
       <div class="table-wrap"><table class="report" id="reportTable"></table></div>
     </div>
 
+    <div class="card-box" id="demographicStatsCard" style="display:none;">
+      <h2>Patient Demographics</h2>
+      <div class="table-wrap"><table class="report" id="demographicStatsTable"></table></div>
+    </div>
+
     <div class="card-box">
       <h2>Ward Report<span id="wardReportsPlural"></span></h2>
       <div id="wardReports"></div>
@@ -118,7 +123,7 @@
   import { requireAuth } from "../js/auth-guard.js";
   import { db } from "../js/firebase.js";
   import { doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, occDelta, loadWardNameOverrides, loadHeaderLabelOverrides, headerLabel, GROUP_LABEL_IDS } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, DEMOGRAPHIC_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, occDelta, loadWardNameOverrides, loadHeaderLabelOverrides, headerLabel, GROUP_LABEL_IDS } from "../js/nurses-report-common.js";
 
   const archiveId = new URLSearchParams(window.location.search).get('id');
   const movementFields = SHIFT_STAT_FIELDS;
@@ -264,6 +269,39 @@
     return table;
   }
 
+  // Small read-only "Patient Demographics" table for one archived ward's
+  // report — mirrors the entry table on ward-nurse.html but frozen.
+  function buildDemographicTableView(data) {
+    const shifts = data.shifts || {};
+    const table = document.createElement('table');
+    table.className = 'ward-shift';
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    const shiftTh = document.createElement('th'); shiftTh.textContent = 'Shift'; headRow.appendChild(shiftTh);
+    DEMOGRAPHIC_FIELDS.forEach(f => { const th = document.createElement('th'); th.textContent = f.label; headRow.appendChild(th); });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    SHIFTS.forEach(s => {
+      const sData = shifts[s.key] || {};
+      const tr = document.createElement('tr');
+      const nameTd = document.createElement('td'); nameTd.className = 'shift-name'; nameTd.textContent = s.label; tr.appendChild(nameTd);
+      DEMOGRAPHIC_FIELDS.forEach(f => {
+        const td = document.createElement('td'); td.textContent = typeof sData[f.key] === 'number' ? sData[f.key] : 0; tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    const totalTr = document.createElement('tr'); totalTr.className = 'total-row';
+    const totalNameTd = document.createElement('td'); totalNameTd.className = 'shift-name'; totalNameTd.textContent = 'Total'; totalTr.appendChild(totalNameTd);
+    DEMOGRAPHIC_FIELDS.forEach(f => {
+      const td = document.createElement('td'); td.textContent = typeof data[f.key] === 'number' ? data[f.key] : 0; totalTr.appendChild(td);
+    });
+    tbody.appendChild(totalTr);
+    table.appendChild(tbody);
+    return table;
+  }
+
   function buildWardReportBlockView(w, data) {
     const block = document.createElement('div');
     block.className = 'ward-report-block';
@@ -276,6 +314,15 @@
     shiftWrap.className = 'table-wrap';
     shiftWrap.appendChild(buildWardShiftTableView(w, data));
     block.appendChild(shiftWrap);
+
+    const demoHeading = document.createElement('h3');
+    demoHeading.className = 'patient-note-label';
+    demoHeading.textContent = 'Patient Demographics';
+    block.appendChild(demoHeading);
+    const demoWrap = document.createElement('div');
+    demoWrap.className = 'table-wrap';
+    demoWrap.appendChild(buildDemographicTableView(data));
+    block.appendChild(demoWrap);
 
     const patients = Array.isArray(data.patients) ? data.patients : [];
     if (patients.length === 0) {
@@ -342,6 +389,40 @@
     const totalsLabelTd = document.createElement('td'); totalsLabelTd.className = 'ward-name'; totalsLabelTd.textContent = 'TOTAL'; totalsTr.appendChild(totalsLabelTd);
     STAT_FIELDS.forEach(f => { const td = document.createElement('td'); td.textContent = totals[f.key]; totalsTr.appendChild(td); });
     totalsTr.appendChild(document.createElement('td'));
+    tbody.appendChild(totalsTr);
+    table.appendChild(tbody);
+    return table;
+  }
+
+  // Compiled, read-only "Patient Demographics" table for the archived
+  // All Wards overall report — mirrors buildStatsTableView's structure.
+  function buildDemographicStatsTableView() {
+    const table = document.createElement('table');
+    table.className = 'report';
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    const wardTh = document.createElement('th'); wardTh.textContent = 'Ward'; headRow.appendChild(wardTh);
+    DEMOGRAPHIC_FIELDS.forEach(f => { const th = document.createElement('th'); th.textContent = f.label; headRow.appendChild(th); });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    const totals = {};
+    DEMOGRAPHIC_FIELDS.forEach(f => totals[f.key] = 0);
+    wardsMeta.forEach(w => {
+      const data = wardsMap[w.key] || {};
+      const tr = document.createElement('tr');
+      const nameTd = document.createElement('td'); nameTd.className = 'ward-name'; nameTd.textContent = w.label; tr.appendChild(nameTd);
+      DEMOGRAPHIC_FIELDS.forEach(f => {
+        const v = typeof data[f.key] === 'number' ? data[f.key] : 0;
+        totals[f.key] += v;
+        const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    const totalsTr = document.createElement('tr'); totalsTr.className = 'totals-row';
+    const totalsLabelTd = document.createElement('td'); totalsLabelTd.className = 'ward-name'; totalsLabelTd.textContent = 'TOTAL'; totalsTr.appendChild(totalsLabelTd);
+    DEMOGRAPHIC_FIELDS.forEach(f => { const td = document.createElement('td'); td.textContent = totals[f.key]; totalsTr.appendChild(td); });
     tbody.appendChild(totalsTr);
     table.appendChild(tbody);
     return table;
@@ -628,12 +709,16 @@
 
   function render() {
     document.getElementById('statsCard').style.display = isOverallType ? 'block' : 'none';
+    document.getElementById('demographicStatsCard').style.display = isOverallType ? 'block' : 'none';
     document.getElementById('wardReportsPlural').textContent = isOverallType ? 's' : '';
 
     if (isOverallType) {
       const reportTable = document.getElementById('reportTable');
       reportTable.innerHTML = '';
       reportTable.appendChild(editMode ? buildStatsTableEdit() : buildStatsTableView());
+      const demoTable = document.getElementById('demographicStatsTable');
+      demoTable.innerHTML = '';
+      demoTable.appendChild(buildDemographicStatsTableView());
     }
 
     const wardReports = document.getElementById('wardReports');

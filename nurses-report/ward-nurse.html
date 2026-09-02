@@ -109,6 +109,13 @@
       </div>
     </div>
 
+    <div class="card-box">
+      <h2>Patient Demographics</h2>
+      <div class="table-wrap">
+        <table class="shift" id="demographicTable"></table>
+      </div>
+    </div>
+
     <div class="card-box report-sheet">
       <h2>Patients</h2>
       <div id="patientList"></div>
@@ -139,7 +146,7 @@
   import { requireAuth } from "../js/auth-guard.js";
   import { db } from "../js/firebase.js";
   import { doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, reportDateId, weekId, occDelta, blankShift, defaultWardDoc, archiveOneWard, loadWardNameOverrides, loadHeaderLabelOverrides, headerLabel, GROUP_LABEL_IDS } from "../js/nurses-report-common.js";
+  import { WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, DEMOGRAPHIC_FIELDS, SHIFTS, PATIENT_FIELDS, PATIENT_STATUS_OPTIONS, reportDateId, weekId, occDelta, blankShift, defaultWardDoc, archiveOneWard, loadWardNameOverrides, loadHeaderLabelOverrides, headerLabel, GROUP_LABEL_IDS } from "../js/nurses-report-common.js";
 
   const dateId = reportDateId();
   const movementFields = SHIFT_STAT_FIELDS;
@@ -151,6 +158,8 @@
   let wardUnsub = null;    // unsubscribe fn for the currently-open ward's live listener
   let forceApplyNext = false; // true right after switching wards, so the next snapshot always paints
   const shiftInputs = {};   // shiftKey -> { field: input, duty: input }
+  const demoInputs = {};    // shiftKey -> { field: input }
+  const demoTotalCells = {}; // field -> td
   const totalCells = {};    // field -> td
   const bedsCells = {};     // shiftKey/'total' -> td (Am holds the real input; Pm/Total mirror it)
   const occCells = {};      // shiftKey/'total' -> td
@@ -348,6 +357,82 @@
     table.appendChild(tbody);
   }
 
+  // Separate small table: who was admitted (Male/Female/Children/Soldiers/
+  // Civilians). Purely descriptive — never touches Occ/Vac or STAT_FIELDS.
+  function buildDemographicTable() {
+    const table = document.getElementById('demographicTable');
+    table.innerHTML = '';
+
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    const shiftTh = document.createElement('th');
+    shiftTh.textContent = 'Shift';
+    headRow.appendChild(shiftTh);
+    DEMOGRAPHIC_FIELDS.forEach(f => {
+      const th = document.createElement('th');
+      th.textContent = f.label;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    SHIFTS.forEach(s => {
+      const tr = document.createElement('tr');
+      const nameTd = document.createElement('td');
+      nameTd.className = 'shift-name';
+      nameTd.textContent = s.label;
+      tr.appendChild(nameTd);
+
+      const fieldInputs = {};
+      DEMOGRAPHIC_FIELDS.forEach(f => {
+        const td = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.inputMode = 'numeric';
+        input.disabled = !editable;
+        input.addEventListener('input', () => {
+          const num = parseFloat(input.value);
+          wardDoc.shifts[s.key][f.key] = isNaN(num) ? 0 : num;
+          recomputeDemographicTotals();
+        });
+        td.appendChild(input);
+        tr.appendChild(td);
+        fieldInputs[f.key] = input;
+      });
+
+      tbody.appendChild(tr);
+      demoInputs[s.key] = fieldInputs;
+    });
+
+    const totalTr = document.createElement('tr');
+    totalTr.className = 'total-row';
+    const totalNameTd = document.createElement('td');
+    totalNameTd.className = 'shift-name';
+    totalNameTd.textContent = 'Total';
+    totalTr.appendChild(totalNameTd);
+    DEMOGRAPHIC_FIELDS.forEach(f => {
+      const td = document.createElement('td');
+      td.textContent = '0';
+      totalTr.appendChild(td);
+      demoTotalCells[f.key] = td;
+    });
+    tbody.appendChild(totalTr);
+    table.appendChild(tbody);
+  }
+
+  function recomputeDemographicTotals() {
+    DEMOGRAPHIC_FIELDS.forEach(f => {
+      let sum = 0;
+      SHIFTS.forEach(s => {
+        const v = wardDoc.shifts[s.key][f.key];
+        sum += typeof v === 'number' ? v : 0;
+      });
+      demoTotalCells[f.key].textContent = sum;
+      wardDoc[f.key] = sum; // top-level total, read by the Overall Nurse table
+    });
+  }
+
   function recomputeTotals() {
     movementFields.forEach(f => {
       let sum = 0;
@@ -390,9 +475,12 @@
       const refs = shiftInputs[s.key];
       movementFields.forEach(f => { refs.fields[f.key].value = typeof data[f.key] === 'number' ? data[f.key] : 0; });
       refs.duty.value = data.nurseOnDuty || '';
+      const demoRefs = demoInputs[s.key];
+      if (demoRefs) DEMOGRAPHIC_FIELDS.forEach(f => { demoRefs[f.key].value = typeof data[f.key] === 'number' ? data[f.key] : 0; });
     });
     if (bedsInput) bedsInput.value = typeof wardDoc.beds === 'number' ? wardDoc.beds : 0;
     recomputeTotals();
+    recomputeDemographicTotals();
   }
 
   function patientCardHtml(id) {
@@ -621,6 +709,9 @@
       Object.values(refs.fields).forEach(i => i.disabled = !editable);
       refs.duty.disabled = !editable;
     });
+    Object.values(demoInputs).forEach(fields => {
+      Object.values(fields).forEach(i => i.disabled = !editable);
+    });
     document.querySelectorAll('.patient-card input, .patient-card textarea, .patient-card select, .patient-card .remove-btn')
       .forEach(el => el.disabled = !editable);
   }
@@ -725,6 +816,7 @@
 
     document.getElementById('startOccInput').value = typeof wardDoc.startOcc === 'number' ? wardDoc.startOcc : 0;
     buildShiftTable();
+    buildDemographicTable();
     refreshStatusPill();
     fillShiftInputsFromDoc();
     renderPatients();
@@ -797,6 +889,7 @@
   document.getElementById('saveBtn').addEventListener('click', async () => {
     if (!currentWardKey || !wardDoc || !editable) return;
     recomputeTotals();
+    recomputeDemographicTotals();
     // The nurse pressing Save is the one who wrote the report — autofill the
     // Am shift's "Nurses on Duty" with her name if it's still blank.
     const amRefs = shiftInputs.am;
@@ -820,6 +913,7 @@
   document.getElementById('submitBtn').addEventListener('click', async () => {
     if (!currentWardKey || !wardDoc || !editable) return;
     recomputeTotals();
+    recomputeDemographicTotals();
     const hasNightUpdate = !!(wardDoc.nightUpdate && wardDoc.nightUpdate.trim());
     // The nurse submitting is the one who added the night update — autofill
     // the Pm shift's "Nurses on Duty" with her name if it's still blank.

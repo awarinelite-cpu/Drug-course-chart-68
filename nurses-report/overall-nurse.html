@@ -114,6 +114,13 @@
     </div>
 
     <div class="card-box">
+      <h2>Patient Demographics</h2>
+      <div class="table-wrap">
+        <table class="report" id="demographicTable"></table>
+      </div>
+    </div>
+
+    <div class="card-box">
       <h2>Ward Reports</h2>
       <div id="wardReports"></div>
     </div>
@@ -140,7 +147,7 @@
     addDoc, query, orderBy, limit
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
   import {
-    WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel,
+    WARDS, STAT_FIELDS, SHIFT_STAT_FIELDS, DEMOGRAPHIC_FIELDS, SHIFTS, PATIENT_FIELDS, reportDateId, reportPeriodLabel,
     wardReportPeriodLabel, weekId, occDelta, defaultWardDoc, archiveOneWard,
     WARD_NAMES_COLLECTION, WARD_NAMES_DOC, applyWardNameOverrides, loadWardNameOverrides, saveWardNameOverride,
     HEADER_LABELS_COLLECTION, HEADER_LABELS_DOC, applyHeaderLabelOverrides, loadHeaderLabelOverrides,
@@ -161,6 +168,8 @@
   const wardData = {};       // wardKey -> latest known Firestore data
   const rowRefs = {};        // wardKey -> { inputs: {field: <span>}, dutySpan, lockBtn, nameEl, customInputs }
   const totalCells = {};     // field -> <td>
+  const demoRowRefs = {};    // wardKey -> { field: <span> }
+  const demoTotalCells = {}; // field -> <td>
 
   // Renames a ward everywhere it's shown on this page (the Overall
   // Statistics table row and any "Ward Reports" heading for it), and
@@ -234,6 +243,7 @@
   // change never looks like data was reset.
   function rebuildAndRepaint() {
     buildTable();
+    buildDemographicTable();
     WARDS.forEach(w => { if (wardData[w.key]) applyWardData(w.key, wardData[w.key]); });
   }
 
@@ -459,6 +469,61 @@
     tbody.appendChild(totalsTr);
   }
 
+  // Small, separate read-only table: who was admitted, per ward. Not part
+  // of STAT_FIELDS, never editable here — figures come from each ward's
+  // own submitted "Patient Demographics" entry on ward-nurse.html.
+  function buildDemographicTable() {
+    const table = document.getElementById('demographicTable');
+    table.innerHTML = '';
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    const wardTh = document.createElement('th');
+    wardTh.textContent = 'Ward';
+    headRow.appendChild(wardTh);
+    DEMOGRAPHIC_FIELDS.forEach(f => {
+      const th = document.createElement('th');
+      th.textContent = f.label;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    WARDS.forEach(w => {
+      const tr = document.createElement('tr');
+      const nameTd = document.createElement('td');
+      nameTd.className = 'ward-name';
+      nameTd.textContent = w.label;
+      tr.appendChild(nameTd);
+      const spans = {};
+      DEMOGRAPHIC_FIELDS.forEach(f => {
+        const td = document.createElement('td');
+        const span = document.createElement('span');
+        span.textContent = '0';
+        td.appendChild(span);
+        tr.appendChild(td);
+        spans[f.key] = span;
+      });
+      tbody.appendChild(tr);
+      demoRowRefs[w.key] = spans;
+    });
+
+    const totalsTr = document.createElement('tr');
+    totalsTr.className = 'totals-row';
+    const totalsLabelTd = document.createElement('td');
+    totalsLabelTd.className = 'ward-name';
+    totalsLabelTd.textContent = 'TOTAL';
+    totalsTr.appendChild(totalsLabelTd);
+    DEMOGRAPHIC_FIELDS.forEach(f => {
+      const td = document.createElement('td');
+      td.textContent = '0';
+      totalsTr.appendChild(td);
+      demoTotalCells[f.key] = td;
+    });
+    tbody.appendChild(totalsTr);
+    table.appendChild(tbody);
+  }
+
   function recomputeTotals() {
     STAT_FIELDS.forEach(f => {
       let sum = 0;
@@ -467,6 +532,14 @@
         sum += typeof v === 'number' ? v : 0;
       });
       totalCells[f.key].textContent = sum;
+    });
+    DEMOGRAPHIC_FIELDS.forEach(f => {
+      let sum = 0;
+      WARDS.forEach(w => {
+        const v = wardData[w.key] ? wardData[w.key][f.key] : undefined;
+        sum += typeof v === 'number' ? v : 0;
+      });
+      if (demoTotalCells[f.key]) demoTotalCells[f.key].textContent = sum;
     });
   }
 
@@ -485,6 +558,12 @@
       });
     }
     refs.dutySpan.textContent = data.submittedBy || data.nurseOnDuty || '';
+    const demoSpans = demoRowRefs[wardKey];
+    if (demoSpans) {
+      DEMOGRAPHIC_FIELDS.forEach(f => {
+        if (demoSpans[f.key]) demoSpans[f.key].textContent = (typeof data[f.key] === 'number') ? data[f.key] : 0;
+      });
+    }
     const locked = !!data.locked;
     refs.lockBtn.className = 'lock-btn ' + (locked ? 'locked' : 'open');
     refs.lockBtn.textContent = locked ? '🔒 Locked' : '🔓 Open';
@@ -877,6 +956,7 @@
     await loadHeaderLabelOverrides(db, { doc, getDoc });
     await loadCustomColumns(db, { doc, getDoc });
     buildTable();
+    buildDemographicTable();
     await ensureSeeded();
     subscribeToWards();
     subscribeToWardNames();
