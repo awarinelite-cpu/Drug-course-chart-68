@@ -84,6 +84,7 @@
   .msg-meta button { background: none; border: none; padding: 0; font-size: 10px; font-weight: bold; cursor: pointer; color: inherit; opacity: .8; }
   .msg-ticks { font-size: 12px; }
   .msg-ticks.read { color: #60a5fa; }
+  .msg-ticks-pending { color: #9ca3af; font-size: 11px; }
   .msg-row:not(.mine) .msg-ticks { display: none; }
 
   .msg-actions-row { display: flex; gap: 10px; margin-top: 2px; }
@@ -524,9 +525,14 @@
     });
 
     const msgsQuery = query(collection(db, 'conversations', convoId, 'messages'), orderBy('createdAt', 'asc'));
-    unsubMessages = onSnapshot(msgsQuery, (snap) => {
+    // includeMetadataChanges: true is required so this fires again once a
+    // pending write actually reaches the server — without it, a message
+    // written while offline gets exactly one snapshot (the optimistic local
+    // one, hasPendingWrites: true) and the tick UI would never learn that it
+    // later synced (or never did).
+    unsubMessages = onSnapshot(msgsQuery, { includeMetadataChanges: true }, (snap) => {
       const msgs = [];
-      snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+      snap.forEach(d => msgs.push({ id: d.id, ...d.data(), _pending: d.metadata.hasPendingWrites }));
       lastRenderedMsgs = msgs;
       renderMessages(msgs);
     }, (e) => {
@@ -650,10 +656,18 @@
         html += '<audio class="msg-audio" controls src="' + m.audioUrl + '"></audio>';
       }
       if (m.text) html += escapeHtml(m.text);
+      // A message still sitting in the local offline queue (hasPendingWrites)
+      // has NOT reached the server yet — it cannot have been pushed to the
+      // other nurse's phone, so it must never show as delivered (✓✓). Show a
+      // clock instead until Firestore confirms the write, then fall back to
+      // the normal single/double tick logic.
+      const tickHtml = m._pending
+        ? '<span class="msg-ticks msg-ticks-pending">&#128340;</span>'
+        : (isMine ? '<span class="msg-ticks' + (readByAll ? ' read' : '') + '">&#10003;&#10003;</span>' : '');
       html += '<div class="msg-meta">' +
         (isStarred ? '<span class="msg-star-mark">&#11088;</span>' : '') +
         '<span>' + fmtTime(m.createdAt) + (m.editedAt ? ' · edited' : '') + '</span>' +
-        (isMine ? '<span class="msg-ticks' + (readByAll ? ' read' : '') + '">&#10003;&#10003;</span>' : '') +
+        (isMine ? tickHtml : '') +
         '</div>';
       html += '</div>';
 
