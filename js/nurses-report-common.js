@@ -119,6 +119,10 @@ export const DEMOGRAPHIC_FIELDS = [
   { key: 'civilian', label: 'Civilians' }
 ];
 
+export const HEADER_LABELS_COLLECTION = 'nurseReportConfig';
+export const HEADER_LABELS_DOC = 'headerLabels';
+export const HEADER_LABEL_OVERRIDES = {};
+export const GROUP_LABEL_IDS = { intTransfer: '_group_int_transfer', extTransfer: '_group_ext_transfer' };
 
 export function applyHeaderLabelOverrides(overrides) {
   Object.keys(HEADER_LABEL_OVERRIDES).forEach(k => delete HEADER_LABEL_OVERRIDES[k]);
