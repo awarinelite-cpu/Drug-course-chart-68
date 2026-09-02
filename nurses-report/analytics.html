@@ -70,9 +70,6 @@
     <h2>Admission, Death, BID, C/S, Del</h2>
     <div class="chart-wrap"><canvas id="barChart"></canvas></div>
 
-    <h3>Patient Movement — what added or reduced the count</h3>
-    <div class="chart-wrap"><canvas id="movementChart"></canvas></div>
-
     <div class="pie-grid">
       <div>
         <h3>Male / Female / Children</h3>
@@ -208,7 +205,7 @@
     return { totals, startId, endId, daysCovered };
   }
 
-  let barChart = null, movementChart = null, sexPie = null, affiliationPie = null;
+  let barChart = null, sexPie = null, affiliationPie = null;
 
   function renderCharts(totals) {
     const barCtx = document.getElementById('barChart').getContext('2d');
@@ -221,27 +218,6 @@
         datasets: [{
           data: barData,
           backgroundColor: ['#2563eb', '#dc2626', '#d97706', '#7c3aed', '#0891b2']
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-      }
-    });
-
-    const moveCtx = document.getElementById('movementChart').getContext('2d');
-    if (movementChart) movementChart.destroy();
-    movementChart = new Chart(moveCtx, {
-      type: 'bar',
-      data: {
-        labels: MOVEMENT_FIELDS.map(f => f.label),
-        datasets: [{
-          data: MOVEMENT_FIELDS.map(f => totals[f.key]),
-          // Green for anything that adds a patient to the count, red for
-          // anything that removes one — same increase/decrease split the
-          // Overall Statistics table's occDelta() uses.
-          backgroundColor: MOVEMENT_FIELDS.map(f => f.direction === 'increase' ? '#16a34a' : '#dc2626')
         }]
       },
       options: {
