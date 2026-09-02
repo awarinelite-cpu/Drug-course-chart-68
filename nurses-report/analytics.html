@@ -35,6 +35,9 @@
      own picker UI instead of us building a custom calendar widget. Kept in
      the DOM and focusable (not display:none) so those calls still work. */
   .hidden-picker { position: absolute; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; }
+  /* Taller than the default .chart-wrap — needs room for a label per ward
+     (19 wards) on a horizontal bar chart, not just a handful of columns. */
+  #wardBreakdownWrap { height: 480px; }
 </style>
 </head>
 <body>
@@ -72,6 +75,14 @@
     <div class="stat-grid" id="movementGrid" style="margin-top:6px;"></div>
     <h3>Patient Demographics</h3>
     <div class="stat-grid" id="demoGrid"></div>
+  </div>
+
+  <div class="card-box" id="wardBreakdownCard" style="display:none;">
+    <h2>Ward Breakdown</h2>
+    <div class="range-label" style="margin-top:0;">Which ward led in a given column, for the selected period.</div>
+    <select id="breakdownField" style="margin-top:10px; width:100%; padding:10px 8px; border-radius:8px; border:2px solid #e5e7eb; font-weight:bold; font-size:13px; color:#374151;"></select>
+    <div class="range-label" id="breakdownLeader" style="margin-top:8px; font-weight:bold; color:#111827;"></div>
+    <div class="chart-wrap" id="wardBreakdownWrap"><canvas id="wardBreakdownChart"></canvas></div>
   </div>
 
   <div class="card-box" id="chartsCard" style="display:none;">
@@ -257,6 +268,23 @@
     return t;
   }
 
+  // Same shape as blankTotals()/sumWardsMap() above but keyed by ward
+  // first, so a per-ward comparison can be drawn without re-reading
+  // Firestore a second time — every archive/live doc read for the
+  // hospital-wide totals is reused here.
+  function blankPerWardTotals() {
+    const t = {};
+    WARDS.forEach(w => { t[w.key] = blankTotals(); });
+    return t;
+  }
+
+  function sumWardsMapPerWard(wardsMap, into) {
+    WARDS.forEach(w => {
+      const data = (wardsMap && wardsMap[w.key]) || {};
+      ALL_NUMERIC_FIELDS.forEach(f => { into[w.key][f.key] += typeof data[f.key] === 'number' ? data[f.key] : 0; });
+    });
+  }
+
   // periodSelection holds whatever each picker last produced — null until
   // the user has picked something for that period, at which point
   // computeRange() falls back to the plain "today/this week/etc" default.
@@ -265,10 +293,13 @@
   // Pulls every archived "overall" day within [startId, endId], sums them,
   // then — since a day isn't archived until the Overall Nurse saves it —
   // separately reads today's live ward docs and adds them in if today
-  // falls in range and wasn't already covered by an archive.
+  // falls in range and wasn't already covered by an archive. Accumulates
+  // both the hospital-wide totals and a per-ward breakdown from the same
+  // reads, rather than querying Firestore twice.
   async function loadTotals(period) {
     const { startId, endId, todayId } = computeRange(period, periodSelection[period]);
     const totals = blankTotals();
+    const perWard = blankPerWardTotals();
     let daysCovered = 0;
 
     const archiveSnap = await getDocs(query(collection(db, 'archives'), where('type', '==', 'overall')));
@@ -277,6 +308,7 @@
       const data = docSnap.data();
       if (!data.dateId || data.dateId < startId || data.dateId > endId) return;
       sumWardsMap(data.wards, totals);
+      sumWardsMapPerWard(data.wards, perWard);
       daysCovered += 1;
       if (data.dateId === todayId) todayArchived = true;
     });
@@ -287,14 +319,77 @@
       wardsSnap.forEach(d => { liveWardsMap[d.id] = d.data(); });
       if (Object.keys(liveWardsMap).length) {
         sumWardsMap(liveWardsMap, totals);
+        sumWardsMapPerWard(liveWardsMap, perWard);
         daysCovered += 1;
       }
     }
 
-    return { totals, startId, endId, daysCovered };
+    return { totals, perWard, startId, endId, daysCovered };
   }
 
-  let barChart = null, movementChart = null, sexPie = null, affiliationPie = null;
+  let barChart = null, movementChart = null, sexPie = null, affiliationPie = null, wardBreakdownChart = null;
+
+  // The ward-breakdown dropdown is populated once — it lists the same 12
+  // columns as MOVEMENT_GRID_FIELDS (every genuine movement column plus
+  // BID/C/S/Del), since Beds/Occ/Vac are capacity/census snapshots, not
+  // events that make sense to sum-then-rank a ward by over a period.
+  const breakdownFieldSelect = document.getElementById('breakdownField');
+  MOVEMENT_GRID_FIELDS.forEach(f => {
+    const opt = document.createElement('option');
+    opt.value = f.key;
+    opt.textContent = f.label;
+    breakdownFieldSelect.appendChild(opt);
+  });
+  breakdownFieldSelect.value = 'adm';
+
+  // Holds the last-loaded per-ward totals so switching the dropdown
+  // re-draws instantly from memory instead of re-querying Firestore.
+  let lastPerWard = null;
+
+  function renderWardBreakdown(perWard) {
+    lastPerWard = perWard;
+    const fieldKey = breakdownFieldSelect.value;
+    const field = MOVEMENT_GRID_FIELDS.find(f => f.key === fieldKey) || MOVEMENT_GRID_FIELDS[0];
+
+    // Ranked descending so the leading ward reads first (top of a
+    // horizontal bar chart) rather than in the paper form's fixed ward
+    // order — the whole point of this card is "who's leading", not
+    // "here's everyone in order".
+    const ranked = WARDS
+      .map(w => ({ label: w.label, count: perWard[w.key][fieldKey] || 0 }))
+      .sort((a, b) => b.count - a.count);
+
+    const leaderEl = document.getElementById('breakdownLeader');
+    if (ranked[0] && ranked[0].count > 0) {
+      const tiedLeaders = ranked.filter(r => r.count === ranked[0].count);
+      leaderEl.textContent = tiedLeaders.length > 1
+        ? tiedLeaders.map(r => r.label).join(', ') + ' tied for the most ' + field.label + ' (' + ranked[0].count + ' each)'
+        : ranked[0].label + ' led with ' + ranked[0].count + ' ' + field.label;
+    } else {
+      leaderEl.textContent = 'No ' + field.label + ' recorded by any ward this period.';
+    }
+
+    const color = field.direction === 'increase' ? '#16a34a' : field.direction === 'decrease' ? '#dc2626' : '#2563eb';
+    const ctx = document.getElementById('wardBreakdownChart').getContext('2d');
+    if (wardBreakdownChart) wardBreakdownChart.destroy();
+    wardBreakdownChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: ranked.map(r => r.label),
+        datasets: [{ data: ranked.map(r => r.count), backgroundColor: color }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
+      }
+    });
+  }
+
+  breakdownFieldSelect.addEventListener('change', () => {
+    if (lastPerWard) renderWardBreakdown(lastPerWard);
+  });
 
   function renderCharts(totals) {
     const barCtx = document.getElementById('barChart').getContext('2d');
@@ -402,6 +497,7 @@
     const myToken = ++loadToken;
     document.getElementById('loadingNote').style.display = 'block';
     document.getElementById('summaryCard').style.display = 'none';
+    document.getElementById('wardBreakdownCard').style.display = 'none';
     document.getElementById('chartsCard').style.display = 'none';
     document.getElementById('emptyCard').style.display = 'none';
 
@@ -415,7 +511,7 @@
     if (myToken !== loadToken) return; // a newer period was picked while this was loading
 
     document.getElementById('loadingNote').style.display = 'none';
-    const { totals, startId, endId, daysCovered } = result;
+    const { totals, perWard, startId, endId, daysCovered } = result;
     document.getElementById('rangeLabel').textContent =
       (startId === endId ? fmtDate(startId) : fmtDate(startId) + ' \u2013 ' + fmtDate(endId)) +
       (daysCovered ? ' \u00b7 ' + daysCovered + ' day' + (daysCovered === 1 ? '' : 's') + ' of reports' : '');
@@ -426,8 +522,10 @@
     }
 
     document.getElementById('summaryCard').style.display = 'block';
+    document.getElementById('wardBreakdownCard').style.display = 'block';
     document.getElementById('chartsCard').style.display = 'block';
     renderSummary(totals);
+    renderWardBreakdown(perWard);
     renderCharts(totals);
   }
 
