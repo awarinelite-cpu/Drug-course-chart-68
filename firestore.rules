@@ -188,7 +188,11 @@ service cloud.firestore {
     // empty at creation) drives read receipts, updated by each participant
     // for their own uid only as they open the thread.
     match /conversations/{convoId} {
-      allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
+      // resource is null when the doc doesn't exist yet (e.g. startChat()'s
+      // getDoc() check before the first message between two nurses) — there's
+      // no data to protect in that case, so let the existence check through;
+      // once the doc exists, only its participants may read it.
+      allow read: if isSignedIn() && (resource == null || request.auth.uid in resource.data.participants);
       allow create: if isSignedIn()
         && request.auth.uid in request.resource.data.participants
         && request.resource.data.participants.size() >= 2
