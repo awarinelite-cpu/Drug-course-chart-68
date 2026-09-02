@@ -525,6 +525,64 @@ exports.autoArchiveWardReports = onSchedule(
   }
 );
 
+// Runs 5 minutes after autoArchiveWardReports (06:05), so by the time this
+// reads anything, every ward that was submitted+locked for the closed
+// period already has its archives/ward_{key}_{dateId} doc filed — either
+// because the Overall Nurse (or a ward nurse) archived it manually earlier,
+// or because the 06:05 job just swept it up automatically. This job covers
+// the remaining gap: it only fires if the Overall Nurse never clicked
+// "Save to Archive" themselves, so a compiled archives/overall_{dateId} doc
+// still gets written even on a day nobody pressed the button.
+//
+// Mirrors saveToArchive()'s overall payload shape in overall-nurse.html,
+// but can't reuse its wardData snapshot (that only exists in the browser,
+// taken at click time) — instead it sources each ward's slice from the
+// already-filed archives/ward_{key}_{dateId} doc. A ward that was never
+// submitted+locked that period has no such doc (autoArchiveWardReports
+// skips it, leaving the live doc untouched), so falls back to reading that
+// live doc directly.
+exports.autoArchiveOverallReport = onSchedule(
+  { schedule: '10 6 * * *', timeZone: 'Africa/Lagos', region: 'us-central1' },
+  async () => {
+    const now = new Date();
+    const closedDateId = dateIdMinusOneDay(reportDateId(now));
+    const wid = weekIdFor(now);
+
+    const overallRef = db.collection('archives').doc('overall_' + closedDateId);
+    const overallSnap = await overallRef.get();
+    if (overallSnap.exists) {
+      console.log(`Overall report for ${closedDateId} already archived (manually) — nothing to do.`);
+      return;
+    }
+
+    const wards = {};
+    await Promise.all(WARDS.map(async (w) => {
+      const archiveRef = db.collection('archives').doc('ward_' + w.key + '_' + closedDateId);
+      const archiveSnap = await archiveRef.get();
+      if (archiveSnap.exists) {
+        wards[w.key] = archiveSnap.data().data;
+        return;
+      }
+      // Never submitted+locked that period, so autoArchiveWardReports left
+      // the live doc alone — read it directly rather than defaulting to
+      // blank, in case a draft with real data was just never locked.
+      const wardRef = db.collection('nurseReports').doc(closedDateId).collection('wards').doc(w.key);
+      const wardSnap = await wardRef.get();
+      wards[w.key] = wardSnap.exists ? wardSnap.data() : defaultWardDoc(w, 0);
+    }));
+
+    await overallRef.set({
+      type: 'overall', dateId: closedDateId, weekId: wid,
+      fileName: reportPeriodLabel(closedDateId, 'OVERALL'),
+      wards,
+      archivedBy: 'Automatic archive (24hr)', archivedByUid: null,
+      archivedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`Auto-archived overall report for ${closedDateId}.`);
+  }
+);
+
 // Callable from admin.html's "All Users" delete button. Deleting the
 // users/{uid} Firestore doc alone (which the client can already do directly
 // under firestore.rules' isAdmin() check) is enough to lock the account out
