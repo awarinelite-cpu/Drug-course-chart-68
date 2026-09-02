@@ -639,7 +639,7 @@
       const img = row.querySelector('.msg-img');
       if (img) img.addEventListener('click', () => window.open(img.dataset.full, '_blank'));
 
-      attachSwipeToReply(bubbleWrap, m, senderName);
+      attachSwipeToReply(bubbleWrap, m, senderName, picker);
 
       wrap.appendChild(row);
     });
@@ -647,15 +647,41 @@
     if (wasAtBottom || msgs.length <= 1) wrap.scrollTop = wrap.scrollHeight;
   }
 
-  // ---------- swipe-to-reply ----------
-  function attachSwipeToReply(el, message, senderName) {
+  // ---------- swipe-to-reply + long-press-to-react ----------
+  const LONG_PRESS_MS = 450;
+  const LONG_PRESS_MOVE_TOLERANCE = 10; // px of finger drift still allowed mid-press
+
+  function openReactionPicker(picker) {
+    document.querySelectorAll('.reaction-picker.open').forEach(p => { if (p !== picker) p.classList.remove('open'); });
+    picker.classList.add('open');
+    if (navigator.vibrate) navigator.vibrate(15); // small haptic tick, mirrors WhatsApp's long-press feedback
+  }
+
+  function attachSwipeToReply(el, message, senderName, picker) {
     let startX = 0, startY = 0, dx = 0, dragging = false, claimed = false;
+    let longPressTimer = null;
+
+    function clearLongPress() {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    }
+
     el.addEventListener('touchstart', (ev) => {
       startX = ev.touches[0].clientX;
       startY = ev.touches[0].clientY;
       dx = 0;
       dragging = true;
       claimed = false;
+      clearLongPress();
+      // Hold-to-react: if the finger stays roughly put for LONG_PRESS_MS,
+      // pop the emoji strip open (WhatsApp-style) and abandon the
+      // swipe-to-reply tracking for this touch so it doesn't also drag.
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        dragging = false;
+        el.classList.remove('dragging');
+        el.style.transform = 'translateX(0px)';
+        openReactionPicker(picker);
+      }, LONG_PRESS_MS);
     }, { passive: true });
     el.addEventListener('touchmove', (ev) => {
       if (!dragging) return;
@@ -668,7 +694,8 @@
         // horizontal than vertical, claim it for swipe-to-reply and stop the
         // page from treating it as a scroll; otherwise leave it alone so
         // the message list keeps scrolling normally.
-        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        if (Math.abs(dx) < LONG_PRESS_MOVE_TOLERANCE && Math.abs(dy) < LONG_PRESS_MOVE_TOLERANCE) return;
+        clearLongPress(); // real movement this early means it's not a long-press
         if (Math.abs(dx) <= Math.abs(dy)) { dragging = false; return; }
         claimed = true;
         el.classList.add('dragging');
@@ -678,12 +705,14 @@
       el.style.transform = 'translateX(' + clamped + 'px)';
     }, { passive: false });
     el.addEventListener('touchend', () => {
+      clearLongPress();
       dragging = false;
       el.classList.remove('dragging');
       el.style.transform = 'translateX(0px)';
       if (claimed && Math.abs(dx) > 50) setReplyTarget(message, senderName);
       dx = 0;
     });
+    el.addEventListener('touchcancel', clearLongPress);
   }
 
   function setReplyTarget(message, senderName) {
@@ -706,6 +735,14 @@
     bar.querySelector('button').addEventListener('click', () => { replyingTo = null; renderReplyPreview(); });
     wrap.appendChild(bar);
   }
+
+  // Tap anywhere outside an open reaction picker (or its React button) to
+  // dismiss it, same as WhatsApp closing the emoji strip on an outside tap.
+  document.addEventListener('click', (ev) => {
+    document.querySelectorAll('.reaction-picker.open').forEach(p => {
+      if (!p.contains(ev.target) && ev.target.dataset.a !== 'react') p.classList.remove('open');
+    });
+  });
 
   // ---------- reactions ----------
   async function toggleReaction(message, emoji) {
