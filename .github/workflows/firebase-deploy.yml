@@ -31,12 +31,13 @@ jobs:
       - name: Write service account credentials
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > /tmp/firebase-sa.json
 
-      - name: Deploy Cloud Functions
-        run: npx firebase-tools deploy --only functions --project gen-lang-client-0406053716 --non-interactive
+      - name: Deploy Storage & Firestore rules
+        run: npx firebase-tools deploy --only storage,firestore:rules --project gen-lang-client-0406053716 --non-interactive
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-sa.json
 
-      - name: Deploy Storage & Firestore rules
-        run: npx firebase-tools deploy --only storage,firestore:rules --project gen-lang-client-0406053716 --non-interactive
+      - name: Deploy Cloud Functions
+        run: npx firebase-tools deploy --only functions --project gen-lang-client-0406053716 --non-interactive
+        continue-on-error: true
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-sa.json
