@@ -205,6 +205,15 @@
     currentProfile = profile;
     loadDirectory().then(() => { loadChats(); populateGroupPicker(); });
     startHeartbeat();
+
+    // Deep link from a message-alert notification (functions/index.js's
+    // onNewMessage sends data.link = "./messages.html?convo=<id>"). Open
+    // straight into that thread rather than leaving the nurse on the chat
+    // list to hunt for it. openThread() itself checks participants via the
+    // conversation's onSnapshot listener, so a stale/foreign convoId just
+    // shows an empty thread rather than leaking data.
+    const convoParam = new URLSearchParams(location.search).get('convo');
+    if (convoParam) openThread(convoParam);
   });
 
   // ---------- helpers ----------

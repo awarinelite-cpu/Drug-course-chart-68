@@ -14,6 +14,7 @@
 
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 
 admin.initializeApp();
@@ -407,6 +408,84 @@ exports.checkDueGlucoseChecks = onSchedule(
 
     await Promise.all([...chartUpdates, ...sends]);
     console.log(`Sent glucose-check reminders for ${duePatientIds.length} patient(s) to ${tokens.length} device(s).`);
+  }
+);
+
+// -- New message alerts -------------------------------------------------
+//
+// Unlike the dose/glucose checks above (which poll on a schedule because
+// "due" is a moving target computed from elapsed time), a chat message is
+// itself the trigger — so this fires straight off the Firestore write
+// (js/messages.html's send handlers, both text and image) instead of
+// polling. Sends to every OTHER participant's registered device(s); the
+// sender never gets a push for her own message. Uses the same
+// pushTokens subcollection as the dose/glucose alerts, so a nurse who has
+// ever enabled "Alerts On" (js/push.js) gets message pushes automatically
+// too — there's no separate opt-in toggle for chat.
+exports.onNewMessage = onDocumentCreated(
+  { document: 'conversations/{convoId}/messages/{messageId}', region: 'us-central1' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const msg = snap.data();
+    const convoId = event.params.convoId;
+    const senderUid = msg.senderUid;
+    if (!senderUid) return;
+
+    const convoSnap = await db.collection('conversations').doc(convoId).get();
+    if (!convoSnap.exists) return;
+    const convo = convoSnap.data();
+    const participants = Array.isArray(convo.participants) ? convo.participants : [];
+    const recipients = participants.filter((uid) => uid !== senderUid);
+    if (recipients.length === 0) return;
+
+    const tokenEntries = [];
+    await Promise.all(
+      recipients.map(async (uid) => {
+        const tokensSnap = await db.collection('users').doc(uid).collection('pushTokens').get();
+        tokensSnap.forEach((t) => {
+          if (t.data().token) tokenEntries.push({ token: t.data().token, ref: t.ref });
+        });
+      })
+    );
+    if (tokenEntries.length === 0) return;
+
+    // Group chats show the sender's name so it's clear who spoke; a DM's
+    // recipient already knows who it's with from the thread itself, so the
+    // conversation title (participantNames) covers that case, matching how
+    // the in-app chat list already labels DMs by the other nurse's name.
+    const senderName = (convo.participantNames && convo.participantNames[senderUid]) || 'A nurse';
+    const title = convo.type === 'group'
+      ? `${senderName}${convo.groupName ? ' — ' + convo.groupName : ''}`
+      : senderName;
+    const bodyRaw = msg.text || (msg.imageUrl ? '📷 Photo' : 'New message');
+    const body = bodyRaw.length > 120 ? bodyRaw.slice(0, 117) + '…' : bodyRaw;
+
+    const tokens = tokenEntries.map((t) => t.token);
+    const resp = await messaging.sendEachForMulticast({
+      tokens,
+      notification: { title, body },
+      data: {
+        link: `./messages.html?convo=${convoId}`,
+        tag: `msg-${convoId}`
+      },
+      android: {
+        priority: 'high',
+        notification: { channelId: 'dose-due-alerts', sound: 'default' }
+      }
+    });
+
+    const cleanup = [];
+    resp.responses.forEach((r, idx) => {
+      if (r.success) return;
+      const code = r.error?.code || '';
+      if (code.includes('registration-token-not-registered') || code.includes('invalid-argument')) {
+        cleanup.push(tokenEntries[idx].ref.delete());
+      }
+    });
+    await Promise.all(cleanup);
+
+    console.log(`Sent message alert for conversation ${convoId} to ${tokens.length} device(s).`);
   }
 );
 
