@@ -269,8 +269,18 @@
   // ---------- Directory ----------
   async function loadDirectory() {
     const loadingEl = document.getElementById('dirLoading');
+    // getDocs() can hang indefinitely (bad rules, dropped connection, etc.)
+    // without ever resolving or rejecting, leaving "Loading…" on screen with
+    // no console error at all. Race it against a timeout so a hang always
+    // surfaces something actionable instead of failing silently.
+    const DIRECTORY_TIMEOUT_MS = 15000;
     try {
-      const snap = await getDocs(collection(db, 'users'));
+      const snap = await Promise.race([
+        getDocs(collection(db, 'users')),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('timed out after ' + (DIRECTORY_TIMEOUT_MS / 1000) + 's')), DIRECTORY_TIMEOUT_MS)
+        )
+      ]);
       allNurses = [];
       nurseByUid = {};
       snap.forEach(d => {
@@ -279,6 +289,7 @@
         if (d.id !== currentUid) allNurses.push(n);
       });
     } catch (e) {
+      console.error('loadDirectory failed:', e);
       loadingEl.textContent = "Couldn't load directory: " + (e.code || e.message || 'unknown error');
       return;
     }
