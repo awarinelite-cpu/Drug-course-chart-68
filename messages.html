@@ -106,6 +106,36 @@
   .thread-compose input[type="text"] { flex: 1; }
   .attach-btn { background: none; border: none; font-size: 20px; cursor: pointer; flex-shrink: 0; padding: 4px; }
   .upload-note { font-size: 11px; color: #6b7280; margin-bottom: 6px; }
+
+  /* Voice notes */
+  .mic-btn { background: none; border: none; font-size: 20px; cursor: pointer; flex-shrink: 0; padding: 4px; color: #2563eb; }
+  .mic-btn.recording { color: #dc2626; animation: mic-pulse 1s infinite; }
+  @keyframes mic-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  .recording-bar { display: flex; align-items: center; gap: 8px; background: #fef2f2; border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; font-size: 12px; color: #dc2626; font-weight: bold; }
+  .recording-bar .rec-dot { width: 9px; height: 9px; border-radius: 50%; background: #dc2626; animation: mic-pulse 1s infinite; flex-shrink: 0; }
+  .recording-bar .rec-time { flex: 1; }
+  .recording-bar button { background: none; border: none; font-size: 13px; font-weight: bold; cursor: pointer; }
+  .recording-bar .rec-cancel { color: #6b7280; }
+  .recording-bar .rec-send { color: #2563eb; }
+  .msg-audio { display: block; max-width: 220px; margin-bottom: 4px; }
+
+  /* Star */
+  .msg-star-mark { font-size: 10px; }
+  .msg-actions-row button.starred { color: #d97706; }
+  .msg-fwd-tag { font-size: 11px; opacity: .7; font-style: italic; margin-bottom: 3px; }
+
+  /* Forward picker modal */
+  .fwd-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 1000; align-items: center; justify-content: center; padding: 16px; }
+  .fwd-overlay.open { display: flex; }
+  .fwd-box { background: #fff; width: 100%; max-width: 340px; max-height: 80vh; border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,.25); display: flex; flex-direction: column; }
+  .fwd-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 8px; }
+  .fwd-head h3 { margin: 0; font-size: 14px; }
+  .fwd-close { border: none; background: none; font-size: 18px; padding: 2px 7px; cursor: pointer; color: #374151; }
+  .fwd-list { overflow-y: auto; padding: 4px 12px 14px; }
+  .fwd-item { display: flex; align-items: center; gap: 10px; padding: 8px 4px; cursor: pointer; border-radius: 8px; }
+  .fwd-item:hover { background: #f3f4f6; }
+  .fwd-item .fwd-name { font-size: 13px; font-weight: bold; }
+  .fwd-section-label { font-size: 11px; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em; padding: 8px 4px 4px; }
 </style>
 </head>
 <body>
@@ -159,12 +189,24 @@
     </div>
     <div class="thread-msgs" id="threadMsgs"></div>
     <div id="replyPreviewWrap"></div>
+    <div id="recordingBarWrap"></div>
     <input type="file" id="imageInput" accept="image/*" style="display:none;">
-    <div class="thread-compose">
+    <div class="thread-compose" id="composeRow">
       <button class="attach-btn" id="attachBtn" title="Attach image">&#128206;</button>
       <input type="text" id="msgInput" placeholder="Type a message…">
+      <button class="mic-btn" id="micBtn" title="Record voice note">&#127908;</button>
       <button class="btn btn-primary" id="sendBtn" style="padding:10px 16px;">Send</button>
     </div>
+  </div>
+</div>
+
+<div class="fwd-overlay" id="fwdOverlay">
+  <div class="fwd-box">
+    <div class="fwd-head">
+      <h3>Forward message to…</h3>
+      <button class="fwd-close" id="fwdCloseBtn">&times;</button>
+    </div>
+    <div class="fwd-list" id="fwdList"></div>
   </div>
 </div>
 
@@ -199,6 +241,12 @@
   let typingTimeout = null;
   let iAmTyping = false;
   let lastRenderedMsgs = null;
+  let allConvos = [];
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let recordingStream = null;
+  let recordingStartMs = 0;
+  let recordingTimerInterval = null;
 
   requireAuth((user, profile) => {
     currentUid = user.uid;
@@ -419,6 +467,7 @@
       const bt = b.lastMessageAt && b.lastMessageAt.toMillis ? b.lastMessageAt.toMillis() : 0;
       return bt - at;
     });
+    allConvos = convos;
 
     if (convos.length === 0) { emptyEl.style.display = 'block'; return; }
 
@@ -506,6 +555,7 @@
   }
 
   function closeThread() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') stopRecording(false);
     cleanupListeners();
     clearTypingFlag();
     activeConvoId = null;
@@ -581,18 +631,28 @@
       const senderName = (m.senderUid && nurseByUid[m.senderUid] && nurseByUid[m.senderUid].name) ||
         (activeConvo && activeConvo.participantNames && activeConvo.participantNames[m.senderUid]) || '';
 
+      const isStarred = (m.starredBy || []).includes(currentUid);
+
       let html = '<div class="msg-bubble-wrap">';
       if (isGroup && !isMine) html += '<div class="msg-sender-name">' + escapeHtml(senderName) + '</div>';
       html += '<div class="reaction-picker">' + REACTION_EMOJIS.map(e => '<span data-e="' + e + '">' + e + '</span>').join('') + '</div>';
       html += '<div class="msg-bubble">';
+      if (m.forwardedFrom) {
+        html += '<div class="msg-fwd-tag">&#10148; Forwarded</div>';
+      }
       if (m.replyTo) {
         html += '<div class="msg-reply-quote"><span class="rq-name">' + escapeHtml(m.replyTo.senderName || '') + '</span>' + escapeHtml(m.replyTo.text || '') + '</div>';
       }
       if (m.imageUrl) {
         html += '<img class="msg-img" src="' + m.imageUrl + '" data-full="' + m.imageUrl + '">';
       }
+      if (m.audioUrl) {
+        html += '<audio class="msg-audio" controls src="' + m.audioUrl + '"></audio>';
+      }
       if (m.text) html += escapeHtml(m.text);
-      html += '<div class="msg-meta"><span>' + fmtTime(m.createdAt) + (m.editedAt ? ' · edited' : '') + '</span>' +
+      html += '<div class="msg-meta">' +
+        (isStarred ? '<span class="msg-star-mark">&#11088;</span>' : '') +
+        '<span>' + fmtTime(m.createdAt) + (m.editedAt ? ' · edited' : '') + '</span>' +
         (isMine ? '<span class="msg-ticks' + (readByAll ? ' read' : '') + '">&#10003;&#10003;</span>' : '') +
         '</div>';
       html += '</div>';
@@ -610,6 +670,8 @@
       html += '<div class="msg-actions-row">' +
         '<button data-a="react">React</button>' +
         '<button data-a="reply">Reply</button>' +
+        '<button data-a="star" class="' + (isStarred ? 'starred' : '') + '">' + (isStarred ? 'Starred' : 'Star') + '</button>' +
+        '<button data-a="forward">Forward</button>' +
         (isMine && m.text ? '<button data-a="edit">Edit</button>' : '') +
         (isMine ? '<button data-a="delete">Delete</button>' : '') +
         '</div>';
@@ -630,6 +692,8 @@
         chip.addEventListener('click', () => toggleReaction(m, chip.dataset.e));
       });
       row.querySelector('[data-a="reply"]').addEventListener('click', () => setReplyTarget(m, senderName));
+      row.querySelector('[data-a="star"]').addEventListener('click', () => toggleStar(m));
+      row.querySelector('[data-a="forward"]').addEventListener('click', () => openForwardPicker(m));
       if (isMine && m.text) {
         row.querySelector('[data-a="edit"]').addEventListener('click', () => editMessage(m.id, m.text));
       }
@@ -719,7 +783,7 @@
     replyingTo = {
       messageId: message.id,
       senderName: senderName || (message.senderUid === currentUid ? 'You' : 'Nurse'),
-      text: message.text || (message.imageUrl ? '📷 Photo' : '')
+      text: message.text || (message.imageUrl ? '📷 Photo' : (message.audioUrl ? '🎤 Voice note' : ''))
     };
     renderReplyPreview();
     document.getElementById('msgInput').focus();
@@ -766,6 +830,108 @@
     }
   }
 
+  // ---------- star ----------
+  async function toggleStar(message) {
+    const starredBy = (message.starredBy || []).slice();
+    const idx = starredBy.indexOf(currentUid);
+    if (idx !== -1) starredBy.splice(idx, 1); else starredBy.push(currentUid);
+    try {
+      await updateDoc(doc(db, 'conversations', activeConvoId, 'messages', message.id), { starredBy });
+    } catch (e) {
+      alert("Couldn't star: " + (e.code || e.message || 'unknown error'));
+    }
+  }
+
+  // ---------- forward ----------
+  document.getElementById('fwdCloseBtn').addEventListener('click', closeForwardPicker);
+  document.getElementById('fwdOverlay').addEventListener('click', (ev) => {
+    if (ev.target.id === 'fwdOverlay') closeForwardPicker();
+  });
+
+  function closeForwardPicker() {
+    document.getElementById('fwdOverlay').classList.remove('open');
+  }
+
+  function openForwardPicker(message) {
+    const listEl = document.getElementById('fwdList');
+    listEl.innerHTML = '';
+
+    if (allConvos.length) {
+      const label = document.createElement('div');
+      label.className = 'fwd-section-label';
+      label.textContent = 'Chats';
+      listEl.appendChild(label);
+      allConvos.forEach(c => {
+        const isGroup = c.type === 'group';
+        const otherUid = isGroup ? null : (c.participants || []).find(u => u !== currentUid);
+        const title = isGroup ? (c.groupName || 'Group') : ((c.participantNames && c.participantNames[otherUid]) || 'Unknown');
+        const item = document.createElement('div');
+        item.className = 'fwd-item';
+        item.innerHTML = (isGroup ? groupAvatarHtml(32) : avatarMarkup({ name: title }, 32)) +
+          '<span class="fwd-name">' + escapeHtml(title) + '</span>';
+        item.addEventListener('click', () => { closeForwardPicker(); forwardMessageTo(c.id, message); });
+        listEl.appendChild(item);
+      });
+    }
+
+    const nurseLabel = document.createElement('div');
+    nurseLabel.className = 'fwd-section-label';
+    nurseLabel.textContent = 'New chat';
+    listEl.appendChild(nurseLabel);
+    allNurses.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).forEach(n => {
+      const item = document.createElement('div');
+      item.className = 'fwd-item';
+      item.innerHTML = avatarMarkup(n, 32) + '<span class="fwd-name">' + escapeHtml(n.name || 'Unnamed') + '</span>';
+      item.addEventListener('click', async () => {
+        closeForwardPicker();
+        const convoId = convoIdFor(currentUid, n.uid);
+        try {
+          const convoRef = doc(db, 'conversations', convoId);
+          const existing = await getDoc(convoRef);
+          if (!existing.exists()) {
+            await setDoc(convoRef, {
+              type: 'dm',
+              participants: [currentUid, n.uid],
+              participantNames: { [currentUid]: currentProfile.name || 'Unknown', [n.uid]: n.name || 'Unknown' },
+              participantGenders: { [currentUid]: currentProfile.gender || null, [n.uid]: n.gender || null },
+              createdBy: currentUid,
+              createdAt: serverTimestamp(),
+              lastMessageText: '', lastMessageAt: serverTimestamp(), lastMessageSenderUid: null,
+              readBy: {}
+            });
+          }
+          forwardMessageTo(convoId, message);
+        } catch (e) {
+          alert("Couldn't forward: " + (e.code || e.message || 'unknown error'));
+        }
+      });
+      listEl.appendChild(item);
+    });
+
+    document.getElementById('fwdOverlay').classList.add('open');
+  }
+
+  async function forwardMessageTo(targetConvoId, message) {
+    try {
+      await addDoc(collection(db, 'conversations', targetConvoId, 'messages'), {
+        senderUid: currentUid,
+        text: message.text || '',
+        imageUrl: message.imageUrl || null,
+        audioUrl: message.audioUrl || null,
+        replyTo: null,
+        forwardedFrom: message.senderUid || null,
+        reactions: {}, starredBy: [],
+        createdAt: serverTimestamp(), editedAt: null
+      });
+      const preview = message.imageUrl ? '📷 Photo' : (message.audioUrl ? '🎤 Voice note' : message.text);
+      await updateDoc(doc(db, 'conversations', targetConvoId), {
+        lastMessageText: preview, lastMessageAt: serverTimestamp(), lastMessageSenderUid: currentUid
+      });
+    } catch (e) {
+      alert("Couldn't forward: " + (e.code || e.message || 'unknown error'));
+    }
+  }
+
   // ---------- typing ----------
   document.getElementById('msgInput').addEventListener('input', () => {
     if (!activeConvoId) return;
@@ -800,7 +966,7 @@
       await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
         senderUid: currentUid, text,
         replyTo: replySnapshot || null,
-        reactions: {},
+        reactions: {}, starredBy: [],
         createdAt: serverTimestamp(), editedAt: null
       });
       await updateDoc(doc(db, 'conversations', activeConvoId), {
@@ -841,7 +1007,7 @@
       await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
         senderUid: currentUid, text: caption, imageUrl: url,
         replyTo: replySnapshot || null,
-        reactions: {},
+        reactions: {}, starredBy: [],
         createdAt: serverTimestamp(), editedAt: null
       });
       await updateDoc(doc(db, 'conversations', activeConvoId), {
@@ -852,6 +1018,110 @@
     }
     placeholder.remove();
   });
+
+  // ---------- voice notes ----------
+  const micBtn = document.getElementById('micBtn');
+  micBtn.addEventListener('click', () => {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      stopRecording(true);
+    } else {
+      startRecording();
+    }
+  });
+
+  async function startRecording() {
+    if (!activeConvoId) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert("Voice recording isn't supported on this device/browser.");
+      return;
+    }
+    try {
+      recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      alert("Couldn't access the microphone: " + (e.message || 'permission denied'));
+      return;
+    }
+    recordedChunks = [];
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+    mediaRecorder = mimeType ? new MediaRecorder(recordingStream, { mimeType }) : new MediaRecorder(recordingStream);
+    mediaRecorder.addEventListener('dataavailable', (ev) => { if (ev.data && ev.data.size > 0) recordedChunks.push(ev.data); });
+    mediaRecorder.addEventListener('stop', onRecordingStopped);
+    mediaRecorder.start();
+    recordingStartMs = Date.now();
+    micBtn.classList.add('recording');
+    document.getElementById('msgInput').disabled = true;
+    document.getElementById('attachBtn').disabled = true;
+    renderRecordingBar();
+    recordingTimerInterval = setInterval(renderRecordingBar, 500);
+  }
+
+  function renderRecordingBar() {
+    const wrap = document.getElementById('recordingBarWrap');
+    const secs = Math.floor((Date.now() - recordingStartMs) / 1000);
+    const mm = String(Math.floor(secs / 60)).padStart(2, '0');
+    const ss = String(secs % 60).padStart(2, '0');
+    wrap.innerHTML = '<div class="recording-bar"><span class="rec-dot"></span>' +
+      '<span class="rec-time">Recording ' + mm + ':' + ss + '</span>' +
+      '<button class="rec-cancel" id="recCancelBtn">Cancel</button>' +
+      '<button class="rec-send" id="recSendBtn">Send</button></div>';
+    document.getElementById('recCancelBtn').addEventListener('click', () => stopRecording(false));
+    document.getElementById('recSendBtn').addEventListener('click', () => stopRecording(true));
+  }
+
+  function stopRecording(shouldSend) {
+    if (!mediaRecorder) return;
+    mediaRecorder._shouldSend = shouldSend;
+    if (mediaRecorder.state === 'recording') mediaRecorder.stop();
+    clearInterval(recordingTimerInterval);
+    recordingTimerInterval = null;
+    micBtn.classList.remove('recording');
+    document.getElementById('msgInput').disabled = false;
+    document.getElementById('attachBtn').disabled = false;
+    document.getElementById('recordingBarWrap').innerHTML = '';
+  }
+
+  async function onRecordingStopped() {
+    const shouldSend = mediaRecorder && mediaRecorder._shouldSend;
+    if (recordingStream) {
+      recordingStream.getTracks().forEach(t => t.stop());
+      recordingStream = null;
+    }
+    const chunks = recordedChunks;
+    recordedChunks = [];
+    const mrType = mediaRecorder ? mediaRecorder.mimeType : '';
+    mediaRecorder = null;
+    if (!shouldSend || !activeConvoId || chunks.length === 0) return;
+
+    const blob = new Blob(chunks, { type: mrType || 'audio/webm' });
+    if (blob.size < 500) return; // too short / silent tap
+
+    const wrap = document.getElementById('threadMsgs');
+    const placeholder = document.createElement('div');
+    placeholder.className = 'loading-note';
+    placeholder.textContent = 'Uploading voice note…';
+    wrap.appendChild(placeholder);
+    wrap.scrollTop = wrap.scrollHeight;
+
+    try {
+      const ext = (mrType && mrType.includes('mp4')) ? 'm4a' : 'webm';
+      const path = 'chatUploads/' + activeConvoId + '/' + Date.now() + '_voice.' + ext;
+      const fileRef = ref(storage, path);
+      await uploadBytes(fileRef, blob, { contentType: mrType || 'audio/webm' });
+      const url = await getDownloadURL(fileRef);
+      await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
+        senderUid: currentUid, text: '', audioUrl: url,
+        replyTo: null,
+        reactions: {}, starredBy: [],
+        createdAt: serverTimestamp(), editedAt: null
+      });
+      await updateDoc(doc(db, 'conversations', activeConvoId), {
+        lastMessageText: '🎤 Voice note', lastMessageAt: serverTimestamp(), lastMessageSenderUid: currentUid
+      });
+    } catch (e) {
+      alert("Couldn't upload voice note: " + (e.code || e.message || 'unknown error'));
+    }
+    placeholder.remove();
+  }
 
   async function deleteMessage(messageId) {
     if (!confirm('Delete this message?')) return;

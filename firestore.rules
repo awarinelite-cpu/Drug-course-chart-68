@@ -236,12 +236,13 @@ service cloud.firestore {
           && request.resource.data.senderUid == request.auth.uid;
         // A message's own sender may edit/delete it outright. Any other
         // participant may still touch the doc, but ONLY to add/remove her
-        // own reaction — never the text, image, or anyone else's content.
+        // own reaction or toggle her own star — never the text, image, or
+        // anyone else's content.
         allow update: if isSignedIn()
           && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convoId)).data.participants
           && (
             resource.data.senderUid == request.auth.uid
-            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'starredBy'])
           );
         allow delete: if isSignedIn() && resource.data.senderUid == request.auth.uid;
       }
