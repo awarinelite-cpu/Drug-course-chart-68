@@ -134,6 +134,8 @@ function buildMenu() {
       <button class="gnav-link" data-action="search"><span class="gnav-icon">&#128269;</span>Search</button>
       <button class="gnav-link${overviewHref ? '' : ' gnav-disabled'}" data-action="overview"><span class="gnav-icon">&#128203;</span>Overview</button>
       <button class="gnav-link" data-action="allocation"><span class="gnav-icon">&#129658;</span>My Patients</button>
+      <button class="gnav-link" data-action="community"><span class="gnav-icon">&#128172;</span>Community</button>
+      <button class="gnav-link" data-action="messages"><span class="gnav-icon">&#9993;&#65039;</span>Messages</button>
       <button class="gnav-link" data-action="profile"><span class="gnav-icon">&#128100;</span>My Profile</button>
       <button class="gnav-link" data-action="nurses-report"><span class="gnav-icon">&#128203;</span>Nurses Report</button>
       <button class="gnav-link" data-action="admin" style="display:none;"><span class="gnav-icon">&#9881;&#65039;</span>Admin</button>
@@ -208,6 +210,16 @@ function buildMenu() {
   drawer.querySelector('[data-action="allocation"]').addEventListener('click', () => {
     close();
     window.location.href = basePath + 'allocation.html';
+  });
+
+  drawer.querySelector('[data-action="community"]').addEventListener('click', () => {
+    close();
+    window.location.href = basePath + 'community.html';
+  });
+
+  drawer.querySelector('[data-action="messages"]').addEventListener('click', () => {
+    close();
+    window.location.href = basePath + 'messages.html';
   });
 
   drawer.querySelector('[data-action="nurses-report"]').addEventListener('click', () => {

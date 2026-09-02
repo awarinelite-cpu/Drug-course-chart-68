@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Messages · Ward Charts</title>
+<link rel="stylesheet" href="js/styles.css">
+<style>
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tab-btn {
+    flex: 1; background: #f3f4f6; border: none; border-radius: 8px; padding: 10px;
+    font-weight: bold; font-size: 13px; color: #6b7280; cursor: pointer;
+  }
+  .tab-btn.active { background: #2563eb; color: #fff; }
+  .pane { display: none; }
+  .pane.active { display: block; }
+
+  .chat-item {
+    display: flex; gap: 10px; align-items: center; border: 1px solid #e5e7eb;
+    border-radius: 8px; padding: 12px; margin-bottom: 10px; cursor: pointer;
+  }
+  .chat-item:hover { border-color: #2563eb; }
+  .chat-main { min-width: 0; flex: 1; }
+  .chat-name { font-weight: bold; font-size: 14px; color: #111827; }
+  .chat-preview { font-size: 12px; color: #6b7280; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-when { font-size: 11px; color: #9ca3af; flex-shrink: 0; }
+
+  #searchInput { margin-bottom: 12px; }
+  .empty-note { font-size: 13px; color: #6b7280; text-align: center; padding: 24px 0; }
+  .loading-note { font-size: 12px; color: #6b7280; margin: 10px 0; }
+
+  /* Thread view */
+  #threadView { display: none; }
+  #threadView.active { display: flex; flex-direction: column; height: calc(100vh - 130px); }
+  .thread-head { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid #e5e7eb; margin-bottom: 12px; }
+  .thread-head-name { font-weight: bold; font-size: 15px; }
+  .thread-back { background: none; border: none; font-size: 18px; cursor: pointer; color: #2563eb; padding: 0 6px 0 0; }
+  .thread-msgs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; }
+  .msg-row { display: flex; }
+  .msg-row.mine { justify-content: flex-end; }
+  .msg-bubble {
+    max-width: 78%; padding: 8px 12px; border-radius: 14px; font-size: 14px;
+    white-space: pre-wrap; word-break: break-word; position: relative;
+  }
+  .msg-row.mine .msg-bubble { background: #2563eb; color: #fff; border-bottom-right-radius: 4px; }
+  .msg-row:not(.mine) .msg-bubble { background: #f3f4f6; color: #111827; border-bottom-left-radius: 4px; }
+  .msg-meta { font-size: 10px; opacity: .75; margin-top: 3px; display: flex; gap: 8px; }
+  .msg-meta button { background: none; border: none; padding: 0; font-size: 10px; font-weight: bold; cursor: pointer; color: inherit; opacity: .8; }
+  .thread-compose { display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid #e5e7eb; }
+  .thread-compose input { flex: 1; }
+</style>
+</head>
+<body>
+<script type="module" src="js/nav.js"></script>
+<div class="topbar">
+  <div class="brand">Messages</div>
+  <div class="right">
+    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="gnavGoBack('index.html')">Back</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="card-box" id="listCard">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="chats">Chats</button>
+      <button class="tab-btn" data-tab="directory">New Message</button>
+    </div>
+
+    <div class="pane active" id="pane-chats">
+      <div class="loading-note" id="chatsLoading">Loading…</div>
+      <div id="chatsList"></div>
+      <div class="empty-note" id="chatsEmpty" style="display:none;">
+        No conversations yet. Start one from "New Message".
+      </div>
+    </div>
+
+    <div class="pane" id="pane-directory">
+      <input type="text" id="searchInput" placeholder="Search nurses by name…">
+      <div class="loading-note" id="dirLoading">Loading…</div>
+      <div id="dirList"></div>
+      <div class="empty-note" id="dirEmpty" style="display:none;">No matches.</div>
+    </div>
+  </div>
+
+  <div class="card-box" id="threadView">
+    <div class="thread-head">
+      <button class="thread-back" id="threadBackBtn">&larr;</button>
+      <div id="threadHeadAvatar"></div>
+      <div class="thread-head-name" id="threadHeadName"></div>
+    </div>
+    <div class="thread-msgs" id="threadMsgs"></div>
+    <div class="thread-compose">
+      <input type="text" id="msgInput" placeholder="Type a message…">
+      <button class="btn btn-primary" id="sendBtn" style="padding:10px 16px;">Send</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from "./js/auth-guard.js";
+  import { db } from "./js/firebase.js";
+  import { avatarMarkup } from "./js/avatar.js";
+  import {
+    collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc,
+    serverTimestamp, orderBy, query, where, onSnapshot
+  } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+  let currentUid = null;
+  let currentProfile = null;
+  let allNurses = [];
+  let unsubMessages = null;
+  let activeConvoId = null;
+  let activeOtherUid = null;
+
+  requireAuth((user, profile) => {
+    currentUid = user.uid;
+    currentProfile = profile;
+    loadChats();
+    loadDirectory();
+  });
+
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+
+  function fmtWhen(ts) {
+    if (!ts || typeof ts.toDate !== 'function') return '';
+    const d = ts.toDate();
+    const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+    const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return dateStr + ', ' + timeStr;
+  }
+
+  function convoIdFor(uidA, uidB) {
+    const [a, b] = [uidA, uidB].sort();
+    return 'dm_' + a + '_' + b;
+  }
+
+  // ---------- Tabs ----------
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('pane-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  // ---------- Chats list ----------
+  async function loadChats() {
+    const listEl = document.getElementById('chatsList');
+    const emptyEl = document.getElementById('chatsEmpty');
+    const loadingEl = document.getElementById('chatsLoading');
+    loadingEl.style.display = 'block';
+    emptyEl.style.display = 'none';
+    listEl.innerHTML = '';
+
+    let convos = [];
+    try {
+      const snap = await getDocs(query(collection(db, 'conversations'), where('participants', 'array-contains', currentUid)));
+      snap.forEach(d => convos.push({ id: d.id, ...d.data() }));
+    } catch (e) {
+      loadingEl.textContent = "Couldn't load: " + (e.code || e.message || 'unknown error');
+      return;
+    }
+    loadingEl.style.display = 'none';
+
+    convos.sort((a, b) => {
+      const at = a.lastMessageAt && a.lastMessageAt.toMillis ? a.lastMessageAt.toMillis() : 0;
+      const bt = b.lastMessageAt && b.lastMessageAt.toMillis ? b.lastMessageAt.toMillis() : 0;
+      return bt - at;
+    });
+
+    if (convos.length === 0) {
+      emptyEl.style.display = 'block';
+      return;
+    }
+
+    convos.forEach(c => {
+      const otherUid = (c.participants || []).find(u => u !== currentUid);
+      const otherName = (c.participantNames && c.participantNames[otherUid]) || 'Unknown';
+      const otherGender = (c.participantGenders && c.participantGenders[otherUid]) || null;
+      const item = document.createElement('div');
+      item.className = 'chat-item';
+      item.innerHTML =
+        avatarMarkup({ name: otherName, gender: otherGender }, 40) +
+        '<div class="chat-main">' +
+          '<div class="chat-name">' + escapeHtml(otherName) + '</div>' +
+          '<div class="chat-preview">' + escapeHtml(c.lastMessageText || '') + '</div>' +
+        '</div>' +
+        '<div class="chat-when">' + fmtWhen(c.lastMessageAt) + '</div>';
+      item.addEventListener('click', () => openThread(c.id, otherUid, otherName, otherGender));
+      listEl.appendChild(item);
+    });
+  }
+
+  // ---------- Directory ----------
+  async function loadDirectory() {
+    const loadingEl = document.getElementById('dirLoading');
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      allNurses = [];
+      snap.forEach(d => {
+        if (d.id === currentUid) return;
+        allNurses.push({ uid: d.id, ...d.data() });
+      });
+    } catch (e) {
+      loadingEl.textContent = "Couldn't load directory: " + (e.code || e.message || 'unknown error');
+      return;
+    }
+    loadingEl.style.display = 'none';
+    renderDirectory(allNurses);
+  }
+
+  function renderDirectory(list) {
+    const listEl = document.getElementById('dirList');
+    const emptyEl = document.getElementById('dirEmpty');
+    listEl.innerHTML = '';
+    if (list.length === 0) {
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    list.forEach(n => {
+      const item = document.createElement('div');
+      item.className = 'chat-item';
+      item.innerHTML =
+        avatarMarkup(n, 40) +
+        '<div class="chat-main">' +
+          '<div class="chat-name">' + escapeHtml(n.name || 'Unnamed') + '</div>' +
+          '<div class="chat-preview">' + escapeHtml(n.role || '') + (n.department ? ' · ' + escapeHtml(n.department) : '') + '</div>' +
+        '</div>';
+      item.addEventListener('click', () => startChat(n));
+      listEl.appendChild(item);
+    });
+  }
+
+  document.getElementById('searchInput').addEventListener('input', (ev) => {
+    const term = ev.target.value.trim().toLowerCase();
+    const filtered = term ? allNurses.filter(n => (n.name || '').toLowerCase().includes(term)) : allNurses;
+    renderDirectory(filtered);
+  });
+
+  async function startChat(nurse) {
+    const convoId = convoIdFor(currentUid, nurse.uid);
+    try {
+      const convoRef = doc(db, 'conversations', convoId);
+      const existing = await getDoc(convoRef);
+      if (!existing.exists()) {
+        await setDoc(convoRef, {
+          participants: [currentUid, nurse.uid],
+          participantNames: {
+            [currentUid]: currentProfile.name || 'Unknown',
+            [nurse.uid]: nurse.name || 'Unknown'
+          },
+          participantGenders: {
+            [currentUid]: currentProfile.gender || null,
+            [nurse.uid]: nurse.gender || null
+          },
+          createdAt: serverTimestamp(),
+          lastMessageText: '',
+          lastMessageAt: serverTimestamp()
+        });
+      }
+      openThread(convoId, nurse.uid, nurse.name || 'Unknown', nurse.gender || null);
+    } catch (e) {
+      alert("Couldn't start chat: " + (e.code || e.message || 'unknown error'));
+    }
+  }
+
+  // ---------- Thread ----------
+  function openThread(convoId, otherUid, otherName, otherGender) {
+    activeConvoId = convoId;
+    activeOtherUid = otherUid;
+    document.getElementById('listCard').style.display = 'none';
+    document.getElementById('threadView').classList.add('active');
+    document.getElementById('threadHeadAvatar').innerHTML = avatarMarkup({ name: otherName, gender: otherGender }, 32);
+    document.getElementById('threadHeadName').textContent = otherName;
+    document.getElementById('threadMsgs').innerHTML = '<div class="loading-note">Loading…</div>';
+
+    if (unsubMessages) { unsubMessages(); unsubMessages = null; }
+    const msgsQuery = query(collection(db, 'conversations', convoId, 'messages'), orderBy('createdAt', 'asc'));
+    unsubMessages = onSnapshot(msgsQuery, (snap) => {
+      const msgs = [];
+      snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+      renderMessages(msgs);
+    }, (e) => {
+      document.getElementById('threadMsgs').innerHTML = '<div class="loading-note">Couldn\'t load: ' + escapeHtml(e.code || e.message || '') + '</div>';
+    });
+  }
+
+  function closeThread() {
+    if (unsubMessages) { unsubMessages(); unsubMessages = null; }
+    activeConvoId = null;
+    activeOtherUid = null;
+    document.getElementById('threadView').classList.remove('active');
+    document.getElementById('listCard').style.display = 'block';
+    loadChats();
+  }
+  document.getElementById('threadBackBtn').addEventListener('click', closeThread);
+
+  function renderMessages(msgs) {
+    const wrap = document.getElementById('threadMsgs');
+    wrap.innerHTML = '';
+    msgs.forEach(m => {
+      const isMine = m.senderUid === currentUid;
+      const row = document.createElement('div');
+      row.className = 'msg-row' + (isMine ? ' mine' : '');
+      row.innerHTML =
+        '<div>' +
+          '<div class="msg-bubble">' + escapeHtml(m.text) +
+            '<div class="msg-meta"><span>' + fmtWhen(m.createdAt) + (m.editedAt ? ' · edited' : '') + '</span>' +
+              (isMine ? '<button data-a="edit">Edit</button><button data-a="delete">Delete</button>' : '') +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      if (isMine) {
+        row.querySelector('[data-a="delete"]').addEventListener('click', () => deleteMessage(m.id));
+        row.querySelector('[data-a="edit"]').addEventListener('click', () => editMessage(m.id, m.text));
+      }
+      wrap.appendChild(row);
+    });
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+
+  document.getElementById('sendBtn').addEventListener('click', sendMessage);
+  document.getElementById('msgInput').addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') sendMessage();
+  });
+
+  async function sendMessage() {
+    const input = document.getElementById('msgInput');
+    const text = input.value.trim();
+    if (!text || !activeConvoId) return;
+    input.value = '';
+    try {
+      await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
+        senderUid: currentUid,
+        text,
+        createdAt: serverTimestamp(),
+        editedAt: null
+      });
+      await updateDoc(doc(db, 'conversations', activeConvoId), {
+        lastMessageText: text,
+        lastMessageAt: serverTimestamp()
+      });
+    } catch (e) {
+      alert("Couldn't send: " + (e.code || e.message || 'unknown error'));
+    }
+  }
+
+  async function deleteMessage(messageId) {
+    if (!confirm('Delete this message?')) return;
+    try {
+      await deleteDoc(doc(db, 'conversations', activeConvoId, 'messages', messageId));
+    } catch (e) {
+      alert("Couldn't delete: " + (e.code || e.message || 'unknown error'));
+    }
+  }
+
+  async function editMessage(messageId, currentText) {
+    const newText = prompt('Edit message:', currentText);
+    if (newText === null) return;
+    const trimmed = newText.trim();
+    if (!trimmed) return;
+    try {
+      await updateDoc(doc(db, 'conversations', activeConvoId, 'messages', messageId), {
+        text: trimmed,
+        editedAt: serverTimestamp()
+      });
+    } catch (e) {
+      alert("Couldn't save: " + (e.code || e.message || 'unknown error'));
+    }
+  }
+</script>
+</body>
+</html>

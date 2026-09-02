@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Community · Ward Charts</title>
+<link rel="stylesheet" href="js/styles.css">
+<style>
+  .composer { display: flex; gap: 10px; align-items: flex-start; }
+  .composer-avatar { flex-shrink: 0; }
+  .composer textarea { flex: 1; min-height: 60px; resize: vertical; }
+  .composer-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
+  .post { border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+  .post-head { display: flex; gap: 10px; align-items: center; }
+  .post-avatar { flex-shrink: 0; }
+  .post-name { font-weight: bold; font-size: 14px; color: #111827; }
+  .post-meta { font-size: 11px; color: #9ca3af; }
+  .post-body { font-size: 14px; color: #111827; margin: 10px 0 6px; white-space: pre-wrap; word-break: break-word; }
+  .post-edited { font-size: 11px; color: #9ca3af; font-style: italic; }
+  .post-actions { display: flex; gap: 14px; margin-top: 8px; }
+  .post-action-btn {
+    background: none; border: none; color: #6b7280; font-size: 12px; font-weight: bold;
+    cursor: pointer; padding: 2px 0;
+  }
+  .post-action-btn:hover { color: #2563eb; }
+  .post-action-btn.danger:hover { color: #dc2626; }
+  .comments { margin-top: 10px; padding-top: 10px; border-top: 1px solid #f3f4f6; display: none; }
+  .comments.open { display: block; }
+  .comment { display: flex; gap: 8px; margin-bottom: 10px; }
+  .comment-avatar { flex-shrink: 0; }
+  .comment-bubble { background: #f9fafb; border-radius: 8px; padding: 8px 10px; flex: 1; min-width: 0; }
+  .comment-name { font-weight: bold; font-size: 12px; color: #111827; }
+  .comment-text { font-size: 13px; color: #111827; margin-top: 2px; white-space: pre-wrap; word-break: break-word; }
+  .comment-meta { font-size: 10px; color: #9ca3af; margin-top: 4px; display: flex; gap: 10px; }
+  .comment-meta button { background: none; border: none; padding: 0; font-size: 10px; font-weight: bold; color: #9ca3af; cursor: pointer; }
+  .comment-meta button:hover { color: #2563eb; }
+  .comment-form { display: flex; gap: 8px; margin-top: 6px; }
+  .comment-form input { flex: 1; padding: 8px 10px; font-size: 13px; }
+  .comment-form button { flex-shrink: 0; }
+  .empty-note { font-size: 13px; color: #6b7280; text-align: center; padding: 24px 0; }
+  .loading-note { font-size: 12px; color: #6b7280; margin: 10px 0; }
+  .edit-box { width: 100%; margin-top: 6px; }
+  .edit-actions { display: flex; gap: 8px; margin-top: 6px; justify-content: flex-end; }
+</style>
+</head>
+<body>
+<script type="module" src="js/nav.js"></script>
+<div class="topbar">
+  <div class="brand">Community</div>
+  <div class="right">
+    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="gnavGoBack('index.html')">Back</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="card-box">
+    <div class="composer">
+      <div class="composer-avatar" id="composerAvatar"></div>
+      <div style="flex:1;">
+        <textarea id="postText" placeholder="Share something with the ward…"></textarea>
+        <div class="composer-actions">
+          <button class="btn btn-primary" id="postBtn" style="padding:8px 18px;">Post</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-box">
+    <h2 style="margin-top:0;">Ward Feed</h2>
+    <div class="loading-note" id="loadingNote">Loading…</div>
+    <div id="feedList"></div>
+    <div class="empty-note" id="emptyNote" style="display:none;">
+      No posts yet. Be the first to share something with the ward.
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from "./js/auth-guard.js";
+  import { db } from "./js/firebase.js";
+  import { avatarMarkup } from "./js/avatar.js";
+  import {
+    collection, getDocs, addDoc, updateDoc, deleteDoc, doc,
+    serverTimestamp, orderBy, query
+  } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+  let currentUid = null;
+  let currentProfile = null;
+
+  requireAuth((user, profile) => {
+    currentUid = user.uid;
+    currentProfile = profile;
+    document.getElementById('composerAvatar').innerHTML = avatarMarkup(profile, 40);
+    loadFeed();
+  });
+
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+
+  function fmtWhen(ts) {
+    if (!ts || typeof ts.toDate !== 'function') return 'just now';
+    const d = ts.toDate();
+    const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+    const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return dateStr + ', ' + timeStr;
+  }
+
+  document.getElementById('postBtn').addEventListener('click', submitPost);
+
+  async function submitPost() {
+    const textEl = document.getElementById('postText');
+    const text = textEl.value.trim();
+    if (!text) return;
+    const btn = document.getElementById('postBtn');
+    btn.disabled = true;
+    try {
+      await addDoc(collection(db, 'communityPosts'), {
+        uid: currentUid,
+        name: currentProfile.name || 'Unknown',
+        gender: currentProfile.gender || null,
+        role: currentProfile.role || null,
+        text,
+        createdAt: serverTimestamp(),
+        editedAt: null
+      });
+      textEl.value = '';
+      await loadFeed();
+    } catch (e) {
+      alert("Couldn't post: " + (e.code || e.message || 'unknown error'));
+    }
+    btn.disabled = false;
+  }
+
+  async function loadFeed() {
+    const listEl = document.getElementById('feedList');
+    const emptyEl = document.getElementById('emptyNote');
+    const loadingEl = document.getElementById('loadingNote');
+    loadingEl.style.display = 'block';
+    emptyEl.style.display = 'none';
+
+    let posts = [];
+    try {
+      const snap = await getDocs(query(collection(db, 'communityPosts'), orderBy('createdAt', 'desc')));
+      snap.forEach(d => posts.push({ id: d.id, ...d.data() }));
+    } catch (e) {
+      loadingEl.textContent = "Couldn't load: " + (e.code || e.message || 'unknown error');
+      return;
+    }
+    loadingEl.style.display = 'none';
+    listEl.innerHTML = '';
+
+    if (posts.length === 0) {
+      emptyEl.style.display = 'block';
+      return;
+    }
+
+    posts.forEach(p => listEl.appendChild(renderPost(p)));
+  }
+
+  function renderPost(p) {
+    const el = document.createElement('div');
+    el.className = 'post';
+    const isMine = p.uid === currentUid;
+    el.innerHTML =
+      '<div class="post-head">' +
+        '<div class="post-avatar">' + avatarMarkup({ name: p.name, gender: p.gender }, 36) + '</div>' +
+        '<div>' +
+          '<div class="post-name">' + escapeHtml(p.name) + (p.role ? ' <span style="font-weight:normal;color:#6b7280;">· ' + escapeHtml(p.role) + '</span>' : '') + '</div>' +
+          '<div class="post-meta">' + fmtWhen(p.createdAt) + (p.editedAt ? ' · edited' : '') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="post-body">' + escapeHtml(p.text) + '</div>' +
+      '<div class="post-actions">' +
+        '<button class="post-action-btn" data-action="toggle-comments">Comments</button>' +
+        (isMine ? '<button class="post-action-btn" data-action="edit">Edit</button><button class="post-action-btn danger" data-action="delete">Delete</button>' : '') +
+      '</div>' +
+      '<div class="comments" id="comments-' + p.id + '">' +
+        '<div class="comment-list" id="commentList-' + p.id + '"></div>' +
+        '<div class="comment-form">' +
+          '<input type="text" placeholder="Write a reply…" id="commentInput-' + p.id + '">' +
+          '<button class="btn btn-primary" style="padding:8px 14px;" data-action="submit-comment">Reply</button>' +
+        '</div>' +
+      '</div>';
+
+    const bodyEl = el.querySelector('.post-body');
+
+    el.querySelector('[data-action="toggle-comments"]').addEventListener('click', () => {
+      const box = el.querySelector('.comments');
+      const willOpen = !box.classList.contains('open');
+      box.classList.toggle('open');
+      if (willOpen) loadComments(p.id, el.querySelector('#commentList-' + p.id));
+    });
+
+    if (isMine) {
+      el.querySelector('[data-action="edit"]').addEventListener('click', () => startEditPost(p, el, bodyEl));
+      el.querySelector('[data-action="delete"]').addEventListener('click', () => deletePost(p.id, el));
+    }
+
+    el.querySelector('[data-action="submit-comment"]').addEventListener('click', () => submitComment(p.id, el));
+    el.querySelector('#commentInput-' + p.id).addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') submitComment(p.id, el);
+    });
+
+    return el;
+  }
+
+  function startEditPost(p, postEl, bodyEl) {
+    const box = document.createElement('textarea');
+    box.className = 'edit-box';
+    box.value = p.text;
+    const actions = document.createElement('div');
+    actions.className = 'edit-actions';
+    actions.innerHTML = '<button class="btn btn-secondary" style="padding:6px 12px;" data-a="cancel">Cancel</button><button class="btn btn-primary" style="padding:6px 12px;" data-a="save">Save</button>';
+    bodyEl.replaceWith(box);
+    box.after(actions);
+
+    actions.querySelector('[data-a="cancel"]').addEventListener('click', loadFeed);
+    actions.querySelector('[data-a="save"]').addEventListener('click', async () => {
+      const newText = box.value.trim();
+      if (!newText) return;
+      try {
+        await updateDoc(doc(db, 'communityPosts', p.id), { text: newText, editedAt: serverTimestamp() });
+        await loadFeed();
+      } catch (e) {
+        alert("Couldn't save: " + (e.code || e.message || 'unknown error'));
+      }
+    });
+  }
+
+  async function deletePost(postId, el) {
+    if (!confirm('Delete this post?')) return;
+    try {
+      await deleteDoc(doc(db, 'communityPosts', postId));
+      el.remove();
+      if (!document.getElementById('feedList').children.length) {
+        document.getElementById('emptyNote').style.display = 'block';
+      }
+    } catch (e) {
+      alert("Couldn't delete: " + (e.code || e.message || 'unknown error'));
+    }
+  }
+
+  async function loadComments(postId, listEl) {
+    listEl.innerHTML = '<div class="loading-note">Loading…</div>';
+    let comments = [];
+    try {
+      const snap = await getDocs(query(collection(db, 'communityPosts', postId, 'comments'), orderBy('createdAt', 'asc')));
+      snap.forEach(d => comments.push({ id: d.id, ...d.data() }));
+    } catch (e) {
+      listEl.innerHTML = '<div class="loading-note">Couldn\'t load replies.</div>';
+      return;
+    }
+    listEl.innerHTML = '';
+    comments.forEach(c => listEl.appendChild(renderComment(postId, c)));
+  }
+
+  function renderComment(postId, c) {
+    const el = document.createElement('div');
+    el.className = 'comment';
+    const isMine = c.uid === currentUid;
+    el.innerHTML =
+      '<div class="comment-avatar">' + avatarMarkup({ name: c.name, gender: c.gender }, 28) + '</div>' +
+      '<div class="comment-bubble">' +
+        '<div class="comment-name">' + escapeHtml(c.name) + '</div>' +
+        '<div class="comment-text">' + escapeHtml(c.text) + '</div>' +
+        '<div class="comment-meta"><span>' + fmtWhen(c.createdAt) + (c.editedAt ? ' · edited' : '') + '</span>' +
+          (isMine ? '<button data-a="edit">Edit</button><button data-a="delete">Delete</button>' : '') +
+        '</div>' +
+      '</div>';
+
+    if (isMine) {
+      el.querySelector('[data-a="delete"]').addEventListener('click', async () => {
+        if (!confirm('Delete this reply?')) return;
+        try {
+          await deleteDoc(doc(db, 'communityPosts', postId, 'comments', c.id));
+          el.remove();
+        } catch (e) {
+          alert("Couldn't delete: " + (e.code || e.message || 'unknown error'));
+        }
+      });
+      el.querySelector('[data-a="edit"]').addEventListener('click', () => {
+        const newText = prompt('Edit reply:', c.text);
+        if (newText === null) return;
+        const trimmed = newText.trim();
+        if (!trimmed) return;
+        updateDoc(doc(db, 'communityPosts', postId, 'comments', c.id), { text: trimmed, editedAt: serverTimestamp() })
+          .then(() => loadComments(postId, el.parentElement))
+          .catch(e => alert("Couldn't save: " + (e.code || e.message || 'unknown error')));
+      });
+    }
+    return el;
+  }
+
+  async function submitComment(postId, postEl) {
+    const input = postEl.querySelector('#commentInput-' + postId);
+    const text = input.value.trim();
+    if (!text) return;
+    try {
+      await addDoc(collection(db, 'communityPosts', postId, 'comments'), {
+        uid: currentUid,
+        name: currentProfile.name || 'Unknown',
+        gender: currentProfile.gender || null,
+        text,
+        createdAt: serverTimestamp(),
+        editedAt: null
+      });
+      input.value = '';
+      loadComments(postId, postEl.querySelector('#commentList-' + postId));
+    } catch (e) {
+      alert("Couldn't post reply: " + (e.code || e.message || 'unknown error'));
+    }
+  }
+</script>
+</body>
+</html>
