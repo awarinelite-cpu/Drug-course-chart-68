@@ -62,7 +62,7 @@
 
   .msg-row { display: flex; touch-action: pan-y; }
   .msg-row.mine { justify-content: flex-end; }
-  .msg-bubble-wrap { max-width: 78%; position: relative; }
+  .msg-bubble-wrap { max-width: 78%; position: relative; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
   .msg-bubble-wrap.dragging { transition: none; }
   .msg-bubble-wrap:not(.dragging) { transition: transform .15s ease; }
   .msg-sender-name { font-size: 11px; font-weight: bold; color: #7c3aed; margin: 4px 2px 1px; }
@@ -648,7 +648,7 @@
   }
 
   // ---------- swipe-to-reply + long-press-to-react ----------
-  const LONG_PRESS_MS = 450;
+  const LONG_PRESS_MS = 300;
   const LONG_PRESS_MOVE_TOLERANCE = 10; // px of finger drift still allowed mid-press
 
   function openReactionPicker(picker) {
