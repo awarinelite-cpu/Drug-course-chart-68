@@ -73,6 +73,7 @@
         <div class="pmeta" id="pb_meta" style="display:inline;"></div>
         <button class="btn btn-secondary edit-patient-btn" id="editPatientBtn" title="Edit patient information" onclick="openEditPatient()">✎</button>
         <button class="btn btn-purple" id="overviewBtn" style="padding:4px 10px; font-size:12px; margin-left:6px;" onclick="openOverview()">Overview</button>
+        <button class="btn btn-secondary" id="allocateBtn" style="padding:4px 10px; font-size:12px; margin-left:6px;" onclick="toggleAllocation()">Allocate to Me</button>
       </div>
     </div>
     <div id="pb_allergy"></div>
@@ -107,11 +108,16 @@
 <script type="module">
   import { requireAuth } from "./js/auth-guard.js";
   import { db } from "./js/firebase.js";
-  import { collection, getDocs, addDoc, updateDoc, doc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { collection, getDocs, addDoc, updateDoc, doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
   import { avatarMarkup } from "./js/avatar.js";
 
   let selectedPatient = null;
   let allPatientsCache = null;
+  // Whether the currently-selected patient is allocated to *this* signed-in
+  // nurse specifically (a different nurse may also have allocated the same
+  // patient — allocation isn't exclusive — that's not tracked here, only
+  // "is it in mine").
+  let allocatedToMe = false;
 
   requireAuth((user, profile) => {
     document.getElementById('whoami_avatar').innerHTML = avatarMarkup(profile, 32);
@@ -193,7 +199,88 @@
     }
     closeEditPatient();
     document.getElementById('patientBox').style.display = 'block';
+    refreshAllocateBtn();
   }
+
+  // Allocation ends only when a nurse manually removes it (here, or from
+  // allocation.html) — there's no automatic clearing at shift change, since
+  // allocation isn't exclusive: if a nurse forgets to deallocate at end of
+  // shift, that doesn't block the next nurse from allocating the same
+  // patient to themselves too. One doc per (nurse, patient) pair, so this
+  // ID is stable and idempotent to create/overwrite/delete regardless of
+  // how many other nurses have their own allocation doc for the same
+  // patient.
+  function allocationDocRef(patientId) {
+    return doc(db, 'allocations', 'alloc_' + window.currentUser.uid + '_' + patientId);
+  }
+
+  // Recorded on the allocation doc purely for handover visibility on
+  // allocation.html ("allocated 07:32am · Morning shift") — Africa/Lagos
+  // (WAT) is UTC+1 with no DST, so shifting the UTC clock by 1hr gives WAT
+  // wall-clock hours via the UTC getters. Morning 8:00–16:59, Night
+  // 17:00–7:59.
+  function currentShiftLabel() {
+    const watHour = new Date(Date.now() + 60 * 60 * 1000).getUTCHours();
+    return (watHour >= 8 && watHour < 17) ? 'Morning' : 'Night';
+  }
+
+  function refreshAllocateBtn() {
+    const btn = document.getElementById('allocateBtn');
+    if (!selectedPatient || !window.currentUser) { btn.style.display = 'none'; return; }
+    btn.style.display = 'inline-block';
+    btn.disabled = true;
+    btn.textContent = '…';
+    getDoc(allocationDocRef(selectedPatient.id)).then(snap => {
+      allocatedToMe = snap.exists();
+      applyAllocateBtnStyle(btn);
+    }).catch(() => {
+      // Can't confirm current state (offline, etc.) — leave the button
+      // usable rather than stuck disabled; toggleAllocation() re-derives
+      // the actual state from its own write attempt either way.
+      allocatedToMe = false;
+      applyAllocateBtnStyle(btn);
+    });
+  }
+
+  function applyAllocateBtnStyle(btn) {
+    btn.disabled = false;
+    if (allocatedToMe) {
+      btn.className = 'btn btn-success';
+      btn.textContent = '✓ Allocated — tap to remove';
+    } else {
+      btn.className = 'btn btn-secondary';
+      btn.textContent = 'Allocate to Me';
+    }
+  }
+
+  window.toggleAllocation = async function () {
+    if (!selectedPatient || !window.currentUser) return;
+    const btn = document.getElementById('allocateBtn');
+    btn.disabled = true;
+    const ref = allocationDocRef(selectedPatient.id);
+    try {
+      if (allocatedToMe) {
+        await deleteDoc(ref);
+        allocatedToMe = false;
+      } else {
+        await setDoc(ref, {
+          uid: window.currentUser.uid,
+          nurseName: (window.currentUserProfile && window.currentUserProfile.name) || '',
+          patientId: selectedPatient.id,
+          patientName: selectedPatient.name || 'Unnamed',
+          patientEmr: selectedPatient.emr || '',
+          patientWard: selectedPatient.ward || '',
+          patientDiagnosis: selectedPatient.diagnosis || '',
+          shift: currentShiftLabel(),
+          allocatedAt: serverTimestamp()
+        });
+        allocatedToMe = true;
+      }
+    } catch (e) {
+      alert("Couldn't update allocation: " + (e.code || e.message || 'unknown error'));
+    }
+    applyAllocateBtnStyle(btn);
+  };
 
   window.openEditPatient = function () {
     if (!selectedPatient) return;

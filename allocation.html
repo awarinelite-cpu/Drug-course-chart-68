@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>My Patients · Ward Charts</title>
+<link rel="stylesheet" href="js/styles.css">
+<style>
+  .alloc-item {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px;
+    cursor: pointer;
+  }
+  .alloc-item:hover { border-color: #2563eb; }
+  .alloc-main { min-width: 0; }
+  .alloc-name { font-weight: bold; font-size: 15px; color: #111827; }
+  .alloc-meta { font-size: 12px; color: #6b7280; margin-top: 2px; }
+  .alloc-when { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+  .alloc-remove {
+    flex-shrink: 0; background: none; border: 1px solid #dc2626; color: #dc2626;
+    border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: bold; cursor: pointer;
+  }
+  .alloc-remove:hover { background: #fef2f2; }
+  .empty-note { font-size: 13px; color: #6b7280; text-align: center; padding: 24px 0; }
+  .loading-note { font-size: 12px; color: #6b7280; margin: 10px 0; }
+</style>
+</head>
+<body>
+<script type="module" src="js/nav.js"></script>
+<div class="topbar">
+  <div class="brand">My Patients</div>
+  <div class="right">
+    <button class="btn btn-secondary" style="padding:6px 12px;" onclick="gnavGoBack('index.html')">Back</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="card-box">
+    <h2 style="margin-top:0;">My Allocated Patients</h2>
+    <div style="font-size:13px; color:#6b7280; margin-bottom:4px;">
+      Patients you've allocated to yourself from the Search page. Tap a patient to open their chart, or remove them once you're done.
+    </div>
+    <div class="loading-note" id="loadingNote">Loading…</div>
+    <div id="allocList"></div>
+    <div class="empty-note" id="emptyNote" style="display:none;">
+      No patients allocated yet. Search for a patient and tap "Allocate to Me" on their profile.
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from "./js/auth-guard.js";
+  import { db } from "./js/firebase.js";
+  import { collection, getDocs, query, where, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+  let currentUid = null;
+
+  requireAuth((user) => {
+    currentUid = user.uid;
+    loadAllocations();
+  });
+
+  function fmtWhen(ts, shift) {
+    if (!ts || typeof ts.toDate !== 'function') return shift || '';
+    const d = ts.toDate();
+    const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+    const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return dateStr + ', ' + timeStr + (shift ? ' \u00b7 ' + shift + ' shift' : '');
+  }
+
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+
+  async function loadAllocations() {
+    const listEl = document.getElementById('allocList');
+    const emptyEl = document.getElementById('emptyNote');
+    const loadingEl = document.getElementById('loadingNote');
+    listEl.innerHTML = '';
+    emptyEl.style.display = 'none';
+    loadingEl.style.display = 'block';
+
+    let docs = [];
+    try {
+      // A single equality filter (no orderBy alongside it) avoids needing a
+      // composite Firestore index — sorted client-side instead, same as
+      // the rest of the app does for small per-user/per-day result sets.
+      const snap = await getDocs(query(collection(db, 'allocations'), where('uid', '==', currentUid)));
+      snap.forEach(d => docs.push({ id: d.id, ...d.data() }));
+    } catch (e) {
+      loadingEl.textContent = "Couldn't load: " + (e.code || e.message || 'unknown error');
+      return;
+    }
+    loadingEl.style.display = 'none';
+
+    if (docs.length === 0) {
+      emptyEl.style.display = 'block';
+      return;
+    }
+
+    // Most recently allocated first — matches "what did I just pick up"
+    // better than alphabetical for a start-of-shift review.
+    docs.sort((a, b) => {
+      const at = a.allocatedAt && a.allocatedAt.toMillis ? a.allocatedAt.toMillis() : 0;
+      const bt = b.allocatedAt && b.allocatedAt.toMillis ? b.allocatedAt.toMillis() : 0;
+      return bt - at;
+    });
+
+    docs.forEach(a => {
+      const item = document.createElement('div');
+      item.className = 'alloc-item';
+      item.innerHTML =
+        '<div class="alloc-main">' +
+          '<div class="alloc-name">' + escapeHtml(a.patientName || 'Unnamed') + '</div>' +
+          '<div class="alloc-meta">EMR: ' + escapeHtml(a.patientEmr || 'N/A') +
+            (a.patientWard ? '  \u00b7  Ward: ' + escapeHtml(a.patientWard) : '') +
+            (a.patientDiagnosis ? '  \u00b7  ' + escapeHtml(a.patientDiagnosis) : '') + '</div>' +
+          '<div class="alloc-when">Allocated ' + fmtWhen(a.allocatedAt, a.shift) + '</div>' +
+        '</div>' +
+        '<button class="alloc-remove" title="Remove from my list">Remove</button>';
+
+      item.querySelector('.alloc-main').addEventListener('click', () => openPatient(a.patientId));
+      item.querySelector('.alloc-remove').addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        removeAllocation(a.id, item);
+      });
+      listEl.appendChild(item);
+    });
+  }
+
+  function openPatient(patientId) {
+    // index.html's own restoreSelectedPatient() picks this up on load and
+    // opens straight to that patient's profile — same mechanism used when
+    // navigating back to index.html from a chart page.
+    sessionStorage.setItem('selectedPatientId', patientId);
+    window.location.href = 'index.html';
+  }
+
+  async function removeAllocation(allocationId, itemEl) {
+    try {
+      await deleteDoc(doc(db, 'allocations', allocationId));
+      itemEl.remove();
+      if (!document.getElementById('allocList').children.length) {
+        document.getElementById('emptyNote').style.display = 'block';
+      }
+    } catch (e) {
+      alert("Couldn't remove: " + (e.code || e.message || 'unknown error'));
+    }
+  }
+</script>
+</body>
+</html>

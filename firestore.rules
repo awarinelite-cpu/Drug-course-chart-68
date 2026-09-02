@@ -134,5 +134,19 @@ service cloud.firestore {
         allow read, create, update, delete: if isKnownUser();
       }
     }
+
+    // Per-nurse patient allocation (index.html's "Allocate to Me" button /
+    // allocation.html's "My Patients" list). Not exclusive — more than one
+    // nurse can allocate the same patient (e.g. a colleague lending a hand)
+    // — so this is one doc per (nurse, patient) pair, id'd
+    // "alloc_{uid}_{patientId}", not one doc per patient. Any signed-in
+    // staff member can read the full list (useful for handover visibility),
+    // but a nurse may only create/update/delete her own allocation docs —
+    // never allocate or deallocate on someone else's behalf.
+    match /allocations/{allocationId} {
+      allow read: if isKnownUser();
+      allow create, update: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
   }
 }
