@@ -62,7 +62,9 @@
 
   .msg-row { display: flex; touch-action: pan-y; }
   .msg-row.mine { justify-content: flex-end; }
-  .msg-bubble-wrap { max-width: 78%; position: relative; transition: transform .15s ease; }
+  .msg-bubble-wrap { max-width: 78%; position: relative; }
+  .msg-bubble-wrap.dragging { transition: none; }
+  .msg-bubble-wrap:not(.dragging) { transition: transform .15s ease; }
   .msg-sender-name { font-size: 11px; font-weight: bold; color: #7c3aed; margin: 4px 2px 1px; }
   .msg-bubble {
     padding: 8px 12px; border-radius: 14px; font-size: 14px;
@@ -627,21 +629,39 @@
 
   // ---------- swipe-to-reply ----------
   function attachSwipeToReply(el, message, senderName) {
-    let startX = 0, dx = 0, dragging = false;
+    let startX = 0, startY = 0, dx = 0, dragging = false, claimed = false;
     el.addEventListener('touchstart', (ev) => {
       startX = ev.touches[0].clientX;
+      startY = ev.touches[0].clientY;
+      dx = 0;
       dragging = true;
+      claimed = false;
     }, { passive: true });
     el.addEventListener('touchmove', (ev) => {
       if (!dragging) return;
-      dx = ev.touches[0].clientX - startX;
+      const curX = ev.touches[0].clientX;
+      const curY = ev.touches[0].clientY;
+      dx = curX - startX;
+      const dy = curY - startY;
+      if (!claimed) {
+        // Not yet committed to a direction. Once the gesture is clearly more
+        // horizontal than vertical, claim it for swipe-to-reply and stop the
+        // page from treating it as a scroll; otherwise leave it alone so
+        // the message list keeps scrolling normally.
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        if (Math.abs(dx) <= Math.abs(dy)) { dragging = false; return; }
+        claimed = true;
+        el.classList.add('dragging');
+      }
+      ev.preventDefault();
       const clamped = Math.max(-70, Math.min(70, dx));
       el.style.transform = 'translateX(' + clamped + 'px)';
-    }, { passive: true });
+    }, { passive: false });
     el.addEventListener('touchend', () => {
       dragging = false;
+      el.classList.remove('dragging');
       el.style.transform = 'translateX(0px)';
-      if (Math.abs(dx) > 50) setReplyTarget(message, senderName);
+      if (claimed && Math.abs(dx) > 50) setReplyTarget(message, senderName);
       dx = 0;
     });
   }
