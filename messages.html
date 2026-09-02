@@ -12,7 +12,7 @@
   .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
   .tab-btn {
     flex: 1; background: #f3f4f6; border: none; border-radius: 8px; padding: 10px;
-    font-weight: bold; font-size: 13px; color: #6b7280; cursor: pointer;
+    font-weight: bold; font-size: 12px; color: #6b7280; cursor: pointer;
   }
   .tab-btn.active { background: #2563eb; color: #fff; }
   .pane { display: none; }
@@ -20,37 +20,90 @@
 
   .chat-item {
     display: flex; gap: 10px; align-items: center; border: 1px solid #e5e7eb;
-    border-radius: 8px; padding: 12px; margin-bottom: 10px; cursor: pointer;
+    border-radius: 8px; padding: 12px; margin-bottom: 10px; cursor: pointer; position: relative;
   }
   .chat-item:hover { border-color: #2563eb; }
+  .chat-avatar-wrap { position: relative; flex-shrink: 0; }
+  .online-dot {
+    position: absolute; bottom: 0; right: 0; width: 11px; height: 11px; border-radius: 50%;
+    background: #16a34a; border: 2px solid #fff;
+  }
   .chat-main { min-width: 0; flex: 1; }
   .chat-name { font-weight: bold; font-size: 14px; color: #111827; }
   .chat-preview { font-size: 12px; color: #6b7280; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-preview.typing-preview { color: #16a34a; font-style: italic; }
   .chat-when { font-size: 11px; color: #9ca3af; flex-shrink: 0; }
+  .unread-dot { width: 9px; height: 9px; border-radius: 50%; background: #2563eb; flex-shrink: 0; }
+  .group-avatar {
+    width: 40px; height: 40px; border-radius: 50%; background: #6b7280; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;
+  }
 
   #searchInput { margin-bottom: 12px; }
   .empty-note { font-size: 13px; color: #6b7280; text-align: center; padding: 24px 0; }
   .loading-note { font-size: 12px; color: #6b7280; margin: 10px 0; }
 
+  .nurse-pick { display: flex; align-items: center; gap: 10px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+  .nurse-pick.picked { border-color: #2563eb; background: #eff6ff; }
+  .nurse-pick input { flex-shrink: 0; width: 18px; height: 18px; }
+  #groupNameInput { margin-bottom: 12px; }
+
   /* Thread view */
   #threadView { display: none; }
   #threadView.active { display: flex; flex-direction: column; height: calc(100vh - 130px); }
-  .thread-head { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid #e5e7eb; margin-bottom: 12px; }
+  .thread-head { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid #e5e7eb; margin-bottom: 10px; }
+  .thread-head-info { min-width: 0; }
   .thread-head-name { font-weight: bold; font-size: 15px; }
+  .thread-head-status { font-size: 11px; color: #9ca3af; }
+  .thread-head-status.online { color: #16a34a; font-weight: bold; }
+  .thread-head-status.typing { color: #16a34a; font-style: italic; }
   .thread-back { background: none; border: none; font-size: 18px; cursor: pointer; color: #2563eb; padding: 0 6px 0 0; }
-  .thread-msgs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; }
-  .msg-row { display: flex; }
+  .thread-msgs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding: 4px 2px; }
+
+  .msg-row { display: flex; touch-action: pan-y; }
   .msg-row.mine { justify-content: flex-end; }
+  .msg-bubble-wrap { max-width: 78%; position: relative; transition: transform .15s ease; }
+  .msg-sender-name { font-size: 11px; font-weight: bold; color: #7c3aed; margin: 4px 2px 1px; }
   .msg-bubble {
-    max-width: 78%; padding: 8px 12px; border-radius: 14px; font-size: 14px;
+    padding: 8px 12px; border-radius: 14px; font-size: 14px;
     white-space: pre-wrap; word-break: break-word; position: relative;
   }
   .msg-row.mine .msg-bubble { background: #2563eb; color: #fff; border-bottom-right-radius: 4px; }
   .msg-row:not(.mine) .msg-bubble { background: #f3f4f6; color: #111827; border-bottom-left-radius: 4px; }
-  .msg-meta { font-size: 10px; opacity: .75; margin-top: 3px; display: flex; gap: 8px; }
+  .msg-reply-quote {
+    border-left: 3px solid rgba(0,0,0,.25); padding: 3px 8px; margin-bottom: 5px;
+    font-size: 12px; border-radius: 4px; opacity: .85;
+  }
+  .msg-row.mine .msg-reply-quote { background: rgba(255,255,255,.15); border-left-color: rgba(255,255,255,.6); }
+  .msg-row:not(.mine) .msg-reply-quote { background: rgba(0,0,0,.04); }
+  .msg-reply-quote .rq-name { font-weight: bold; display: block; }
+  .msg-img { max-width: 100%; border-radius: 10px; display: block; margin-bottom: 4px; cursor: pointer; }
+  .msg-meta { font-size: 10px; opacity: .75; margin-top: 3px; display: flex; gap: 8px; align-items: center; }
   .msg-meta button { background: none; border: none; padding: 0; font-size: 10px; font-weight: bold; cursor: pointer; color: inherit; opacity: .8; }
-  .thread-compose { display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid #e5e7eb; }
-  .thread-compose input { flex: 1; }
+  .msg-ticks { font-size: 12px; }
+  .msg-ticks.read { color: #60a5fa; }
+  .msg-row:not(.mine) .msg-ticks { display: none; }
+
+  .msg-actions-row { display: flex; gap: 10px; margin-top: 2px; }
+  .msg-actions-row button { background: none; border: none; font-size: 10px; font-weight: bold; color: #9ca3af; cursor: pointer; padding: 0; }
+  .msg-actions-row button:hover { color: #2563eb; }
+
+  .reaction-picker { display: none; gap: 4px; background: #fff; border: 1px solid #e5e7eb; border-radius: 20px; padding: 4px 8px; box-shadow: 0 2px 8px rgba(0,0,0,.12); position: absolute; top: -38px; z-index: 5; }
+  .msg-row.mine .reaction-picker { right: 0; }
+  .reaction-picker.open { display: flex; }
+  .reaction-picker span { cursor: pointer; font-size: 17px; }
+  .reaction-chips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
+  .reaction-chip { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 1px 6px; font-size: 11px; cursor: pointer; }
+  .reaction-chip.mine { border-color: #2563eb; background: #eff6ff; }
+
+  .reply-preview { display: flex; align-items: center; gap: 8px; background: #f3f4f6; border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; font-size: 12px; }
+  .reply-preview .rp-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .reply-preview button { background: none; border: none; font-size: 16px; cursor: pointer; color: #6b7280; }
+
+  .thread-compose { display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid #e5e7eb; align-items: center; }
+  .thread-compose input[type="text"] { flex: 1; }
+  .attach-btn { background: none; border: none; font-size: 20px; cursor: pointer; flex-shrink: 0; padding: 4px; }
+  .upload-note { font-size: 11px; color: #6b7280; margin-bottom: 6px; }
 </style>
 </head>
 <body>
@@ -67,13 +120,14 @@
     <div class="tabs">
       <button class="tab-btn active" data-tab="chats">Chats</button>
       <button class="tab-btn" data-tab="directory">New Message</button>
+      <button class="tab-btn" data-tab="newgroup">New Group</button>
     </div>
 
     <div class="pane active" id="pane-chats">
       <div class="loading-note" id="chatsLoading">Loading…</div>
       <div id="chatsList"></div>
       <div class="empty-note" id="chatsEmpty" style="display:none;">
-        No conversations yet. Start one from "New Message".
+        No conversations yet. Start one from "New Message" or "New Group".
       </div>
     </div>
 
@@ -83,16 +137,29 @@
       <div id="dirList"></div>
       <div class="empty-note" id="dirEmpty" style="display:none;">No matches.</div>
     </div>
+
+    <div class="pane" id="pane-newgroup">
+      <input type="text" id="groupNameInput" placeholder="Group name…">
+      <div style="font-size:12px;color:#6b7280;margin-bottom:8px;">Select members:</div>
+      <div id="groupPickList"></div>
+      <button class="btn btn-primary" id="createGroupBtn" style="width:100%;padding:10px;margin-top:8px;">Create Group</button>
+    </div>
   </div>
 
   <div class="card-box" id="threadView">
     <div class="thread-head">
       <button class="thread-back" id="threadBackBtn">&larr;</button>
       <div id="threadHeadAvatar"></div>
-      <div class="thread-head-name" id="threadHeadName"></div>
+      <div class="thread-head-info">
+        <div class="thread-head-name" id="threadHeadName"></div>
+        <div class="thread-head-status" id="threadHeadStatus"></div>
+      </div>
     </div>
     <div class="thread-msgs" id="threadMsgs"></div>
+    <div id="replyPreviewWrap"></div>
+    <input type="file" id="imageInput" accept="image/*" style="display:none;">
     <div class="thread-compose">
+      <button class="attach-btn" id="attachBtn" title="Attach image">&#128206;</button>
       <input type="text" id="msgInput" placeholder="Type a message…">
       <button class="btn btn-primary" id="sendBtn" style="padding:10px 16px;">Send</button>
     </div>
@@ -101,31 +168,47 @@
 
 <script type="module">
   import { requireAuth } from "./js/auth-guard.js";
-  import { db } from "./js/firebase.js";
+  import { db, storage } from "./js/firebase.js";
   import { avatarMarkup } from "./js/avatar.js";
   import {
     collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc,
     serverTimestamp, orderBy, query, where, onSnapshot
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import {
+    ref, uploadBytes, getDownloadURL
+  } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
+
+  const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+  const ONLINE_WINDOW_MS = 2 * 60 * 1000; // "online" = active in the last 2 minutes
+  const TYPING_IDLE_MS = 3000;
 
   let currentUid = null;
   let currentProfile = null;
   let allNurses = [];
+  let nurseByUid = {};
+  let selectedGroupUids = new Set();
+
   let unsubMessages = null;
+  let unsubConvo = null;
+  let unsubTyping = null;
   let activeConvoId = null;
-  let activeOtherUid = null;
+  let activeConvo = null;
+  let replyingTo = null;
+  let typingTimeout = null;
+  let iAmTyping = false;
+  let lastRenderedMsgs = null;
 
   requireAuth((user, profile) => {
     currentUid = user.uid;
     currentProfile = profile;
-    loadChats();
-    loadDirectory();
+    loadDirectory().then(() => { loadChats(); populateGroupPicker(); });
+    startHeartbeat();
   });
 
+  // ---------- helpers ----------
   function escapeHtml(s) {
     return (s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   }
-
   function fmtWhen(ts) {
     if (!ts || typeof ts.toDate !== 'function') return '';
     const d = ts.toDate();
@@ -133,10 +216,33 @@
     const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     return dateStr + ', ' + timeStr;
   }
-
+  function fmtTime(ts) {
+    if (!ts || typeof ts.toDate !== 'function') return '';
+    return ts.toDate().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  }
   function convoIdFor(uidA, uidB) {
     const [a, b] = [uidA, uidB].sort();
     return 'dm_' + a + '_' + b;
+  }
+  function groupAvatarHtml(size = 40) {
+    return '<div class="group-avatar" style="width:' + size + 'px;height:' + size + 'px;">&#128101;</div>';
+  }
+  function isRecentlyActive(lastActive) {
+    if (!lastActive || typeof lastActive.toMillis !== 'function') return false;
+    return (Date.now() - lastActive.toMillis()) < ONLINE_WINDOW_MS;
+  }
+
+  // ---------- heartbeat (online/last-seen) ----------
+  function pingActive() {
+    if (!currentUid) return;
+    updateDoc(doc(db, 'users', currentUid), { lastActive: serverTimestamp() }).catch(() => {});
+  }
+  function startHeartbeat() {
+    pingActive();
+    setInterval(pingActive, 60000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') pingActive();
+    });
   }
 
   // ---------- Tabs ----------
@@ -147,6 +253,124 @@
       btn.classList.add('active');
       document.getElementById('pane-' + btn.dataset.tab).classList.add('active');
     });
+  });
+
+  // ---------- Directory ----------
+  async function loadDirectory() {
+    const loadingEl = document.getElementById('dirLoading');
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      allNurses = [];
+      nurseByUid = {};
+      snap.forEach(d => {
+        const n = { uid: d.id, ...d.data() };
+        nurseByUid[d.id] = n;
+        if (d.id !== currentUid) allNurses.push(n);
+      });
+    } catch (e) {
+      loadingEl.textContent = "Couldn't load directory: " + (e.code || e.message || 'unknown error');
+      return;
+    }
+    loadingEl.style.display = 'none';
+    renderDirectory(allNurses);
+  }
+
+  function renderDirectory(list) {
+    const listEl = document.getElementById('dirList');
+    const emptyEl = document.getElementById('dirEmpty');
+    listEl.innerHTML = '';
+    if (list.length === 0) { emptyEl.style.display = 'block'; return; }
+    emptyEl.style.display = 'none';
+    list.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).forEach(n => {
+      const item = document.createElement('div');
+      item.className = 'chat-item';
+      const online = isRecentlyActive(n.lastActive);
+      item.innerHTML =
+        '<div class="chat-avatar-wrap">' + avatarMarkup(n, 40) + (online ? '<div class="online-dot"></div>' : '') + '</div>' +
+        '<div class="chat-main">' +
+          '<div class="chat-name">' + escapeHtml(n.name || 'Unnamed') + '</div>' +
+          '<div class="chat-preview">' + escapeHtml(n.role || '') + (n.department ? ' · ' + escapeHtml(n.department) : '') + '</div>' +
+        '</div>';
+      item.addEventListener('click', () => startChat(n));
+      listEl.appendChild(item);
+    });
+  }
+
+  document.getElementById('searchInput').addEventListener('input', (ev) => {
+    const term = ev.target.value.trim().toLowerCase();
+    renderDirectory(term ? allNurses.filter(n => (n.name || '').toLowerCase().includes(term)) : allNurses);
+  });
+
+  async function startChat(nurse) {
+    const convoId = convoIdFor(currentUid, nurse.uid);
+    try {
+      const convoRef = doc(db, 'conversations', convoId);
+      const existing = await getDoc(convoRef);
+      if (!existing.exists()) {
+        await setDoc(convoRef, {
+          type: 'dm',
+          participants: [currentUid, nurse.uid],
+          participantNames: { [currentUid]: currentProfile.name || 'Unknown', [nurse.uid]: nurse.name || 'Unknown' },
+          participantGenders: { [currentUid]: currentProfile.gender || null, [nurse.uid]: nurse.gender || null },
+          createdBy: currentUid,
+          createdAt: serverTimestamp(),
+          lastMessageText: '', lastMessageAt: serverTimestamp(), lastMessageSenderUid: null,
+          readBy: {}
+        });
+      }
+      openThread(convoId);
+    } catch (e) {
+      alert("Couldn't start chat: " + (e.code || e.message || 'unknown error'));
+    }
+  }
+
+  // ---------- New Group ----------
+  function populateGroupPicker() {
+    const listEl = document.getElementById('groupPickList');
+    listEl.innerHTML = '';
+    allNurses.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).forEach(n => {
+      const row = document.createElement('label');
+      row.className = 'nurse-pick';
+      row.innerHTML = '<input type="checkbox" value="' + n.uid + '">' +
+        avatarMarkup(n, 32) +
+        '<span>' + escapeHtml(n.name || 'Unnamed') + '</span>';
+      const cb = row.querySelector('input');
+      cb.addEventListener('change', () => {
+        if (cb.checked) selectedGroupUids.add(n.uid); else selectedGroupUids.delete(n.uid);
+        row.classList.toggle('picked', cb.checked);
+      });
+      listEl.appendChild(row);
+    });
+  }
+
+  document.getElementById('createGroupBtn').addEventListener('click', async () => {
+    const name = document.getElementById('groupNameInput').value.trim();
+    if (!name) { alert('Give the group a name.'); return; }
+    if (selectedGroupUids.size < 1) { alert('Pick at least one other nurse.'); return; }
+    const participants = [currentUid, ...Array.from(selectedGroupUids)];
+    const participantNames = { [currentUid]: currentProfile.name || 'Unknown' };
+    const participantGenders = { [currentUid]: currentProfile.gender || null };
+    participants.forEach(uid => {
+      const n = nurseByUid[uid];
+      if (n) { participantNames[uid] = n.name || 'Unknown'; participantGenders[uid] = n.gender || null; }
+    });
+    try {
+      const convoRef = await addDoc(collection(db, 'conversations'), {
+        type: 'group',
+        groupName: name,
+        participants, participantNames, participantGenders,
+        createdBy: currentUid,
+        createdAt: serverTimestamp(),
+        lastMessageText: '', lastMessageAt: serverTimestamp(), lastMessageSenderUid: null,
+        readBy: {}
+      });
+      document.getElementById('groupNameInput').value = '';
+      selectedGroupUids.clear();
+      populateGroupPicker();
+      openThread(convoRef.id);
+    } catch (e) {
+      alert("Couldn't create group: " + (e.code || e.message || 'unknown error'));
+    }
   });
 
   // ---------- Chats list ----------
@@ -174,184 +398,383 @@
       return bt - at;
     });
 
-    if (convos.length === 0) {
-      emptyEl.style.display = 'block';
-      return;
-    }
+    if (convos.length === 0) { emptyEl.style.display = 'block'; return; }
 
     convos.forEach(c => {
-      const otherUid = (c.participants || []).find(u => u !== currentUid);
-      const otherName = (c.participantNames && c.participantNames[otherUid]) || 'Unknown';
-      const otherGender = (c.participantGenders && c.participantGenders[otherUid]) || null;
+      const isGroup = c.type === 'group';
+      const otherUid = isGroup ? null : (c.participants || []).find(u => u !== currentUid);
+      const title = isGroup ? (c.groupName || 'Group') : ((c.participantNames && c.participantNames[otherUid]) || 'Unknown');
+      const otherGender = isGroup ? null : (c.participantGenders && c.participantGenders[otherUid]) || null;
+      const otherNurse = otherUid ? nurseByUid[otherUid] : null;
+      const online = !isGroup && otherNurse && isRecentlyActive(otherNurse.lastActive);
+
+      const readTs = c.readBy && c.readBy[currentUid];
+      const lastTs = c.lastMessageAt && c.lastMessageAt.toMillis ? c.lastMessageAt.toMillis() : 0;
+      const readMs = readTs && readTs.toMillis ? readTs.toMillis() : 0;
+      const unread = c.lastMessageSenderUid && c.lastMessageSenderUid !== currentUid && lastTs > readMs;
+
       const item = document.createElement('div');
       item.className = 'chat-item';
       item.innerHTML =
-        avatarMarkup({ name: otherName, gender: otherGender }, 40) +
-        '<div class="chat-main">' +
-          '<div class="chat-name">' + escapeHtml(otherName) + '</div>' +
-          '<div class="chat-preview">' + escapeHtml(c.lastMessageText || '') + '</div>' +
+        '<div class="chat-avatar-wrap">' +
+          (isGroup ? groupAvatarHtml(40) : avatarMarkup({ name: title, gender: otherGender }, 40)) +
+          (online ? '<div class="online-dot"></div>' : '') +
         '</div>' +
-        '<div class="chat-when">' + fmtWhen(c.lastMessageAt) + '</div>';
-      item.addEventListener('click', () => openThread(c.id, otherUid, otherName, otherGender));
-      listEl.appendChild(item);
-    });
-  }
-
-  // ---------- Directory ----------
-  async function loadDirectory() {
-    const loadingEl = document.getElementById('dirLoading');
-    try {
-      const snap = await getDocs(collection(db, 'users'));
-      allNurses = [];
-      snap.forEach(d => {
-        if (d.id === currentUid) return;
-        allNurses.push({ uid: d.id, ...d.data() });
-      });
-    } catch (e) {
-      loadingEl.textContent = "Couldn't load directory: " + (e.code || e.message || 'unknown error');
-      return;
-    }
-    loadingEl.style.display = 'none';
-    renderDirectory(allNurses);
-  }
-
-  function renderDirectory(list) {
-    const listEl = document.getElementById('dirList');
-    const emptyEl = document.getElementById('dirEmpty');
-    listEl.innerHTML = '';
-    if (list.length === 0) {
-      emptyEl.style.display = 'block';
-      return;
-    }
-    emptyEl.style.display = 'none';
-    list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-    list.forEach(n => {
-      const item = document.createElement('div');
-      item.className = 'chat-item';
-      item.innerHTML =
-        avatarMarkup(n, 40) +
         '<div class="chat-main">' +
-          '<div class="chat-name">' + escapeHtml(n.name || 'Unnamed') + '</div>' +
-          '<div class="chat-preview">' + escapeHtml(n.role || '') + (n.department ? ' · ' + escapeHtml(n.department) : '') + '</div>' +
+          '<div class="chat-name">' + escapeHtml(title) + '</div>' +
+          '<div class="chat-preview">' + escapeHtml(c.lastMessageText || 'No messages yet') + '</div>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;">' +
+          '<div class="chat-when">' + fmtWhen(c.lastMessageAt) + '</div>' +
+          (unread ? '<div class="unread-dot"></div>' : '') +
         '</div>';
-      item.addEventListener('click', () => startChat(n));
+      item.addEventListener('click', () => openThread(c.id));
       listEl.appendChild(item);
     });
-  }
-
-  document.getElementById('searchInput').addEventListener('input', (ev) => {
-    const term = ev.target.value.trim().toLowerCase();
-    const filtered = term ? allNurses.filter(n => (n.name || '').toLowerCase().includes(term)) : allNurses;
-    renderDirectory(filtered);
-  });
-
-  async function startChat(nurse) {
-    const convoId = convoIdFor(currentUid, nurse.uid);
-    try {
-      const convoRef = doc(db, 'conversations', convoId);
-      const existing = await getDoc(convoRef);
-      if (!existing.exists()) {
-        await setDoc(convoRef, {
-          participants: [currentUid, nurse.uid],
-          participantNames: {
-            [currentUid]: currentProfile.name || 'Unknown',
-            [nurse.uid]: nurse.name || 'Unknown'
-          },
-          participantGenders: {
-            [currentUid]: currentProfile.gender || null,
-            [nurse.uid]: nurse.gender || null
-          },
-          createdAt: serverTimestamp(),
-          lastMessageText: '',
-          lastMessageAt: serverTimestamp()
-        });
-      }
-      openThread(convoId, nurse.uid, nurse.name || 'Unknown', nurse.gender || null);
-    } catch (e) {
-      alert("Couldn't start chat: " + (e.code || e.message || 'unknown error'));
-    }
   }
 
   // ---------- Thread ----------
-  function openThread(convoId, otherUid, otherName, otherGender) {
+  function openThread(convoId) {
     activeConvoId = convoId;
-    activeOtherUid = otherUid;
+    replyingTo = null;
+    renderReplyPreview();
     document.getElementById('listCard').style.display = 'none';
     document.getElementById('threadView').classList.add('active');
-    document.getElementById('threadHeadAvatar').innerHTML = avatarMarkup({ name: otherName, gender: otherGender }, 32);
-    document.getElementById('threadHeadName').textContent = otherName;
     document.getElementById('threadMsgs').innerHTML = '<div class="loading-note">Loading…</div>';
 
-    if (unsubMessages) { unsubMessages(); unsubMessages = null; }
+    cleanupListeners();
+
+    unsubConvo = onSnapshot(doc(db, 'conversations', convoId), (snap) => {
+      if (!snap.exists()) return;
+      activeConvo = { id: snap.id, ...snap.data() };
+      renderThreadHeader();
+      markRead();
+      if (lastRenderedMsgs) renderMessages(lastRenderedMsgs);
+    });
+
     const msgsQuery = query(collection(db, 'conversations', convoId, 'messages'), orderBy('createdAt', 'asc'));
     unsubMessages = onSnapshot(msgsQuery, (snap) => {
       const msgs = [];
       snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+      lastRenderedMsgs = msgs;
       renderMessages(msgs);
     }, (e) => {
       document.getElementById('threadMsgs').innerHTML = '<div class="loading-note">Couldn\'t load: ' + escapeHtml(e.code || e.message || '') + '</div>';
     });
+
+    const typingQuery = collection(db, 'conversations', convoId, 'typing');
+    unsubTyping = onSnapshot(typingQuery, (snap) => {
+      const typers = [];
+      snap.forEach(d => {
+        if (d.id === currentUid) return;
+        const data = d.data();
+        if (data.typing && data.updatedAt && Date.now() - data.updatedAt.toMillis() < TYPING_IDLE_MS + 2000) {
+          typers.push(nurseByUid[d.id] ? nurseByUid[d.id].name : 'Someone');
+        }
+      });
+      renderThreadHeader(typers);
+    });
+  }
+
+  function cleanupListeners() {
+    if (unsubMessages) { unsubMessages(); unsubMessages = null; }
+    if (unsubConvo) { unsubConvo(); unsubConvo = null; }
+    if (unsubTyping) { unsubTyping(); unsubTyping = null; }
+    lastRenderedMsgs = null;
   }
 
   function closeThread() {
-    if (unsubMessages) { unsubMessages(); unsubMessages = null; }
+    cleanupListeners();
+    clearTypingFlag();
     activeConvoId = null;
-    activeOtherUid = null;
+    activeConvo = null;
+    replyingTo = null;
     document.getElementById('threadView').classList.remove('active');
     document.getElementById('listCard').style.display = 'block';
     loadChats();
   }
   document.getElementById('threadBackBtn').addEventListener('click', closeThread);
 
+  function renderThreadHeader(typers) {
+    if (!activeConvo) return;
+    const isGroup = activeConvo.type === 'group';
+    const statusEl = document.getElementById('threadHeadStatus');
+    document.getElementById('threadHeadName').textContent = isGroup
+      ? (activeConvo.groupName || 'Group')
+      : ((activeConvo.participantNames && activeConvo.participantNames[otherUidOf(activeConvo)]) || 'Unknown');
+
+    if (isGroup) {
+      document.getElementById('threadHeadAvatar').innerHTML = groupAvatarHtml(32);
+      statusEl.className = 'thread-head-status';
+      statusEl.textContent = (activeConvo.participants || []).length + ' members';
+    } else {
+      const otherUid = otherUidOf(activeConvo);
+      const otherGender = activeConvo.participantGenders && activeConvo.participantGenders[otherUid];
+      document.getElementById('threadHeadAvatar').innerHTML = avatarMarkup({ name: '', gender: otherGender }, 32);
+      const otherNurse = nurseByUid[otherUid];
+      const online = otherNurse && isRecentlyActive(otherNurse.lastActive);
+      statusEl.className = 'thread-head-status' + (online ? ' online' : '');
+      statusEl.textContent = online ? 'Online' : (otherNurse && otherNurse.lastActive ? 'Last seen ' + fmtWhen(otherNurse.lastActive) : '');
+    }
+
+    if (typers && typers.length) {
+      statusEl.className = 'thread-head-status typing';
+      statusEl.textContent = typers.join(', ') + (typers.length > 1 ? ' are typing…' : ' is typing…');
+    }
+  }
+
+  function otherUidOf(convo) {
+    return (convo.participants || []).find(u => u !== currentUid);
+  }
+
+  async function markRead() {
+    if (!activeConvoId || !currentUid) return;
+    try {
+      await updateDoc(doc(db, 'conversations', activeConvoId), { ['readBy.' + currentUid]: serverTimestamp() });
+    } catch (e) { /* non-fatal */ }
+  }
+
   function renderMessages(msgs) {
     const wrap = document.getElementById('threadMsgs');
+    const wasAtBottom = wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 30;
     wrap.innerHTML = '';
+    const isGroup = activeConvo && activeConvo.type === 'group';
+    const otherParticipants = activeConvo ? (activeConvo.participants || []).filter(u => u !== currentUid) : [];
+
     msgs.forEach(m => {
       const isMine = m.senderUid === currentUid;
       const row = document.createElement('div');
       row.className = 'msg-row' + (isMine ? ' mine' : '');
-      row.innerHTML =
-        '<div>' +
-          '<div class="msg-bubble">' + escapeHtml(m.text) +
-            '<div class="msg-meta"><span>' + fmtWhen(m.createdAt) + (m.editedAt ? ' · edited' : '') + '</span>' +
-              (isMine ? '<button data-a="edit">Edit</button><button data-a="delete">Delete</button>' : '') +
-            '</div>' +
-          '</div>' +
+
+      let readByAll = false;
+      if (isMine && activeConvo && activeConvo.readBy) {
+        readByAll = otherParticipants.length > 0 && otherParticipants.every(uid => {
+          const rt = activeConvo.readBy[uid];
+          const rms = rt && rt.toMillis ? rt.toMillis() : 0;
+          const mms = m.createdAt && m.createdAt.toMillis ? m.createdAt.toMillis() : Infinity;
+          return rms >= mms;
+        });
+      }
+
+      const senderName = (m.senderUid && nurseByUid[m.senderUid] && nurseByUid[m.senderUid].name) ||
+        (activeConvo && activeConvo.participantNames && activeConvo.participantNames[m.senderUid]) || '';
+
+      let html = '<div class="msg-bubble-wrap">';
+      if (isGroup && !isMine) html += '<div class="msg-sender-name">' + escapeHtml(senderName) + '</div>';
+      html += '<div class="reaction-picker">' + REACTION_EMOJIS.map(e => '<span data-e="' + e + '">' + e + '</span>').join('') + '</div>';
+      html += '<div class="msg-bubble">';
+      if (m.replyTo) {
+        html += '<div class="msg-reply-quote"><span class="rq-name">' + escapeHtml(m.replyTo.senderName || '') + '</span>' + escapeHtml(m.replyTo.text || '') + '</div>';
+      }
+      if (m.imageUrl) {
+        html += '<img class="msg-img" src="' + m.imageUrl + '" data-full="' + m.imageUrl + '">';
+      }
+      if (m.text) html += escapeHtml(m.text);
+      html += '<div class="msg-meta"><span>' + fmtTime(m.createdAt) + (m.editedAt ? ' · edited' : '') + '</span>' +
+        (isMine ? '<span class="msg-ticks' + (readByAll ? ' read' : '') + '">&#10003;&#10003;</span>' : '') +
         '</div>';
-      if (isMine) {
-        row.querySelector('[data-a="delete"]').addEventListener('click', () => deleteMessage(m.id));
+      html += '</div>';
+
+      const reactions = m.reactions || {};
+      const chipEntries = Object.keys(reactions).filter(e => (reactions[e] || []).length > 0);
+      if (chipEntries.length) {
+        html += '<div class="reaction-chips">' + chipEntries.map(e => {
+          const uids = reactions[e] || [];
+          const mine = uids.includes(currentUid);
+          return '<span class="reaction-chip' + (mine ? ' mine' : '') + '" data-e="' + e + '">' + e + ' ' + uids.length + '</span>';
+        }).join('') + '</div>';
+      }
+
+      html += '<div class="msg-actions-row">' +
+        '<button data-a="react">React</button>' +
+        '<button data-a="reply">Reply</button>' +
+        (isMine && m.text ? '<button data-a="edit">Edit</button>' : '') +
+        (isMine ? '<button data-a="delete">Delete</button>' : '') +
+        '</div>';
+      html += '</div>';
+      row.innerHTML = html;
+
+      const bubbleWrap = row.querySelector('.msg-bubble-wrap');
+      const picker = row.querySelector('.reaction-picker');
+
+      row.querySelector('[data-a="react"]').addEventListener('click', () => {
+        document.querySelectorAll('.reaction-picker.open').forEach(p => { if (p !== picker) p.classList.remove('open'); });
+        picker.classList.toggle('open');
+      });
+      picker.querySelectorAll('span').forEach(span => {
+        span.addEventListener('click', () => { toggleReaction(m, span.dataset.e); picker.classList.remove('open'); });
+      });
+      row.querySelectorAll('.reaction-chip').forEach(chip => {
+        chip.addEventListener('click', () => toggleReaction(m, chip.dataset.e));
+      });
+      row.querySelector('[data-a="reply"]').addEventListener('click', () => setReplyTarget(m, senderName));
+      if (isMine && m.text) {
         row.querySelector('[data-a="edit"]').addEventListener('click', () => editMessage(m.id, m.text));
       }
+      if (isMine) {
+        row.querySelector('[data-a="delete"]').addEventListener('click', () => deleteMessage(m.id));
+      }
+      const img = row.querySelector('.msg-img');
+      if (img) img.addEventListener('click', () => window.open(img.dataset.full, '_blank'));
+
+      attachSwipeToReply(bubbleWrap, m, senderName);
+
       wrap.appendChild(row);
     });
-    wrap.scrollTop = wrap.scrollHeight;
+
+    if (wasAtBottom || msgs.length <= 1) wrap.scrollTop = wrap.scrollHeight;
   }
 
-  document.getElementById('sendBtn').addEventListener('click', sendMessage);
-  document.getElementById('msgInput').addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter') sendMessage();
+  // ---------- swipe-to-reply ----------
+  function attachSwipeToReply(el, message, senderName) {
+    let startX = 0, dx = 0, dragging = false;
+    el.addEventListener('touchstart', (ev) => {
+      startX = ev.touches[0].clientX;
+      dragging = true;
+    }, { passive: true });
+    el.addEventListener('touchmove', (ev) => {
+      if (!dragging) return;
+      dx = ev.touches[0].clientX - startX;
+      const clamped = Math.max(-70, Math.min(70, dx));
+      el.style.transform = 'translateX(' + clamped + 'px)';
+    }, { passive: true });
+    el.addEventListener('touchend', () => {
+      dragging = false;
+      el.style.transform = 'translateX(0px)';
+      if (Math.abs(dx) > 50) setReplyTarget(message, senderName);
+      dx = 0;
+    });
+  }
+
+  function setReplyTarget(message, senderName) {
+    replyingTo = {
+      messageId: message.id,
+      senderName: senderName || (message.senderUid === currentUid ? 'You' : 'Nurse'),
+      text: message.text || (message.imageUrl ? '📷 Photo' : '')
+    };
+    renderReplyPreview();
+    document.getElementById('msgInput').focus();
+  }
+
+  function renderReplyPreview() {
+    const wrap = document.getElementById('replyPreviewWrap');
+    wrap.innerHTML = '';
+    if (!replyingTo) return;
+    const bar = document.createElement('div');
+    bar.className = 'reply-preview';
+    bar.innerHTML = '<div class="rp-text"><b>' + escapeHtml(replyingTo.senderName) + ':</b> ' + escapeHtml(replyingTo.text) + '</div><button>&times;</button>';
+    bar.querySelector('button').addEventListener('click', () => { replyingTo = null; renderReplyPreview(); });
+    wrap.appendChild(bar);
+  }
+
+  // ---------- reactions ----------
+  async function toggleReaction(message, emoji) {
+    const reactions = JSON.parse(JSON.stringify(message.reactions || {}));
+    let hadThisEmoji = false;
+    Object.keys(reactions).forEach(e => {
+      const idx = (reactions[e] || []).indexOf(currentUid);
+      if (idx !== -1) {
+        if (e === emoji) hadThisEmoji = true;
+        reactions[e].splice(idx, 1);
+      }
+    });
+    if (!hadThisEmoji) {
+      reactions[emoji] = reactions[emoji] || [];
+      reactions[emoji].push(currentUid);
+    }
+    try {
+      await updateDoc(doc(db, 'conversations', activeConvoId, 'messages', message.id), { reactions });
+    } catch (e) {
+      alert("Couldn't react: " + (e.code || e.message || 'unknown error'));
+    }
+  }
+
+  // ---------- typing ----------
+  document.getElementById('msgInput').addEventListener('input', () => {
+    if (!activeConvoId) return;
+    if (!iAmTyping) {
+      iAmTyping = true;
+      setDoc(doc(db, 'conversations', activeConvoId, 'typing', currentUid), { typing: true, updatedAt: serverTimestamp() }).catch(() => {});
+    }
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(clearTypingFlag, TYPING_IDLE_MS);
   });
+
+  function clearTypingFlag() {
+    if (!iAmTyping || !activeConvoId) { iAmTyping = false; return; }
+    iAmTyping = false;
+    setDoc(doc(db, 'conversations', activeConvoId, 'typing', currentUid), { typing: false, updatedAt: serverTimestamp() }).catch(() => {});
+  }
+
+  // ---------- send / edit / delete ----------
+  document.getElementById('sendBtn').addEventListener('click', sendMessage);
+  document.getElementById('msgInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') sendMessage(); });
 
   async function sendMessage() {
     const input = document.getElementById('msgInput');
     const text = input.value.trim();
     if (!text || !activeConvoId) return;
     input.value = '';
+    clearTypingFlag();
+    const replySnapshot = replyingTo;
+    replyingTo = null;
+    renderReplyPreview();
     try {
       await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
-        senderUid: currentUid,
-        text,
-        createdAt: serverTimestamp(),
-        editedAt: null
+        senderUid: currentUid, text,
+        replyTo: replySnapshot || null,
+        reactions: {},
+        createdAt: serverTimestamp(), editedAt: null
       });
       await updateDoc(doc(db, 'conversations', activeConvoId), {
-        lastMessageText: text,
-        lastMessageAt: serverTimestamp()
+        lastMessageText: text, lastMessageAt: serverTimestamp(), lastMessageSenderUid: currentUid
       });
     } catch (e) {
       alert("Couldn't send: " + (e.code || e.message || 'unknown error'));
     }
   }
+
+  document.getElementById('attachBtn').addEventListener('click', () => document.getElementById('imageInput').click());
+  document.getElementById('imageInput').addEventListener('change', async (ev) => {
+    const file = ev.target.files[0];
+    ev.target.value = '';
+    if (!file || !activeConvoId) return;
+    if (!file.type.startsWith('image/')) { alert('Only images can be attached.'); return; }
+    if (file.size > 10 * 1024 * 1024) { alert('Image is too large (max 10MB).'); return; }
+
+    const captionEl = document.getElementById('msgInput');
+    const caption = captionEl.value.trim();
+    captionEl.value = '';
+    const replySnapshot = replyingTo;
+    replyingTo = null;
+    renderReplyPreview();
+
+    const wrap = document.getElementById('threadMsgs');
+    const placeholder = document.createElement('div');
+    placeholder.className = 'loading-note';
+    placeholder.textContent = 'Uploading image…';
+    wrap.appendChild(placeholder);
+    wrap.scrollTop = wrap.scrollHeight;
+
+    try {
+      const path = 'chatUploads/' + activeConvoId + '/' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9_.-]/g, '_');
+      const fileRef = ref(storage, path);
+      await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(fileRef);
+      await addDoc(collection(db, 'conversations', activeConvoId, 'messages'), {
+        senderUid: currentUid, text: caption, imageUrl: url,
+        replyTo: replySnapshot || null,
+        reactions: {},
+        createdAt: serverTimestamp(), editedAt: null
+      });
+      await updateDoc(doc(db, 'conversations', activeConvoId), {
+        lastMessageText: caption ? caption : '📷 Photo', lastMessageAt: serverTimestamp(), lastMessageSenderUid: currentUid
+      });
+    } catch (e) {
+      alert("Couldn't upload image: " + (e.code || e.message || 'unknown error'));
+    }
+    placeholder.remove();
+  });
 
   async function deleteMessage(messageId) {
     if (!confirm('Delete this message?')) return;
@@ -368,10 +791,7 @@
     const trimmed = newText.trim();
     if (!trimmed) return;
     try {
-      await updateDoc(doc(db, 'conversations', activeConvoId, 'messages', messageId), {
-        text: trimmed,
-        editedAt: serverTimestamp()
-      });
+      await updateDoc(doc(db, 'conversations', activeConvoId, 'messages', messageId), { text: trimmed, editedAt: serverTimestamp() });
     } catch (e) {
       alert("Couldn't save: " + (e.code || e.message || 'unknown error'));
     }
