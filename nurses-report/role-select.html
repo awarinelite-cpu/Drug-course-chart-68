@@ -48,6 +48,12 @@
       <span class="title">WARD NURSE</span>
       <span class="desc">Submit and manage your own ward's 24-hour report.</span>
     </button>
+
+    <button class="role-card" id="analyticsBtn">
+      <span class="icon">📊</span>
+      <span class="title">ANALYTICS</span>
+      <span class="desc">Admission, Death, BID, C/S, Del, and Patient Demographics — daily, weekly, monthly, and yearly.</span>
+    </button>
   </div>
 </div>
 
@@ -114,6 +120,10 @@
 
   document.getElementById('wardNurseBtn').addEventListener('click', () => {
     window.location.href = 'ward-nurse.html';
+  });
+
+  document.getElementById('analyticsBtn').addEventListener('click', () => {
+    window.location.href = 'analytics.html';
   });
 </script>
 </body>
