@@ -22,8 +22,15 @@ export const auth = getAuth(app);
 // they reach the server; the SDK flushes that queue automatically as soon as
 // the connection comes back — no custom sync code needed. persistentMultipleTabManager
 // lets more than one open tab/window share the same local cache safely.
+// experimentalAutoDetectLongPolling: on mobile networks / carrier proxies that
+// throttle or block Firestore's WebChannel streaming connection, the SDK can
+// otherwise take a while to notice and fall back, which shows up as slow
+// message delivery and slow-to-appear updates. Auto-detection picks long
+// polling immediately when streaming looks unreliable, instead of retrying
+// streaming first.
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  experimentalAutoDetectLongPolling: true
 });
 
 export const storage = getStorage(app);
