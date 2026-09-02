@@ -29,6 +29,12 @@
   @media (min-width: 640px) { .pie-grid { grid-template-columns: 1fr 1fr; } }
   .loading-note { font-size: 12px; color: #6b7280; margin-top: 8px; }
   .empty-note { font-size: 13px; color: #6b7280; text-align: center; padding: 16px 0; }
+  /* Native date/week/month inputs (and the year <select>) are never shown
+     directly — each period-btn opens the matching one programmatically via
+     showPicker()/click() so tapping "Today" etc. brings up the OS/browser's
+     own picker UI instead of us building a custom calendar widget. Kept in
+     the DOM and focusable (not display:none) so those calls still work. */
+  .hidden-picker { position: absolute; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; }
 </style>
 </head>
 <body>
@@ -54,6 +60,10 @@
     </div>
     <div class="range-label" id="rangeLabel"></div>
     <div class="loading-note" id="loadingNote" style="display:none;">Loading…</div>
+    <input type="date" id="dayPicker" class="hidden-picker" aria-hidden="true" tabindex="-1">
+    <input type="week" id="weekPicker" class="hidden-picker" aria-hidden="true" tabindex="-1">
+    <input type="month" id="monthPicker" class="hidden-picker" aria-hidden="true" tabindex="-1">
+    <select id="yearPicker" class="hidden-picker" aria-hidden="true" tabindex="-1"></select>
   </div>
 
   <div class="card-box" id="summaryCard" style="display:none;">
@@ -154,15 +164,76 @@
 
   function pad(n) { return String(n).padStart(2, '0'); }
 
-  function computeRange(period) {
+  function daysInMonth(y, m) { // m is 1-based
+    return new Date(Date.UTC(y, m, 0)).getUTCDate();
+  }
+
+  function addDaysId(dateId, days) {
+    const [y, m, d] = dateId.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d + days));
+    return dt.getUTCFullYear() + '-' + pad(dt.getUTCMonth() + 1) + '-' + pad(dt.getUTCDate());
+  }
+
+  // Standard ISO-8601 week-number algorithm (Thursday-anchored) — used only
+  // to cap the week picker's max attribute at the current ISO week, so a
+  // user can't pick a week that hasn't started.
+  function isoWeekNumber(d) {
+    const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    const dayNum = (target.getUTCDay() + 6) % 7; // Monday=0..Sunday=6
+    target.setUTCDate(target.getUTCDate() - dayNum + 3); // nearest Thursday
+    const firstThursday = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
+    const firstThursdayDayNum = (firstThursday.getUTCDay() + 6) % 7;
+    firstThursday.setUTCDate(firstThursday.getUTCDate() - firstThursdayDayNum + 3);
+    return 1 + Math.round((target - firstThursday) / (7 * 24 * 3600 * 1000));
+  }
+
+  // period is one of 'today'/'week'/'month'/'year'. selection is whatever
+  // that period's picker last produced (see the change listeners below) —
+  // null until the user has picked something, in which case this falls
+  // back to the same "today/this week/this month/this year" defaults the
+  // page always used. Unlike the old version, startId/endId now span the
+  // FULL chosen period (all 7 days of the picked week, the whole picked
+  // month, Jan 1–Dec 31 of the picked year) rather than always ending at
+  // today — a past period is fully over, so its end date should be its own
+  // last day, not today's date. endId is still capped at todayId, since no
+  // ward can have filed a report for a date that hasn't happened yet.
+  function computeRange(period, selection) {
     const todayId = reportDateId();
-    const [ty, tm] = todayId.split('-').map(Number);
-    let startId;
-    if (period === 'today') startId = todayId;
-    else if (period === 'week') startId = weekId();
-    else if (period === 'month') startId = ty + '-' + pad(tm) + '-01';
-    else startId = ty + '-01-01';
-    return { startId, endId: todayId, todayId };
+    let startId, endId;
+
+    if (period === 'today') {
+      startId = endId = selection || todayId;
+    } else if (period === 'week') {
+      let monday;
+      if (selection) {
+        // Any date inside the target ISO week resolves to that week's
+        // Monday via weekId()'s own Monday-of-week logic (same function
+        // the rest of the app uses), so this reuses it rather than
+        // re-deriving Monday math independently.
+        const jan4 = new Date(Date.UTC(selection.isoYear, 0, 4));
+        const ref = new Date(jan4);
+        ref.setUTCDate(jan4.getUTCDate() + (selection.isoWeek - 1) * 7);
+        monday = weekId(ref);
+      } else {
+        monday = weekId();
+      }
+      startId = monday;
+      endId = addDaysId(monday, 6);
+    } else if (period === 'month') {
+      const [ty, tm] = todayId.split('-').map(Number);
+      const y = selection ? selection.year : ty;
+      const m = selection ? selection.month : tm;
+      startId = y + '-' + pad(m) + '-01';
+      endId = y + '-' + pad(m) + '-' + pad(daysInMonth(y, m));
+    } else { // year
+      const y = selection || Number(todayId.split('-')[0]);
+      startId = y + '-01-01';
+      endId = y + '-12-31';
+    }
+
+    if (endId > todayId) endId = todayId;
+    if (startId > endId) startId = endId; // guard against an all-future selection
+    return { startId, endId, todayId };
   }
 
   function fmtDate(dateId) {
@@ -186,12 +257,17 @@
     return t;
   }
 
+  // periodSelection holds whatever each picker last produced — null until
+  // the user has picked something for that period, at which point
+  // computeRange() falls back to the plain "today/this week/etc" default.
+  const periodSelection = { today: null, week: null, month: null, year: null };
+
   // Pulls every archived "overall" day within [startId, endId], sums them,
   // then — since a day isn't archived until the Overall Nurse saves it —
   // separately reads today's live ward docs and adds them in if today
   // falls in range and wasn't already covered by an archive.
   async function loadTotals(period) {
-    const { startId, endId, todayId } = computeRange(period);
+    const { startId, endId, todayId } = computeRange(period, periodSelection[period]);
     const totals = blankTotals();
     let daysCovered = 0;
 
@@ -355,8 +431,84 @@
     renderCharts(totals);
   }
 
+  const dayPicker = document.getElementById('dayPicker');
+  const weekPicker = document.getElementById('weekPicker');
+  const monthPicker = document.getElementById('monthPicker');
+  const yearPicker = document.getElementById('yearPicker');
+
+  // Cap every picker at "now" — no ward has ever filed a report for a date
+  // that hasn't happened yet, so a future pick would only ever come back
+  // empty.
+  {
+    const todayIdForCaps = reportDateId();
+    const [tyForCaps] = todayIdForCaps.split('-').map(Number);
+    dayPicker.max = todayIdForCaps;
+    monthPicker.max = todayIdForCaps.slice(0, 7); // YYYY-MM
+
+    const nowMonday = weekId();
+    const [wy, wm, wd] = nowMonday.split('-').map(Number);
+    weekPicker.max = wy + '-W' + pad(isoWeekNumber(new Date(Date.UTC(wy, wm - 1, wd))));
+
+    // No native "year" input type exists, so this is a plain <select> of
+    // recent years standing in for a year picker — the closest native
+    // widget available without hand-building a calendar control.
+    for (let y = tyForCaps; y >= tyForCaps - 5; y--) {
+      const opt = document.createElement('option');
+      opt.value = String(y);
+      opt.textContent = String(y);
+      yearPicker.appendChild(opt);
+    }
+    yearPicker.value = String(tyForCaps);
+  }
+
+  // Opens the OS/browser's native picker UI for a hidden date/week/month
+  // input (or, for the year <select>, its native dropdown) in response to
+  // tapping the visible period-btn. showPicker() is the standard way to do
+  // this (Chrome 99+); older WebViews that don't support it fall back to
+  // focusing + clicking the input directly, which still opens the native
+  // picker in most mobile browsers when triggered synchronously from a
+  // user gesture like this one.
+  function openPicker(input) {
+    try {
+      if (typeof input.showPicker === 'function') { input.showPicker(); return; }
+    } catch (e) { /* fall through to the click fallback */ }
+    input.focus();
+    input.click();
+  }
+
   document.querySelectorAll('.period-btn').forEach(btn => {
-    btn.addEventListener('click', () => loadAndRender(btn.dataset.period));
+    btn.addEventListener('click', () => {
+      const period = btn.dataset.period;
+      if (period === 'today') openPicker(dayPicker);
+      else if (period === 'week') openPicker(weekPicker);
+      else if (period === 'month') openPicker(monthPicker);
+      else openPicker(yearPicker);
+    });
+  });
+
+  dayPicker.addEventListener('change', () => {
+    if (!dayPicker.value) return;
+    periodSelection.today = dayPicker.value;
+    loadAndRender('today');
+  });
+
+  weekPicker.addEventListener('change', () => {
+    if (!weekPicker.value) return;
+    const [yStr, wStr] = weekPicker.value.split('-W');
+    periodSelection.week = { isoYear: Number(yStr), isoWeek: Number(wStr) };
+    loadAndRender('week');
+  });
+
+  monthPicker.addEventListener('change', () => {
+    if (!monthPicker.value) return;
+    const [yStr, mStr] = monthPicker.value.split('-');
+    periodSelection.month = { year: Number(yStr), month: Number(mStr) };
+    loadAndRender('month');
+  });
+
+  yearPicker.addEventListener('change', () => {
+    periodSelection.year = Number(yearPicker.value);
+    loadAndRender('year');
   });
 
   requireAuth(() => {
