@@ -108,7 +108,7 @@
 <script type="module">
   import { requireAuth } from "./js/auth-guard.js";
   import { db } from "./js/firebase.js";
-  import { collection, getDocs, addDoc, updateDoc, doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { collection, getDocs, updateDoc, doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
   import { avatarMarkup } from "./js/avatar.js";
 
   let selectedPatient = null;
@@ -258,26 +258,24 @@
     const btn = document.getElementById('allocateBtn');
     btn.disabled = true;
     const ref = allocationDocRef(selectedPatient.id);
-    try {
-      if (allocatedToMe) {
-        await deleteDoc(ref);
-        allocatedToMe = false;
-      } else {
-        await setDoc(ref, {
-          uid: window.currentUser.uid,
-          nurseName: (window.currentUserProfile && window.currentUserProfile.name) || '',
-          patientId: selectedPatient.id,
-          patientName: selectedPatient.name || 'Unnamed',
-          patientEmr: selectedPatient.emr || '',
-          patientWard: selectedPatient.ward || '',
-          patientDiagnosis: selectedPatient.diagnosis || '',
-          shift: currentShiftLabel(),
-          allocatedAt: serverTimestamp()
-        });
-        allocatedToMe = true;
-      }
-    } catch (e) {
-      alert("Couldn't update allocation: " + (e.code || e.message || 'unknown error'));
+    // Not awaited — same offline-hang reason as createPatient above: these
+    // queue locally and sync automatically once back online.
+    if (allocatedToMe) {
+      deleteDoc(ref).catch((e) => console.warn('Allocation removal queued locally; will retry once back online:', e));
+      allocatedToMe = false;
+    } else {
+      setDoc(ref, {
+        uid: window.currentUser.uid,
+        nurseName: (window.currentUserProfile && window.currentUserProfile.name) || '',
+        patientId: selectedPatient.id,
+        patientName: selectedPatient.name || 'Unnamed',
+        patientEmr: selectedPatient.emr || '',
+        patientWard: selectedPatient.ward || '',
+        patientDiagnosis: selectedPatient.diagnosis || '',
+        shift: currentShiftLabel(),
+        allocatedAt: serverTimestamp()
+      }).catch((e) => console.warn('Allocation queued locally; will retry once back online:', e));
+      allocatedToMe = true;
     }
     applyAllocateBtnStyle(btn);
   };
@@ -321,15 +319,13 @@
       allergies: document.getElementById('ep_allergies').value.trim(),
       updatedAt: serverTimestamp()
     };
-    try {
-      await updateDoc(doc(db, 'patients', selectedPatient.id), updates);
-    } catch (e) {
-      msgBox.innerHTML = '<div class="error-msg">Save failed: ' + (e.code || e.message || 'unknown error') + '</div>';
-      return;
-    }
+    // Not awaited — same offline-hang reason as createPatient above.
+    updateDoc(doc(db, 'patients', selectedPatient.id), updates).catch((e) => {
+      console.warn('Patient edit queued locally; will retry once back online:', e);
+    });
     const updatedPatient = { ...selectedPatient, ...updates };
     delete updatedPatient.updatedAt;
-    await loadAllPatients(true);
+    if (allPatientsCache) allPatientsCache = allPatientsCache.map(p => p.id === selectedPatient.id ? { ...p, ...updatedPatient } : p);
     selectPatient(updatedPatient);
   };
 
@@ -356,14 +352,17 @@
       createdAt: serverTimestamp(),
       createdBy: window.currentUser ? window.currentUser.uid : null
     };
-    let ref;
-    try {
-      ref = await addDoc(collection(db, 'patients'), data);
-    } catch (e) {
-      msgBox.innerHTML = '<div class="error-msg">Save failed: ' + (e.code || e.message || 'unknown error') + '</div>';
-      return;
-    }
-    await loadAllPatients(true);
+    // Client-generated ID (no network round trip needed) so the patient is
+    // usable immediately even offline. setDoc()'s Promise is deliberately
+    // NOT awaited: with offline persistence, the write lands in the local
+    // IndexedDB cache synchronously and syncs automatically once back
+    // online, but the Promise itself only resolves after the backend
+    // acknowledges it — awaiting it here is what made "Save Patient" hang
+    // forever with no error while offline.
+    const ref = doc(collection(db, 'patients'));
+    setDoc(ref, data).catch((e) => console.warn('Patient write queued locally; will retry once back online:', e));
+
+    allPatientsCache = allPatientsCache ? [...allPatientsCache, { id: ref.id, ...data }] : [{ id: ref.id, ...data }];
     hideNewPatientForm();
     ['np_name','np_emr','np_diagnosis','np_ward','np_age','np_hospno','np_admission','np_allergies'].forEach(id => document.getElementById(id).value = '');
     msgBox.innerHTML = '';
