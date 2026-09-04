@@ -1856,7 +1856,7 @@
     saveTimer = setTimeout(saveChart, 600);
   }
 
-  async function saveChart() {
+  function saveChart() {
     if (isArchived) return; // archived charts are read-only, never written to
     const data = {};
     fieldIds.forEach(id => data[id] = document.getElementById(id).value);
@@ -1866,12 +1866,16 @@
     data.careInstructions = careInstructions;
     data.auditLog = auditLog;
     data.updatedAt = serverTimestamp();
-    try {
-      await setDoc(chartRef, data, { merge: true });
-      document.getElementById('saveStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
-    } catch (e) {
+    // Not awaited — same offline-hang reason as blood-glucose.html's
+    // saveChart and the patient-registration fixes: queues locally and
+    // syncs on reconnect, but the Promise itself won't resolve until then.
+    // Callers that `await saveChart()` to flush edits before continuing
+    // (e.g. applyStatusAction below) still get what they need — the write
+    // is already handed to the local cache by the time this returns.
+    setDoc(chartRef, data, { merge: true }).catch((e) => {
       document.getElementById('saveStatus').textContent = 'Save failed: ' + (e.code || e.message);
-    }
+    });
+    document.getElementById('saveStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
   }
 
   // --- Patient status change: referred / transferred / discharged ---
@@ -1893,6 +1897,17 @@
     const msg = document.getElementById('statusMsg');
     if (!reason) {
       msg.innerHTML = '<span style="color:#dc2626;">Please select an action first.</span>';
+      return;
+    }
+    // Unlike the simple autosaves above, this reads across five collections
+    // (vitals, glycemic, intake & output, seizure, plus this chart) and then
+    // DELETES the live entries once archived — getting that sequence right
+    // needs the real data, not whatever happens to be sitting in the local
+    // offline cache. Rather than risk an incomplete archive or losing data
+    // that never made it into the cache, this action is blocked until back
+    // online instead of being made offline-tolerant like the autosaves.
+    if (!navigator.onLine) {
+      msg.innerHTML = '<span style="color:#dc2626;">This needs an internet connection \u2014 referring, transferring, or discharging archives records from several charts at once and then clears them, and doing that safely requires reading the real data rather than whatever\'s cached locally. Please try again once online.</span>';
       return;
     }
     let label = STATUS_LABELS[reason];

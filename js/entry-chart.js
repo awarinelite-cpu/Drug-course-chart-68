@@ -3,7 +3,7 @@ import { loadPatientHeader, getPatientIdFromUrl } from "./chart-common.js";
 import { lockBackTo } from "./back-guard.js";
 import { db } from "./firebase.js";
 import {
-  collection, addDoc, deleteDoc, doc, getDoc, setDoc, onSnapshot, query, orderBy, serverTimestamp
+  collection, deleteDoc, doc, getDoc, setDoc, onSnapshot, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 // columns entries support:
@@ -374,7 +374,15 @@ export function initEntryChart({ collectionName, columns, deriveRows, summary, s
       if (!data.time) { alert('Please set the time.'); return; }
       data.createdAt = serverTimestamp();
       data.enteredBy = profile.name;
-      await addDoc(collection(db, 'patients', patientId, collectionName), data);
+      // Client-generated ID via setDoc instead of addDoc, fired without
+      // awaiting — same offline-hang fix as elsewhere in this app: with
+      // offline persistence, this queues in the local cache immediately and
+      // syncs on reconnect, but addDoc()'s Promise wouldn't resolve until
+      // then. That left "Add Entry"/"Add Reading" silently doing nothing
+      // while offline — no error, form never cleared, entry never appeared.
+      setDoc(doc(collection(db, 'patients', patientId, collectionName)), data).catch((e) => {
+        console.warn('Entry queued locally; will retry once back online:', e);
+      });
       columns.filter(col => !col.computed).forEach(col => {
         if (col.key === 'time') return;
         const el = document.getElementById('in_' + col.key);

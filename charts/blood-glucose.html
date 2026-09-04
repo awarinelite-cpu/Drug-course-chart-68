@@ -321,23 +321,25 @@
     saveChart();
   };
 
-  async function saveChart() {
+  function saveChart() {
     if (isArchived) return; // archived charts are read-only
     captureCurrentRows(currentType);
     // Firestore rejects arrays nested directly inside arrays ("Invalid argument"),
     // so each row must be wrapped in an object rather than stored as a bare array.
     const toDocRows = (arr) => arr.map(cells => ({ cells }));
-    try {
-      await setDoc(chartRef, {
-        chartType: currentType,
-        rows6: toDocRows(rowsCache['6point']),
-        rows3: toDocRows(rowsCache['3point']),
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-      setSaveStatus('Saved ' + new Date().toLocaleTimeString());
-    } catch (e) {
+    // Not awaited — same offline-hang reason as the patient-registration
+    // fixes: with offline persistence, this queues in the local cache
+    // immediately and syncs on reconnect, but its Promise won't resolve
+    // until then. Awaiting it here left "Saving…" stuck forever offline.
+    setDoc(chartRef, {
+      chartType: currentType,
+      rows6: toDocRows(rowsCache['6point']),
+      rows3: toDocRows(rowsCache['3point']),
+      updatedAt: serverTimestamp()
+    }, { merge: true }).catch((e) => {
       setSaveStatus('Save failed: ' + (e.code || e.message));
-    }
+    });
+    setSaveStatus('Saved ' + new Date().toLocaleTimeString());
   }
 
   requireAuth(async (user, profile) => {
