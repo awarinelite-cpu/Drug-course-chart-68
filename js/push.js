@@ -7,8 +7,11 @@
 // a time, so an in-page timer can't cover the whole ward. Instead: a Cloud
 // Function (functions/index.js) runs on a schedule server-side, checks every
 // patient's drug chart for doses that are due, and pushes a notification to
-// every nurse who has opted in on this screen — regardless of which page (or
-// whether the app) is open on their phone at that moment.
+// every nurse who has opted in on this screen AND allocated herself to that
+// specific patient (see "Allocate to Me" on a patient's profile / My
+// Patients in the nav) — regardless of which page (or whether the app) is
+// open on their phone at that moment. A patient nobody's allocated to stays
+// silent.
 //
 // Web Push VAPID public key — Firebase Console → Project Settings → Cloud
 // Messaging → Web configuration → Web Push certificates.
